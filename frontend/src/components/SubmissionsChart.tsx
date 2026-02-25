@@ -27,7 +27,7 @@ export default function SubmissionsChart({ data }: { data?: ChartData[] }) {
   ];
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold text-foreground">
@@ -75,11 +75,12 @@ export default function SubmissionsChart({ data }: { data?: ChartData[] }) {
               color: "hsl(30 20% 90%)",
               fontSize: "12px",
             }}
+            cursor={{ fill: "hsl(20 15% 18% / 0.5)" }}
           />
           <Bar
             dataKey="passed"
             fill="hsl(20 90% 52%)"
-            radius={[4, 4, 0, 0]}
+            radius={[6, 6, 0, 0]}
           />
           <Bar
             dataKey="failed"

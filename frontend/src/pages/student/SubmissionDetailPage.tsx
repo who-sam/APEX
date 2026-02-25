@@ -61,7 +61,7 @@ export default function SubmissionDetailPage() {
       </div>
 
       {/* Code */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md overflow-hidden">
         <div className="px-4 py-2 text-xs text-muted-foreground bg-secondary/50 border-b border-border">
           Your Code ({submission.language})
         </div>
@@ -82,7 +82,7 @@ export default function SubmissionDetailPage() {
       </div>
 
       {/* Test Results */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
         <h3 className="text-base font-semibold text-foreground">
           Test Results
         </h3>

@@ -53,7 +53,7 @@ export default function SubmissionsPage() {
       </div>
 
       {submissions.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 text-center">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-12 text-center">
           <FileText size={48} className="mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold text-foreground">
             No submissions yet
@@ -63,7 +63,7 @@ export default function SubmissionsPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>

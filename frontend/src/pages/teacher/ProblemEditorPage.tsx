@@ -127,7 +127,7 @@ export default function ProblemEditorPage() {
         <h1 className="text-2xl font-bold text-foreground">Edit Problem</h1>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-foreground mb-1.5">
@@ -238,7 +238,7 @@ export default function ProblemEditorPage() {
       </div>
 
       {/* Test Cases */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-foreground">
             Test Cases ({testCases.length})

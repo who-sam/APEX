@@ -52,26 +52,26 @@ export default function ClassDetailPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-5">
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
           <p className="text-sm text-muted-foreground">Students</p>
           <p className="text-2xl font-bold text-foreground">{stats?.member_count ?? 0}</p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
           <p className="text-sm text-muted-foreground">Exams</p>
           <p className="text-2xl font-bold text-foreground">{stats?.exam_count ?? 0}</p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
           <p className="text-sm text-muted-foreground">Avg Score</p>
           <p className="text-2xl font-bold text-foreground">{(stats?.avg_score ?? 0).toFixed(1)}%</p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
           <p className="text-sm text-muted-foreground">Pass Rate</p>
           <p className="text-2xl font-bold text-foreground">{(stats?.pass_rate ?? 0).toFixed(1)}%</p>
         </div>
       </div>
 
       {/* Invite Code */}
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
         <h3 className="text-base font-semibold text-foreground mb-3">
           Invite Code
         </h3>
@@ -93,7 +93,7 @@ export default function ClassDetailPage() {
       </div>
 
       {/* Members */}
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
         <h3 className="text-base font-semibold text-foreground mb-4">
           Members ({detail.members.length})
         </h3>

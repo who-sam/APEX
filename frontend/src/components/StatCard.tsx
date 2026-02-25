@@ -1,97 +1,60 @@
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
-
 export default function StatCard({
   title,
   value,
   change,
-  positive,
-  period,
   icon: Icon,
   variant = "default",
 }: {
   title: string;
   value: string;
   change: string;
-  positive: boolean;
-  period: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  variant?: "default" | "primary";
+  positive?: boolean;
+  period?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  variant?: "default" | "primary" | "accent";
 }) {
+  const isPrimary = variant === "primary";
+  const isAccent = variant === "accent";
+  const highlighted = isPrimary || isAccent;
+
   return (
     <div
       className={`rounded-xl border p-5 ${
-        variant === "primary"
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-card"
+        isPrimary
+          ? "border-primary/30 bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+          : isAccent
+            ? "border-accent/30 bg-accent text-accent-foreground shadow-lg shadow-accent/20"
+            : "border-border/50 bg-card/80 backdrop-blur-md"
       }`}
     >
-      <div className="flex items-center justify-between mb-3">
-        <span
+      <div className="flex items-center justify-between">
+        <p
           className={`text-sm font-medium ${
-            variant === "primary"
-              ? "text-primary-foreground/80"
-              : "text-muted-foreground"
+            highlighted ? "opacity-90" : "text-muted-foreground"
           }`}
         >
           {title}
-        </span>
-        <Icon
-          size={18}
-          className={
-            variant === "primary"
-              ? "text-primary-foreground/70"
-              : "text-muted-foreground"
-          }
-        />
+        </p>
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+            highlighted ? "bg-white/20" : "bg-secondary"
+          }`}
+        >
+          <Icon
+            className={`h-4 w-4 ${
+              highlighted ? "text-current" : "text-foreground"
+            }`}
+          />
+        </div>
       </div>
+      <p className="mt-3 text-3xl font-bold tracking-tight">{value}</p>
       <p
-        className={`text-2xl font-bold ${
-          variant === "primary" ? "text-primary-foreground" : "text-foreground"
+        className={`mt-1 text-xs ${
+          highlighted ? "opacity-75" : "text-muted-foreground"
         }`}
       >
-        {value}
+        {change}
       </p>
-      <div className="mt-2 flex items-center gap-1.5">
-        {positive ? (
-          <ArrowUpRight
-            size={14}
-            className={
-              variant === "primary"
-                ? "text-primary-foreground/80"
-                : "text-success"
-            }
-          />
-        ) : (
-          <ArrowDownRight
-            size={14}
-            className={
-              variant === "primary"
-                ? "text-primary-foreground/80"
-                : "text-destructive"
-            }
-          />
-        )}
-        <span
-          className={`text-xs font-medium ${
-            variant === "primary"
-              ? "text-primary-foreground/80"
-              : positive
-                ? "text-success"
-                : "text-destructive"
-          }`}
-        >
-          {change}
-        </span>
-        <span
-          className={`text-xs ${
-            variant === "primary"
-              ? "text-primary-foreground/60"
-              : "text-muted-foreground"
-          }`}
-        >
-          {period}
-        </span>
-      </div>
     </div>
   );
 }

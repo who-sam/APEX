@@ -60,30 +60,26 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
           {greeting}, {user?.name?.split(" ")[0]}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-muted-foreground">
           View your classes, upcoming exams, and track your progress.
         </p>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Classes Joined"
           value={String(classes.length)}
           change={`${classes.length} active`}
-          positive={true}
-          period=""
           icon={Users}
         />
         <StatCard
           title="Active Exams"
           value={String(activeExams)}
           change={`${upcomingExams} upcoming`}
-          positive={true}
-          period=""
           icon={BookOpen}
           variant="primary"
         />
@@ -91,22 +87,19 @@ export default function DashboardPage() {
           title="Submissions"
           value={String(submissions.length)}
           change="all time"
-          positive={true}
-          period=""
           icon={FileText}
+          variant="accent"
         />
         <StatCard
           title="Avg Score"
           value={`${avgScore.toFixed(1)}%`}
           change={`${submissions.filter((s) => s.status === "accepted").length} accepted`}
-          positive={avgScore >= 60}
-          period=""
           icon={CheckCircle2}
         />
       </div>
 
       {/* Join Class */}
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
         <h3 className="text-base font-semibold text-foreground mb-3">
           Join a Class
         </h3>
@@ -136,7 +129,7 @@ export default function DashboardPage() {
 
       {/* Recent Exams */}
       {exams.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
           <h3 className="text-base font-semibold text-foreground mb-4">
             Your Exams
           </h3>
@@ -144,25 +137,31 @@ export default function DashboardPage() {
             {exams.slice(0, 5).map((exam) => (
               <div
                 key={exam.id}
-                className="rounded-lg border border-border bg-secondary/50 p-3 flex items-center justify-between"
+                className="rounded-xl border border-border/50 bg-secondary/30 p-4 flex items-center justify-between transition-colors hover:bg-secondary/60"
               >
-                <div>
+                <div className="space-y-1">
                   <p className="text-sm font-medium text-foreground">
                     {exam.title}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {exam.duration_minutes} min
-                    {exam.start_time &&
-                      ` | ${new Date(exam.start_time).toLocaleDateString()}`}
-                  </p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span>{exam.duration_minutes} min</span>
+                    {exam.start_time && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          {new Date(exam.start_time).toLocaleDateString()}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium border ${
                     exam.status === "active"
-                      ? "bg-success/15 text-success"
+                      ? "bg-green-500/15 text-green-400 border-green-500/30"
                       : exam.status === "upcoming"
-                        ? "bg-primary/15 text-primary"
-                        : "bg-secondary text-muted-foreground"
+                        ? "bg-accent/15 text-accent border-accent/30"
+                        : "bg-secondary text-muted-foreground border-border/50"
                   }`}
                 >
                   {exam.status}

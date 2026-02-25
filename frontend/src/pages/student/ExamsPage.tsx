@@ -54,7 +54,7 @@ export default function ExamsPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 text-center">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-12 text-center">
           <BookOpen size={48} className="mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold text-foreground">
             No {tab} exams
@@ -65,7 +65,7 @@ export default function ExamsPage() {
           {filtered.map((exam) => (
             <div
               key={exam.id}
-              className="rounded-xl border border-border bg-card p-5 hover:border-primary/50 transition-colors cursor-pointer"
+              className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 hover:border-primary/50 transition-colors cursor-pointer"
               onClick={() => {
                 if (exam.status === "active") {
                   navigate(`/exam/${exam.id}`);

@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { Search, Bell, ChevronDown } from "lucide-react";
+import { Search, Bell, Clock, ChevronDown, Code2 } from "lucide-react";
 
 interface Tab {
   label: string;
@@ -45,57 +45,63 @@ export default function Navbar() {
     : "?";
 
   return (
-    <div className="px-3 pt-3">
-      <header className="flex h-14 items-center justify-between rounded-2xl bg-card px-5">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <span className="text-sm font-bold text-primary-foreground">
-                &lt;/&gt;
-              </span>
-            </div>
-            <span className="text-lg font-bold text-foreground">CodeJudge</span>
-          </div>
+    <header className="fixed left-20 right-6 top-4 z-50 flex items-center gap-3 h-12">
+      {/* Logo — left pill */}
+      <div className="flex items-center gap-2 border border-border bg-card/80 px-4 py-1.5 shadow-lg backdrop-blur-md rounded-full">
+        <Code2 className="h-5 w-5 text-primary" />
+        <span className="text-lg font-bold tracking-tight text-foreground">
+          Code<span className="text-muted-foreground">Judge</span>
+        </span>
+      </div>
 
-          <nav className="hidden md:flex items-center gap-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.path}
-                onClick={() => navigate(tab.path)}
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                  isActive(tab.path)
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
+      <div className="flex-1" />
 
-        <div className="flex items-center gap-3">
-          <button className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground">
-            <Search size={18} />
+      {/* Nav tabs — centered pill */}
+      <div className="hidden md:flex items-center gap-1 rounded-2xl border border-border bg-card/80 px-2 py-1.5 shadow-lg backdrop-blur-md">
+        {tabs.map((tab) => (
+          <button
+            key={tab.path}
+            onClick={() => navigate(tab.path)}
+            className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-colors ${
+              isActive(tab.path)
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
           </button>
-          <button className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground">
-            <Bell size={18} />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
-          </button>
+        ))}
+      </div>
 
-          <div className="ml-2 flex items-center gap-2 rounded-full border border-border px-3 py-1.5">
-            <div className="h-7 w-7 rounded-full bg-primary/30 flex items-center justify-center">
-              <span className="text-xs font-bold text-primary">{initials}</span>
-            </div>
-            <div className="hidden lg:block">
-              <p className="text-sm font-medium text-foreground leading-tight">
-                {user?.name}
-              </p>
-            </div>
-            <ChevronDown size={14} className="text-muted-foreground" />
-          </div>
+      <div className="flex-1" />
+
+      {/* Action icons — separate rounded pill */}
+      <div className="flex items-center gap-1 rounded-2xl border border-border bg-card/80 px-2 py-1.5 shadow-lg backdrop-blur-md">
+        <button className="flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+          <Search className="h-4 w-4" />
+        </button>
+        <button className="relative flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+          <Bell className="h-4 w-4" />
+          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary" />
+        </button>
+        <button className="flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+          <Clock className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Profile — separate rounded pill */}
+      <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/80 px-3 py-1.5 shadow-lg backdrop-blur-md">
+        <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center">
+          <span className="text-xs font-semibold text-primary">{initials}</span>
         </div>
-      </header>
-    </div>
+        <div className="hidden lg:block text-left">
+          <p className="text-sm font-medium leading-none text-foreground">
+            {user?.name}
+          </p>
+          <p className="text-xs text-muted-foreground">{user?.email}</p>
+        </div>
+        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      </div>
+    </header>
   );
 }

@@ -117,7 +117,7 @@ export default function ExamBuilderPage() {
       </div>
 
       {/* Exam Form */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
@@ -220,7 +220,7 @@ export default function ExamBuilderPage() {
 
       {/* Problems List (only for existing exams) */}
       {!isNew && exam && (
-        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold text-foreground">
               Problems ({exam.problems?.length ?? 0})

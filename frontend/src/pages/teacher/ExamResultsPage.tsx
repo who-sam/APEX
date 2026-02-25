@@ -98,7 +98,7 @@ export default function ExamResultsPage() {
         </button>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
         {results.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             No submissions yet.

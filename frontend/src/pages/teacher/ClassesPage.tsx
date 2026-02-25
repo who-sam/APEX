@@ -73,7 +73,7 @@ export default function ClassesPage() {
       {showCreate && (
         <form
           onSubmit={handleCreate}
-          className="rounded-xl border border-border bg-card p-5 space-y-4"
+          className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4"
         >
           <h3 className="text-base font-semibold text-foreground">
             New Class
@@ -114,7 +114,7 @@ export default function ClassesPage() {
       )}
 
       {classes.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 text-center">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-12 text-center">
           <Users size={48} className="mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold text-foreground">
             No classes yet
@@ -128,7 +128,7 @@ export default function ClassesPage() {
           {classes.map((cls) => (
             <div
               key={cls.id}
-              className="rounded-xl border border-border bg-card p-5 hover:border-primary/50 transition-colors cursor-pointer"
+              className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 hover:border-primary/50 transition-colors cursor-pointer"
               onClick={() => navigate(`/teacher/classes/${cls.id}`)}
             >
               <div className="flex items-start justify-between mb-3">

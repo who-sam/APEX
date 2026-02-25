@@ -30,7 +30,7 @@ export default function ClassesPage() {
       </div>
 
       {classes.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 text-center">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-12 text-center">
           <Users size={48} className="mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold text-foreground">
             No classes yet
@@ -44,7 +44,7 @@ export default function ClassesPage() {
           {classes.map((cls) => (
             <div
               key={cls.id}
-              className="rounded-xl border border-border bg-card p-5"
+              className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5"
             >
               <h3 className="text-base font-semibold text-foreground">
                 {cls.name}

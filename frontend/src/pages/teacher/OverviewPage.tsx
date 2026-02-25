@@ -12,6 +12,7 @@ import {
   Plus,
   Eye,
   UserCog,
+  Play,
 } from "lucide-react";
 
 export default function OverviewPage() {
@@ -25,7 +26,10 @@ export default function OverviewPage() {
     getExams().then(setExams);
   }, []);
 
-  const totalStudents = classes.reduce((sum, c) => sum + (c.member_count ?? 0), 0);
+  const totalStudents = classes.reduce(
+    (sum, c) => sum + (c.member_count ?? 0),
+    0
+  );
   const now = new Date();
   const upcomingExams = exams.filter((e) => {
     if (!e.start_time) return false;
@@ -42,31 +46,36 @@ export default function OverviewPage() {
   return (
     <div className="space-y-6">
       {/* Greeting */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">
-          {greeting}, {user?.name?.split(" ")[0]}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Monitor student progress, review submissions, and manage your exams.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            {greeting}, {user?.name?.split(" ")[0]}
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            Monitor student progress, review submissions, and manage your exams.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate("/teacher/exams/new")}
+          className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 transition-colors"
+        >
+          <Play className="h-5 w-5" />
+          Create Exam
+        </button>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Classes"
           value={String(classes.length)}
           change={`${classes.length} active`}
-          positive={true}
-          period=""
           icon={FileText}
         />
         <StatCard
           title="Active Students"
           value={String(totalStudents)}
           change={`across ${classes.length} classes`}
-          positive={true}
-          period=""
           icon={Users}
           variant="primary"
         />
@@ -74,16 +83,13 @@ export default function OverviewPage() {
           title="Upcoming Exams"
           value={String(upcomingExams.length)}
           change={`${exams.length} total`}
-          positive={true}
-          period=""
           icon={BookOpen}
+          variant="accent"
         />
         <StatCard
           title="Total Exams"
           value={String(exams.length)}
           change="all time"
-          positive={true}
-          period=""
           icon={CheckCircle2}
         />
       </div>
@@ -96,7 +102,7 @@ export default function OverviewPage() {
 
         <div className="lg:col-span-4 space-y-5">
           {/* Upcoming Exams */}
-          <div className="rounded-xl border border-border bg-card p-5">
+          <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
             <h3 className="text-base font-semibold text-foreground mb-4">
               Upcoming Exams
             </h3>
@@ -109,7 +115,7 @@ export default function OverviewPage() {
                 upcomingExams.slice(0, 3).map((exam) => (
                   <div
                     key={exam.id}
-                    className="rounded-lg border border-border bg-secondary/50 p-3 space-y-1 cursor-pointer hover:border-primary/50"
+                    className="rounded-xl border border-border/50 bg-secondary/30 p-4 transition-colors hover:bg-secondary/60 cursor-pointer"
                     onClick={() => navigate(`/teacher/exams/${exam.id}`)}
                   >
                     <div className="flex items-center justify-between">
@@ -120,12 +126,13 @@ export default function OverviewPage() {
                         {exam.duration_minutes}min
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                       <span>
                         {exam.start_time
                           ? new Date(exam.start_time).toLocaleDateString()
                           : "No date"}
                       </span>
+                      <span>·</span>
                       <span>{exam.class_count} classes</span>
                     </div>
                   </div>
@@ -135,7 +142,7 @@ export default function OverviewPage() {
           </div>
 
           {/* Quick Actions */}
-          <div className="rounded-xl border border-border bg-card p-5">
+          <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
             <h3 className="text-base font-semibold text-foreground mb-4">
               Quick Actions
             </h3>
@@ -149,14 +156,14 @@ export default function OverviewPage() {
               </button>
               <button
                 onClick={() => navigate("/teacher/exams")}
-                className="flex w-full items-center gap-3 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                className="flex w-full items-center gap-3 rounded-lg border border-border/50 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/60 transition-colors"
               >
                 <Eye size={16} />
                 View Exams
               </button>
               <button
                 onClick={() => navigate("/teacher/classes")}
-                className="flex w-full items-center gap-3 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                className="flex w-full items-center gap-3 rounded-lg border border-border/50 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/60 transition-colors"
               >
                 <UserCog size={16} />
                 Manage Classes
