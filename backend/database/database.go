@@ -28,6 +28,10 @@ func Connect(cfg config.Config) {
 		&models.TestCase{},
 		&models.Submission{},
 		&models.TestResult{},
+		&models.UserProfile{},
+		&models.Message{},
+		&models.Team{},
+		&models.TeamMember{},
 	); err != nil {
 		log.Fatal("Failed to migrate database: ", err)
 	}

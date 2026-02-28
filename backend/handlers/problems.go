@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type createProblemRequest struct {
@@ -17,6 +18,28 @@ type createProblemRequest struct {
 	TimeLimitMs   int    `json:"time_limit_ms"`
 	MemoryLimitKb int    `json:"memory_limit_kb"`
 	OrderIndex    int    `json:"order_index"`
+}
+
+func GetProblem(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+	problemID := c.Param("id")
+
+	var problem models.Problem
+	if err := database.DB.Preload("TestCases", func(db *gorm.DB) *gorm.DB {
+		return db.Order("order_index asc")
+	}).First(&problem, problemID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "problem not found"})
+		return
+	}
+
+	// Verify teacher owns the exam
+	var exam models.Exam
+	if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+		return
+	}
+
+	c.JSON(http.StatusOK, problem)
 }
 
 func AddProblem(c *gin.Context) {
@@ -96,6 +119,11 @@ func UpdateProblem(c *gin.Context) {
 		"memory_limit_kb": req.MemoryLimitKb,
 		"order_index":     req.OrderIndex,
 	})
+
+	// Reload with test cases so frontend gets full data
+	database.DB.Preload("TestCases", func(db *gorm.DB) *gorm.DB {
+		return db.Order("order_index asc")
+	}).First(&problem, problemID)
 
 	c.JSON(http.StatusOK, problem)
 }

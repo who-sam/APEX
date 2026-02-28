@@ -22,6 +22,7 @@ var languageMap = map[string]int{
 type executeRequest struct {
 	Language string `json:"language" binding:"required"`
 	Code     string `json:"code" binding:"required"`
+	Stdin    string `json:"stdin"`
 }
 
 type judge0Request struct {
@@ -60,7 +61,7 @@ func Execute(c *gin.Context) {
 	j0Req := judge0Request{
 		LanguageID: langID,
 		SourceCode: req.Code,
-		Stdin:      "",
+		Stdin:      req.Stdin,
 	}
 
 	body, err := json.Marshal(j0Req)

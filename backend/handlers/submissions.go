@@ -5,6 +5,7 @@ import (
 	"codejudge-backend/grading"
 	"codejudge-backend/models"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +23,17 @@ func SubmitSolution(c *gin.Context) {
 	var req submitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "problem_id, exam_id, language, and code are required"})
+		return
+	}
+
+	// Validate exam hasn't ended
+	var exam models.Exam
+	if err := database.DB.First(&exam, req.ExamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+	if exam.EndTime != nil && time.Now().After(*exam.EndTime) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "exam has ended"})
 		return
 	}
 

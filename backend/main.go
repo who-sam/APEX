@@ -69,6 +69,7 @@ func main() {
 		teacherProblems := api.Group("/problems")
 		teacherProblems.Use(middleware.RequireRole("teacher"))
 		{
+			teacherProblems.GET("/:id", handlers.GetProblem)
 			teacherProblems.PUT("/:id", handlers.UpdateProblem)
 			teacherProblems.DELETE("/:id", handlers.DeleteProblem)
 			teacherProblems.POST("/:id/test-cases", handlers.AddTestCase)
@@ -91,6 +92,8 @@ func main() {
 			student.GET("/exams", handlers.GetStudentExams)
 			student.GET("/exams/:id", handlers.GetStudentExam)
 			student.GET("/submissions", handlers.GetStudentSubmissions)
+			student.GET("/stats", handlers.GetStudentStats)
+			student.GET("/performance", handlers.GetStudentPerformance)
 		}
 
 		// Submission routes (students submit, anyone with access can view)
@@ -100,6 +103,25 @@ func main() {
 			submissions.POST("/run", handlers.RunSolution)
 			submissions.GET("/:id", handlers.GetSubmission)
 		}
+
+		// Profile routes
+		api.GET("/profile", handlers.GetProfile)
+		api.PUT("/profile", handlers.UpdateProfile)
+		api.PUT("/profile/password", handlers.ChangePassword)
+
+		// Message routes
+		api.GET("/messages", handlers.GetMessages)
+		api.GET("/messages/:id", handlers.GetMessage)
+		api.POST("/messages", handlers.CreateMessage)
+		api.PUT("/messages/:id/read", handlers.MarkMessageRead)
+		api.PUT("/messages/:id/star", handlers.ToggleMessageStar)
+		api.DELETE("/messages/:id", handlers.DeleteMessage)
+
+		// Team routes
+		api.GET("/teams", handlers.GetTeams)
+		api.GET("/teams/:id", handlers.GetTeam)
+		api.POST("/teams", handlers.CreateTeam)
+		api.POST("/teams/:id/members", handlers.AddTeamMember)
 	}
 
 	r.Run(":8080")

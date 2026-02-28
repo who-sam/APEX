@@ -1,177 +1,322 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../hooks/useAuth";
-import { getClasses, getExams, type ClassData, type ExamData } from "../../api";
-import StatCard from "../../components/StatCard";
-import SubmissionsChart from "../../components/SubmissionsChart";
 import {
-  FileText,
   Users,
   BookOpen,
-  CheckCircle2,
-  Plus,
-  Eye,
-  UserCog,
-  Play,
+  GraduationCap,
+  Activity,
+  ArrowRight,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  getClasses,
+  getExams,
+  getExamResults,
+  type ClassData,
+  type ExamData,
+  type StudentResult,
+} from "@/lib/api";
 
 export default function OverviewPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [exams, setExams] = useState<ExamData[]>([]);
+  const [recentResults, setRecentResults] = useState<
+    Array<{ examTitle: string; examId: number; results: StudentResult[] }>
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getClasses().then(setClasses);
-    getExams().then(setExams);
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+        const [classData, examData] = await Promise.all([
+          getClasses(),
+          getExams(),
+        ]);
+        setClasses(classData);
+        setExams(examData);
+
+        // Fetch results for the most recent exams (up to 3)
+        const recentExams = [...examData]
+          .sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+          )
+          .slice(0, 3);
+
+        const resultsData = await Promise.all(
+          recentExams.map(async (exam) => {
+            try {
+              const results = await getExamResults(exam.id);
+              return { examTitle: exam.title, examId: exam.id, results };
+            } catch {
+              return { examTitle: exam.title, examId: exam.id, results: [] };
+            }
+          })
+        );
+        setRecentResults(resultsData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load data");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, []);
 
-  const totalStudents = classes.reduce(
-    (sum, c) => sum + (c.member_count ?? 0),
-    0
-  );
-  const now = new Date();
-  const upcomingExams = exams.filter((e) => {
-    if (!e.start_time) return false;
-    return new Date(e.start_time) > now;
-  });
+  const totalStudents = classes.reduce((sum, c) => sum + c.member_count, 0);
 
-  const greeting = (() => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    return "Good evening";
-  })();
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <p className="text-destructive font-medium">{error}</p>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Greeting */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            {greeting}, {user?.name?.split(" ")[0]}
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            Monitor student progress, review submissions, and manage your exams.
-          </p>
-        </div>
-        <button
-          onClick={() => navigate("/teacher/exams/new")}
-          className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 transition-colors"
-        >
-          <Play className="h-5 w-5" />
-          Create Exam
-        </button>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          Teacher Dashboard
+        </h1>
+        <p className="mt-1 text-muted-foreground">
+          Overview of your classes, exams, and student activity.
+        </p>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Classes"
-          value={String(classes.length)}
-          change={`${classes.length} active`}
-          icon={FileText}
-        />
-        <StatCard
-          title="Active Students"
-          value={String(totalStudents)}
-          change={`across ${classes.length} classes`}
-          icon={Users}
-          variant="primary"
-        />
-        <StatCard
-          title="Upcoming Exams"
-          value={String(upcomingExams.length)}
-          change={`${exams.length} total`}
-          icon={BookOpen}
-          variant="accent"
-        />
-        <StatCard
-          title="Total Exams"
-          value={String(exams.length)}
-          change="all time"
-          icon={CheckCircle2}
-        />
-      </div>
-
-      {/* Chart + Upcoming Exams */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-8">
-          <SubmissionsChart />
-        </div>
-
-        <div className="lg:col-span-4 space-y-5">
-          {/* Upcoming Exams */}
-          <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
-            <h3 className="text-base font-semibold text-foreground mb-4">
-              Upcoming Exams
-            </h3>
-            <div className="space-y-3">
-              {upcomingExams.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No upcoming exams.
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card className="border-border/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Classes</p>
+                <p className="text-3xl font-bold text-foreground">
+                  {classes.length}
                 </p>
-              ) : (
-                upcomingExams.slice(0, 3).map((exam) => (
-                  <div
-                    key={exam.id}
-                    className="rounded-xl border border-border/50 bg-secondary/30 p-4 transition-colors hover:bg-secondary/60 cursor-pointer"
-                    onClick={() => navigate(`/teacher/exams/${exam.id}`)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-foreground">
-                        {exam.title}
-                      </span>
-                      <span className="rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
-                        {exam.duration_minutes}min
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                      <span>
-                        {exam.start_time
-                          ? new Date(exam.start_time).toLocaleDateString()
-                          : "No date"}
-                      </span>
-                      <span>·</span>
-                      <span>{exam.class_count} classes</span>
-                    </div>
-                  </div>
-                ))
-              )}
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                <BookOpen className="h-6 w-6 text-primary" />
+              </div>
             </div>
-          </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {classes.length > 0
+                ? `Latest: ${classes[classes.length - 1].name}`
+                : "No classes yet"}
+            </p>
+          </CardContent>
+        </Card>
 
-          {/* Quick Actions */}
-          <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5">
-            <h3 className="text-base font-semibold text-foreground mb-4">
-              Quick Actions
-            </h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => navigate("/teacher/exams/new")}
-                className="flex w-full items-center gap-3 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                <Plus size={16} />
-                Create Exam
-              </button>
-              <button
-                onClick={() => navigate("/teacher/exams")}
-                className="flex w-full items-center gap-3 rounded-lg border border-border/50 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/60 transition-colors"
-              >
-                <Eye size={16} />
-                View Exams
-              </button>
-              <button
-                onClick={() => navigate("/teacher/classes")}
-                className="flex w-full items-center gap-3 rounded-lg border border-border/50 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/60 transition-colors"
-              >
-                <UserCog size={16} />
-                Manage Classes
-              </button>
+        <Card className="border-border/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Exams</p>
+                <p className="text-3xl font-bold text-foreground">
+                  {exams.length}
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10">
+                <GraduationCap className="h-6 w-6 text-accent" />
+              </div>
             </div>
-          </div>
-        </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {exams.reduce((s, e) => s + e.problem_count, 0)} total problems
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Students</p>
+                <p className="text-3xl font-bold text-foreground">
+                  {totalStudents}
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-500/10">
+                <Users className="h-6 w-6 text-green-500" />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Across {classes.length} classes
+            </p>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Quick Actions */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Card
+          className="border-border/50 cursor-pointer transition-all hover:bg-secondary/40"
+          onClick={() => navigate("/teacher/classes")}
+        >
+          <CardContent className="flex items-center justify-between p-5">
+            <div className="flex items-center gap-3">
+              <BookOpen className="h-5 w-5 text-primary" />
+              <div>
+                <p className="font-medium text-foreground">Manage Classes</p>
+                <p className="text-sm text-muted-foreground">
+                  Create and manage your classes
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+
+        <Card
+          className="border-border/50 cursor-pointer transition-all hover:bg-secondary/40"
+          onClick={() => navigate("/teacher/exams")}
+        >
+          <CardContent className="flex items-center justify-between p-5">
+            <div className="flex items-center gap-3">
+              <GraduationCap className="h-5 w-5 text-accent" />
+              <div>
+                <p className="font-medium text-foreground">Manage Exams</p>
+                <p className="text-sm text-muted-foreground">
+                  Create exams and view results
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Activity */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Activity className="h-5 w-5 text-primary" />
+            Recent Exam Results
+          </CardTitle>
+          <CardDescription>
+            Latest student submissions across your exams
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recentResults.length === 0 ||
+          recentResults.every((r) => r.results.length === 0) ? (
+            <p className="py-8 text-center text-muted-foreground">
+              No exam results yet. Create an exam and assign it to a class to
+              get started.
+            </p>
+          ) : (
+            <div className="space-y-6">
+              {recentResults
+                .filter((r) => r.results.length > 0)
+                .map((examResult) => (
+                  <div key={examResult.examId} className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-foreground">
+                        {examResult.examTitle}
+                      </h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-primary"
+                        onClick={() =>
+                          navigate(
+                            `/teacher/exams/${examResult.examId}/results`
+                          )
+                        }
+                      >
+                        View All <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead>Score</TableHead>
+                          <TableHead>Average</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {examResult.results.slice(0, 5).map((student) => (
+                          <TableRow key={student.user_id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{student.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {student.email}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">
+                                  {student.total_score}
+                                </span>
+                                <Progress
+                                  value={student.total_score}
+                                  className="h-1.5 w-16"
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  student.avg_score >= 70
+                                    ? "bg-green-500/15 text-green-500 border-green-500/30"
+                                    : student.avg_score >= 50
+                                      ? "bg-accent/15 text-accent border-accent/30"
+                                      : "bg-destructive/15 text-destructive border-destructive/30"
+                                }
+                              >
+                                {student.avg_score.toFixed(1)}%
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

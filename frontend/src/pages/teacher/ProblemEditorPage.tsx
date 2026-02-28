@@ -1,79 +1,145 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import Editor from "@monaco-editor/react";
 import {
-  getExam,
-  getExams,
+  ArrowLeft,
+  Save,
+  Plus,
+  Trash2,
+  Pencil,
+  Code,
+  FlaskConical,
+  Lightbulb,
+  Check,
+  X,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
+import {
+  getProblem,
   updateProblem,
   addTestCase,
   updateTestCase,
   deleteTestCase,
   type ProblemData,
   type TestCaseData,
-} from "../../api";
-import { ArrowLeft, Plus, Trash2, Save } from "lucide-react";
+} from "@/lib/api";
 
 export default function ProblemEditorPage() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [problem, setProblem] = useState<ProblemData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Problem fields
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState("medium");
+  const [difficulty, setDifficulty] = useState("easy");
   const [starterCode, setStarterCode] = useState("");
   const [hints, setHints] = useState("");
-  const [timeLimitMs, setTimeLimitMs] = useState(2000);
-  const [memoryLimitKb, setMemoryLimitKb] = useState(262144);
-  const [testCases, setTestCases] = useState<TestCaseData[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  useEffect(() => {
+  // Test case dialog
+  const [testCaseDialogOpen, setTestCaseDialogOpen] = useState(false);
+  const [addingTestCase, setAddingTestCase] = useState(false);
+  const [tcInput, setTcInput] = useState("");
+  const [tcExpectedOutput, setTcExpectedOutput] = useState("");
+  const [tcIsSample, setTcIsSample] = useState(true);
+  const [tcError, setTcError] = useState<string | null>(null);
+
+  // Edit test case
+  const [editingTc, setEditingTc] = useState<TestCaseData | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editTcInput, setEditTcInput] = useState("");
+  const [editTcExpectedOutput, setEditTcExpectedOutput] = useState("");
+  const [editTcIsSample, setEditTcIsSample] = useState(true);
+  const [updatingTc, setUpdatingTc] = useState(false);
+  const [editTcError, setEditTcError] = useState<string | null>(null);
+
+  // Deleting test case
+  const [deletingTcId, setDeletingTcId] = useState<number | null>(null);
+
+  const loadProblem = useCallback(async () => {
     if (!id) return;
-    // We need to find the problem's exam to load it with test cases
-    // We'll load the problem by finding it in its exam
-    loadProblem(Number(id));
+    try {
+      setLoading(true);
+      setError(null);
+      const problemData = await getProblem(Number(id));
+      setProblem(problemData);
+      setTitle(problemData.title);
+      setDescription(problemData.description);
+      setDifficulty(problemData.difficulty);
+      setStarterCode(problemData.starter_code || "");
+      setHints(problemData.hints || "");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load problem"
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
-  async function loadProblem(problemId: number) {
-    // We fetch via a direct approach - try to update with empty to get current state
-    // Actually, let's just search through the teacher's exams
-    try {
-      const exams = await getExams();
-      for (const exam of exams) {
-        const detail = await getExam(exam.id);
-        const found = detail.problems?.find((p) => p.id === problemId);
-        if (found) {
-          setProblem(found);
-          setTitle(found.title);
-          setDescription(found.description);
-          setDifficulty(found.difficulty);
-          setStarterCode(found.starter_code || "");
-          setHints(found.hints || "");
-          setTimeLimitMs(found.time_limit_ms);
-          setMemoryLimitKb(found.memory_limit_kb);
-          setTestCases(found.test_cases ?? []);
-          return;
-        }
-      }
-    } catch {
-      // Problem not found
-    }
-  }
+  useEffect(() => {
+    loadProblem();
+  }, [loadProblem]);
 
-  async function handleSave() {
-    if (!id) return;
-    setSaving(true);
+  async function handleSaveProblem() {
+    if (!id || !title.trim()) return;
     try {
-      await updateProblem(Number(id), {
-        title,
-        description,
+      setSaving(true);
+      setSaveSuccess(false);
+      const updated = await updateProblem(Number(id), {
+        title: title.trim(),
+        description: description.trim(),
         difficulty,
         starter_code: starterCode,
-        hints,
-        time_limit_ms: timeLimitMs,
-        memory_limit_kb: memoryLimitKb,
+        hints: hints.trim(),
       });
+      setProblem(updated);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save problem"
+      );
     } finally {
       setSaving(false);
     }
@@ -81,251 +147,455 @@ export default function ProblemEditorPage() {
 
   async function handleAddTestCase() {
     if (!id) return;
-    const tc = await addTestCase(Number(id), {
-      input: "",
-      expected_output: "",
-      is_sample: false,
-      order_index: testCases.length,
-    });
-    setTestCases([...testCases, tc]);
+    if (!tcInput.trim() && !tcExpectedOutput.trim()) {
+      setTcError("Input and expected output are required");
+      return;
+    }
+    try {
+      setAddingTestCase(true);
+      setTcError(null);
+      await addTestCase(Number(id), {
+        input: tcInput,
+        expected_output: tcExpectedOutput,
+        is_sample: tcIsSample,
+      });
+      setTestCaseDialogOpen(false);
+      setTcInput("");
+      setTcExpectedOutput("");
+      setTcIsSample(true);
+      // Reload problem to get updated test cases
+      const updated = await getProblem(Number(id));
+      setProblem(updated);
+    } catch (err) {
+      setTcError(
+        err instanceof Error ? err.message : "Failed to add test case"
+      );
+    } finally {
+      setAddingTestCase(false);
+    }
   }
 
-  async function handleUpdateTestCase(
-    tcId: number,
-    field: string,
-    value: string | boolean
-  ) {
-    const tc = testCases.find((t) => t.id === tcId);
-    if (!tc) return;
-    const updated = { ...tc, [field]: value };
-    await updateTestCase(tcId, updated);
-    setTestCases(testCases.map((t) => (t.id === tcId ? updated : t)));
+  function openEditTestCase(tc: TestCaseData) {
+    setEditingTc(tc);
+    setEditTcInput(tc.input);
+    setEditTcExpectedOutput(tc.expected_output);
+    setEditTcIsSample(tc.is_sample);
+    setEditTcError(null);
+    setEditDialogOpen(true);
+  }
+
+  async function handleUpdateTestCase() {
+    if (!editingTc || !id) return;
+    try {
+      setUpdatingTc(true);
+      setEditTcError(null);
+      await updateTestCase(editingTc.id, {
+        input: editTcInput,
+        expected_output: editTcExpectedOutput,
+        is_sample: editTcIsSample,
+      });
+      setEditDialogOpen(false);
+      setEditingTc(null);
+      const updated = await getProblem(Number(id));
+      setProblem(updated);
+    } catch (err) {
+      setEditTcError(
+        err instanceof Error ? err.message : "Failed to update test case"
+      );
+    } finally {
+      setUpdatingTc(false);
+    }
   }
 
   async function handleDeleteTestCase(tcId: number) {
-    await deleteTestCase(tcId);
-    setTestCases(testCases.filter((t) => t.id !== tcId));
+    if (!id) return;
+    try {
+      setDeletingTcId(tcId);
+      await deleteTestCase(tcId);
+      const updated = await getProblem(Number(id));
+      setProblem(updated);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete test case"
+      );
+    } finally {
+      setDeletingTcId(null);
+    }
   }
 
-  if (!problem) {
+  const difficultyColor = (d: string) => {
+    if (d === "easy")
+      return "bg-green-500/15 text-green-500 border-green-500/30";
+    if (d === "medium") return "bg-accent/15 text-accent border-accent/30";
+    return "bg-destructive/15 text-destructive border-destructive/30";
+  };
+
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Loading...
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
+  if (error && !problem) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <p className="text-destructive font-medium">{error}</p>
+        <Button variant="outline" onClick={() => navigate(-1)}>
+          Go Back
+        </Button>
+      </div>
+    );
+  }
+
+  if (!problem) return null;
+
+  const testCases: TestCaseData[] = problem.test_cases ?? [];
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-1"
+          onClick={() => navigate(`/teacher/exams/${problem.exam_id}`)}
         >
-          <ArrowLeft size={18} />
-        </button>
-        <h1 className="text-2xl font-bold text-foreground">Edit Problem</h1>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            Problem Editor
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            Edit problem details and manage test cases.
+          </p>
+        </div>
       </div>
 
-      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Title
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-lg border border-border bg-input px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+      {error && (
+        <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {/* Problem Details */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Pencil className="h-5 w-5 text-primary" />
+            Problem Details
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="prob-title">Title</Label>
+              <Input
+                id="prob-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prob-difficulty">Difficulty</Label>
+              <Select value={difficulty} onValueChange={setDifficulty}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="easy">Easy</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="hard">Hard</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="prob-desc">Description</Label>
+            <Textarea
+              id="prob-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={6}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Difficulty
-            </label>
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
-              className="w-full rounded-lg border border-border bg-input px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
+          <div className="space-y-2">
+            <Label htmlFor="prob-hints" className="flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-accent" />
+              Hints
+            </Label>
+            <Textarea
+              id="prob-hints"
+              placeholder="Add hints for students (one per line)..."
+              value={hints}
+              onChange={(e) => setHints(e.target.value)}
+              rows={3}
+            />
           </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
-            Description (Markdown)
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={6}
-            className="w-full rounded-lg border border-border bg-input px-4 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
-            Hints
-          </label>
-          <textarea
-            value={hints}
-            onChange={(e) => setHints(e.target.value)}
-            rows={2}
-            className="w-full rounded-lg border border-border bg-input px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-            placeholder="Optional hints for students..."
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">
-            Starter Code (JSON by language, e.g.{" "}
-            {`{"python3": "def solution():\\n    pass"}`})
-          </label>
-          <div className="h-48 rounded-lg overflow-hidden border border-border">
-            <Editor
-              theme="vs-dark"
-              language="json"
+          <div className="space-y-2">
+            <Label htmlFor="prob-starter" className="flex items-center gap-2">
+              <Code className="h-4 w-4 text-primary" />
+              Starter Code
+            </Label>
+            <Textarea
+              id="prob-starter"
               value={starterCode}
-              onChange={(v) => setStarterCode(v ?? "")}
-              options={{
-                fontSize: 13,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                padding: { top: 8 },
-              }}
+              onChange={(e) => setStarterCode(e.target.value)}
+              rows={8}
+              className="font-mono text-sm"
+              placeholder="function solution() {&#10;  // write your code here&#10;}"
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Time Limit (ms)
-            </label>
-            <input
-              type="number"
-              value={timeLimitMs}
-              onChange={(e) => setTimeLimitMs(Number(e.target.value))}
-              className="w-full rounded-lg border border-border bg-input px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Memory Limit (KB)
-            </label>
-            <input
-              type="number"
-              value={memoryLimitKb}
-              onChange={(e) => setMemoryLimitKb(Number(e.target.value))}
-              className="w-full rounded-lg border border-border bg-input px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        </div>
-
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          <Save size={16} />
-          {saving ? "Saving..." : "Save Problem"}
-        </button>
-      </div>
+          <Button
+            onClick={handleSaveProblem}
+            disabled={saving}
+            className="gap-2"
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : saveSuccess ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {saveSuccess ? "Saved!" : "Save Problem"}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Test Cases */}
-      <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-md p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-foreground">
-            Test Cases ({testCases.length})
-          </h3>
-          <button
-            onClick={handleAddTestCase}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus size={14} />
-            Add Test Case
-          </button>
-        </div>
-
-        {testCases.map((tc, i) => (
-          <div
-            key={tc.id}
-            className="rounded-lg border border-border bg-secondary/50 p-4 space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-foreground">
-                Test Case {i + 1}
-              </span>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={tc.is_sample}
-                    onChange={(e) =>
-                      handleUpdateTestCase(tc.id, "is_sample", e.target.checked)
-                    }
-                    className="rounded"
-                  />
-                  Sample (visible to students)
-                </label>
-                <button
-                  onClick={() => handleDeleteTestCase(tc.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FlaskConical className="h-5 w-5 text-primary" />
+                Test Cases
+              </CardTitle>
+              <CardDescription>
+                {testCases.length} test case{testCases.length !== 1 ? "s" : ""}
+              </CardDescription>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+
+            <Dialog
+              open={testCaseDialogOpen}
+              onOpenChange={setTestCaseDialogOpen}
+            >
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Test Case
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Test Case</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="tc-input">Input</Label>
+                    <Textarea
+                      id="tc-input"
+                      placeholder="Test input..."
+                      value={tcInput}
+                      onChange={(e) => setTcInput(e.target.value)}
+                      rows={3}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tc-expected">Expected Output</Label>
+                    <Textarea
+                      id="tc-expected"
+                      placeholder="Expected output..."
+                      value={tcExpectedOutput}
+                      onChange={(e) => setTcExpectedOutput(e.target.value)}
+                      rows={3}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-foreground text-sm">
+                        Sample Test Case
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Visible to students during the exam
+                      </p>
+                    </div>
+                    <Switch
+                      checked={tcIsSample}
+                      onCheckedChange={setTcIsSample}
+                    />
+                  </div>
+                  {tcError && (
+                    <p className="text-sm text-destructive">{tcError}</p>
+                  )}
+                  <Button
+                    onClick={handleAddTestCase}
+                    disabled={addingTestCase}
+                    className="w-full gap-2"
+                  >
+                    {addingTestCase && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    Add Test Case
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {testCases.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <FlaskConical className="h-10 w-10 text-muted-foreground" />
+              <p className="text-muted-foreground">
+                No test cases yet. Add test cases to validate student
+                submissions.
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">#</TableHead>
+                  <TableHead>Input</TableHead>
+                  <TableHead>Expected Output</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {testCases.map((tc, index) => (
+                  <TableRow key={tc.id}>
+                    <TableCell className="text-muted-foreground">
+                      {index + 1}
+                    </TableCell>
+                    <TableCell>
+                      <code className="text-xs font-mono bg-secondary rounded px-1.5 py-0.5 line-clamp-2">
+                        {tc.input}
+                      </code>
+                    </TableCell>
+                    <TableCell>
+                      <code className="text-xs font-mono bg-secondary rounded px-1.5 py-0.5 line-clamp-2">
+                        {tc.expected_output}
+                      </code>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          tc.is_sample
+                            ? "bg-green-500/15 text-green-500 border-green-500/30"
+                            : "bg-secondary text-muted-foreground border-border/50"
+                        }
+                      >
+                        {tc.is_sample ? "Sample" : "Hidden"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-primary"
+                          onClick={() => openEditTestCase(tc)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-destructive hover:text-destructive"
+                          disabled={deletingTcId === tc.id}
+                          onClick={() => handleDeleteTestCase(tc.id)}
+                        >
+                          {deletingTcId === tc.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Edit Test Case Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Test Case</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-tc-input">Input</Label>
+              <Textarea
+                id="edit-tc-input"
+                value={editTcInput}
+                onChange={(e) => setEditTcInput(e.target.value)}
+                rows={3}
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-tc-expected">Expected Output</Label>
+              <Textarea
+                id="edit-tc-expected"
+                value={editTcExpectedOutput}
+                onChange={(e) => setEditTcExpectedOutput(e.target.value)}
+                rows={3}
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="flex items-center justify-between">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">
-                  Input
-                </label>
-                <textarea
-                  value={tc.input}
-                  onChange={(e) =>
-                    handleUpdateTestCase(tc.id, "input", e.target.value)
-                  }
-                  onBlur={(e) =>
-                    handleUpdateTestCase(tc.id, "input", e.target.value)
-                  }
-                  rows={3}
-                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                />
+                <p className="font-medium text-foreground text-sm">
+                  Sample Test Case
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Visible to students during the exam
+                </p>
               </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">
-                  Expected Output
-                </label>
-                <textarea
-                  value={tc.expected_output}
-                  onChange={(e) =>
-                    handleUpdateTestCase(
-                      tc.id,
-                      "expected_output",
-                      e.target.value
-                    )
-                  }
-                  onBlur={(e) =>
-                    handleUpdateTestCase(
-                      tc.id,
-                      "expected_output",
-                      e.target.value
-                    )
-                  }
-                  rows={3}
-                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                />
-              </div>
+              <Switch
+                checked={editTcIsSample}
+                onCheckedChange={setEditTcIsSample}
+              />
+            </div>
+            {editTcError && (
+              <p className="text-sm text-destructive">{editTcError}</p>
+            )}
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateTestCase}
+                disabled={updatingTc}
+                className="gap-2"
+              >
+                {updatingTc && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save Changes
+              </Button>
             </div>
           </div>
-        ))}
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
