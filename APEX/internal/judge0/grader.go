@@ -1,0 +1,235 @@
+package judge0
+
+import (
+	"apex/internal/database"
+	"apex/internal/models"
+	"apex/internal/notification"
+	"encoding/json"
+	"fmt"
+	"log"
+	"strings"
+)
+
+func Grade(submissionID uint) {
+	var submission models.Submission
+	if err := database.DB.First(&submission, submissionID).Error; err != nil {
+		log.Printf("grading: submission %d not found: %v", submissionID, err)
+		return
+	}
+
+	database.DB.Model(&submission).Update("status", "running")
+
+	var testCases []models.TestCase
+	database.DB.Where("problem_id = ?", submission.ProblemID).Order("order_index asc").Find(&testCases)
+
+	if len(testCases) == 0 {
+		database.DB.Model(&submission).Updates(map[string]any{
+			"status": "accepted",
+			"score":  100.0,
+		})
+		return
+	}
+
+	passed := 0
+	total := len(testCases)
+	var maxTimeMs int
+	var maxMemoryKb int
+
+	for _, tc := range testCases {
+		result := RunCode(submission.Code, submission.Language, tc.Input)
+
+		actualOutput := strings.TrimSpace(result.Stdout)
+		expectedOutput := strings.TrimSpace(tc.ExpectedOutput)
+		isPassed := actualOutput == expectedOutput && result.StatusID == 3
+
+		if isPassed {
+			passed++
+		}
+
+		status := "accepted"
+		if !isPassed {
+			switch result.StatusID {
+			case 6:
+				status = "compilation_error"
+			case 5:
+				status = "time_limit_exceeded"
+			case 11:
+				status = "runtime_error"
+			default:
+				status = "wrong_answer"
+			}
+		}
+
+		// FIX: populate execution_time_ms and memory_kb on TestResult
+		tr := models.TestResult{
+			SubmissionID:    submission.ID,
+			TestCaseID:      tc.ID,
+			Passed:          isPassed,
+			ActualOutput:    actualOutput,
+			ExecutionTimeMs: result.TimeMs,
+			MemoryKb:        result.MemoryKb,
+			Status:          status,
+		}
+		database.DB.Create(&tr)
+
+		if result.TimeMs > maxTimeMs {
+			maxTimeMs = result.TimeMs
+		}
+		if result.MemoryKb > maxMemoryKb {
+			maxMemoryKb = result.MemoryKb
+		}
+	}
+
+	score := float64(passed) / float64(total) * 100.0
+	finalStatus := "wrong_answer"
+	if passed == total {
+		finalStatus = "accepted"
+	}
+
+	// FIX: set max time/memory on Submission record
+	database.DB.Model(&submission).Updates(map[string]any{
+		"status":            finalStatus,
+		"passed_count":      passed,
+		"total_count":       total,
+		"score":             score,
+		"execution_time_ms": maxTimeMs,
+		"memory_kb":         maxMemoryKb,
+	})
+
+	notification.Create(submission.UserID, "result",
+		"Submission Graded",
+		fmt.Sprintf("Your coding submission scored %.0f%% (%d/%d test cases passed)", score, passed, total),
+		"/dashboard/results",
+	)
+}
+
+func GradeMCQ(submissionID uint) {
+	var submission models.Submission
+	if err := database.DB.First(&submission, submissionID).Error; err != nil {
+		log.Printf("grading mcq: submission %d not found: %v", submissionID, err)
+		return
+	}
+
+	database.DB.Model(&submission).Update("status", "running")
+
+	var problem models.Problem
+	if err := database.DB.First(&problem, submission.ProblemID).Error; err != nil {
+		log.Printf("grading mcq: problem %d not found: %v", submission.ProblemID, err)
+		database.DB.Model(&submission).Update("status", "error")
+		return
+	}
+
+	var correctIDs []string
+	if err := json.Unmarshal([]byte(problem.CorrectOptionIDs), &correctIDs); err != nil {
+		log.Printf("grading mcq: failed to parse correct_option_ids: %v", err)
+		database.DB.Model(&submission).Update("status", "error")
+		return
+	}
+
+	var selectedIDs []string
+	if submission.SelectedOptions != "" {
+		if err := json.Unmarshal([]byte(submission.SelectedOptions), &selectedIDs); err != nil {
+			log.Printf("grading mcq: failed to parse selected_options: %v", err)
+			database.DB.Model(&submission).Update("status", "error")
+			return
+		}
+	}
+
+	correctSet := make(map[string]bool)
+	for _, id := range correctIDs {
+		correctSet[id] = true
+	}
+	selectedSet := make(map[string]bool)
+	for _, id := range selectedIDs {
+		selectedSet[id] = true
+	}
+
+	isCorrect := len(correctSet) == len(selectedSet)
+	if isCorrect {
+		for id := range correctSet {
+			if !selectedSet[id] {
+				isCorrect = false
+				break
+			}
+		}
+	}
+
+	score := 0.0
+	status := "wrong_answer"
+	if isCorrect {
+		score = 100.0
+		status = "accepted"
+	}
+
+	passedCount := 0
+	if isCorrect {
+		passedCount = 1
+	}
+
+	database.DB.Model(&submission).Updates(map[string]any{
+		"status":       status,
+		"score":        score,
+		"passed_count": passedCount,
+		"total_count":  1,
+	})
+
+	resultText := "incorrect"
+	if isCorrect {
+		resultText = "correct"
+	}
+	notification.Create(submission.UserID, "result",
+		"MCQ Graded",
+		fmt.Sprintf("Your MCQ answer was %s", resultText),
+		"/dashboard/results",
+	)
+}
+
+func GradeWritten(submissionID uint) {
+	var submission models.Submission
+	if err := database.DB.First(&submission, submissionID).Error; err != nil {
+		log.Printf("grading written: submission %d not found: %v", submissionID, err)
+		return
+	}
+
+	database.DB.Model(&submission).Updates(map[string]any{
+		"status": "pending_review",
+	})
+
+	notification.Create(submission.UserID, "submission",
+		"Written Answer Received",
+		"Your written answer has been submitted and is pending review.",
+		"/dashboard/results",
+	)
+}
+
+type TestCaseResult struct {
+	TestCaseID     uint   `json:"test_case_id"`
+	Input          string `json:"input"`
+	ExpectedOutput string `json:"expected_output"`
+	ActualOutput   string `json:"actual_output"`
+	Passed         bool   `json:"passed"`
+	Status         string `json:"status"`
+	TimeMs         int    `json:"time_ms"`
+	MemoryKb       int    `json:"memory_kb"`
+}
+
+func RunAgainstTestCases(code, language string, testCases []models.TestCase) []TestCaseResult {
+	results := make([]TestCaseResult, len(testCases))
+	for i, tc := range testCases {
+		result := RunCode(code, language, tc.Input)
+		actualOutput := strings.TrimSpace(result.Stdout)
+		expectedOutput := strings.TrimSpace(tc.ExpectedOutput)
+
+		results[i] = TestCaseResult{
+			TestCaseID:     tc.ID,
+			Input:          tc.Input,
+			ExpectedOutput: tc.ExpectedOutput,
+			ActualOutput:   actualOutput,
+			Passed:         actualOutput == expectedOutput && result.StatusID == 3,
+			Status:         "completed",
+			TimeMs:         result.TimeMs,
+			MemoryKb:       result.MemoryKb,
+		}
+	}
+	return results
+}
