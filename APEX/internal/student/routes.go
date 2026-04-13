@@ -12,6 +12,7 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 	{
 		s.POST("/classes/join", JoinClass)
 		s.GET("/classes", GetClasses)
+		s.GET("/classes/:id", GetClass)
 		s.GET("/exams", GetExams)
 		s.GET("/exams/:id", GetExam)
 		s.GET("/submissions", GetSubmissions)

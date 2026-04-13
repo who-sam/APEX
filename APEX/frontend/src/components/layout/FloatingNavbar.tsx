@@ -13,7 +13,10 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useNavigate } from "react-router-dom";
 import { useRole, useUser } from "@/contexts/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
 import { useNotifications } from "@/features/social/contexts/NotificationContext";
+import { useClasses, useStudentClasses } from "@/hooks/useClasses";
+import { useExams, useStudentExams } from "@/hooks/useExams";
 import { useIsMobile, useIsTablet } from "@/hooks/use-mobile";
 import { useTheme } from "next-themes";
 import { useState, useEffect, useRef } from "react";
@@ -38,13 +41,19 @@ const studentNavTabs = [
 export function FloatingNavbar() {
   const navigate = useNavigate();
   const { role, clearRole } = useRole();
-  const { name, email, profilePhoto, setUser } = useUser();
+  const { name, email } = useUser();
+  const { data: profileData } = useProfile();
+  const profilePhoto = profileData?.profile?.avatar_url || null;
   const { unreadCount } = useNotifications();
   const isMobile = useIsMobile();
   const isTablet = useIsTablet();
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark";
   const navTabs = role === "teacher" ? teacherNavTabs : studentNavTabs;
+  const { data: teacherClassesData } = useClasses();
+  const { data: studentClassesData } = useStudentClasses();
+  const { data: teacherExamsData } = useExams();
+  const { data: studentExamsData } = useStudentExams();
   const showHamburger = isMobile || isTablet;
   const showInlineNav = !isMobile && !isTablet;
   const [searchOpen, setSearchOpen] = useState(false);
@@ -70,11 +79,13 @@ export function FloatingNavbar() {
 
   const handleLogout = () => {
     clearRole();
-    setUser({ firstName: "", lastName: "", email: "" });
     navigate("/");
   };
 
   const toggleTheme = () => setTheme(isDark ? "light" : "dark");
+
+  const classes = role === "teacher" ? (teacherClassesData || []) : (studentClassesData || []);
+  const exams = role === "teacher" ? (teacherExamsData || []) : (studentExamsData || []);
 
   const searchItems = [
     // Pages
@@ -98,27 +109,20 @@ export function FloatingNavbar() {
     ...(role === "student" ? [
       { label: "Playground", url: "/dashboard/playground", icon: Code, category: "Pages" },
     ] : []),
-    // Courses
-    { label: "CS101 — Intro to Programming", url: "/dashboard/courses/APX-CS101", icon: BookOpen, category: "Courses" },
-    { label: "CS201 — Data Structures", url: "/dashboard/courses/APX-CS201", icon: BookOpen, category: "Courses" },
-    { label: "CS301 — Algorithms", url: "/dashboard/courses/APX-CS301", icon: BookOpen, category: "Courses" },
-    // Exams
-    ...(role === "teacher" ? [
-      { label: "Midterm Exam — CS101", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Quiz 3 — Linked Lists (CS201)", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Quiz 2 — Stacks & Queues (CS201)", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Quiz 1 — Arrays (CS201)", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Final Project Review — CS301", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Pop Quiz — Sorting (CS301)", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-    ] : [
-      { label: "JavaScript Fundamentals", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "HTML & Accessibility", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "React & TypeScript", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Data Structures & Algorithms", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "CSS & Responsive Design", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "Node.js Backend", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-      { label: "SQL & Database Design", url: "/dashboard/exams", icon: FileText, category: "Exams" },
-    ]),
+    // Dynamic courses from API
+    ...classes.map((c: any) => ({
+      label: c.name + (c.section ? ` — ${c.section}` : ""),
+      url: `/dashboard/courses/${c.id}`,
+      icon: BookOpen,
+      category: "Courses",
+    })),
+    // Dynamic exams from API
+    ...exams.map((e: any) => ({
+      label: e.title,
+      url: role === "teacher" ? `/dashboard/exam-preview/${e.id}` : `/dashboard/exam/${e.id}`,
+      icon: FileText,
+      category: "Exams",
+    })),
   ];
 
   const filtered = searchItems.filter((item) =>

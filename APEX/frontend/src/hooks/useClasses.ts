@@ -14,6 +14,14 @@ export function useCreateClass() {
   return useMutation({ mutationFn: api.createClass, onSuccess: () => qc.invalidateQueries({ queryKey: ["classes"] }) });
 }
 
+export function useUpdateClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; section?: string; cover_image?: string }) => api.updateClass(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["classes"] }),
+  });
+}
+
 export function useDeleteClass() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: api.deleteClass, onSuccess: () => qc.invalidateQueries({ queryKey: ["classes"] }) });
@@ -21,6 +29,10 @@ export function useDeleteClass() {
 
 export function useStudentClasses() {
   return useQuery({ queryKey: ["student-classes"], queryFn: api.getStudentClasses });
+}
+
+export function useStudentClass(id: number) {
+  return useQuery({ queryKey: ["student-class", id], queryFn: () => api.getStudentClass(id), enabled: !!id });
 }
 
 export function useJoinClass() {

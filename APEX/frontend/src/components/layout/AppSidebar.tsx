@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRole, useUser } from "@/contexts/AuthContext";
+import { useRole } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 
@@ -81,7 +81,6 @@ interface AppSidebarProps {
 
 export function AppSidebar({ mobile, onNavigate }: AppSidebarProps) {
   const { role, clearRole } = useRole();
-  const { setUser } = useUser();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark";
@@ -93,7 +92,6 @@ export function AppSidebar({ mobile, onNavigate }: AppSidebarProps) {
 
   const handleLogout = () => {
     clearRole();
-    setUser({ firstName: "", lastName: "", email: "" });
     navigate("/");
   };
 

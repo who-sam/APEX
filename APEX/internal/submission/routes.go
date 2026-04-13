@@ -8,5 +8,6 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 		subs.POST("", SubmitSolution)
 		subs.POST("/run", RunSolution)
 		subs.GET("/:id", GetSubmission)
+		subs.PUT("/:id/grade", GradeSubmission)
 	}
 }

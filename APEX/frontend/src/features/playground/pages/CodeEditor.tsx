@@ -16,73 +16,66 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTheme } from "next-themes";
+import { useExecuteCode } from "@/hooks/useExecuteCode";
 
 const LANGUAGES = [
-  { value: "python", label: "Python" },
+  { value: "python3", label: "Python" },
   { value: "javascript", label: "JavaScript" },
-  { value: "typescript", label: "TypeScript" },
-  { value: "java", label: "Java" },
   { value: "c", label: "C" },
   { value: "cpp", label: "C++" },
 ];
 
 const DEFAULT_CODE: Record<string, string> = {
-  python: `# Write your code here\nprint("Hello, World!")`,
+  python3: `# Write your code here\nprint("Hello, World!")`,
   javascript: `// Write your code here\nconsole.log("Hello, World!");`,
-  typescript: `// Write your code here\nconsole.log("Hello, World!");`,
-  java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`,
   c: `#include <stdio.h>\n\nint main() {\n    printf("Hello, World!\\n");\n    return 0;\n}`,
   cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`,
 };
 
 export default function CodeEditorPage() {
   const { theme } = useTheme();
-  const [language, setLanguage] = useState("python");
-  const [code, setCode] = useState(DEFAULT_CODE["python"]);
+  const [language, setLanguage] = useState("python3");
+  const [code, setCode] = useState(DEFAULT_CODE["python3"]);
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
   const [codeStore, setCodeStore] = useState<Record<string, string>>({ ...DEFAULT_CODE });
 
+  const executeMutation = useExecuteCode();
+
   const handleLanguageChange = (lang: string) => {
-    // Save current code
     setCodeStore((prev) => ({ ...prev, [language]: code }));
     setLanguage(lang);
     setCode(codeStore[lang] || DEFAULT_CODE[lang] || "");
   };
 
   const handleRun = useCallback(() => {
-    setIsRunning(true);
     setOutput("");
-    // Mock compilation/execution
-    setTimeout(() => {
-      const lines: string[] = [];
-      lines.push(`[${LANGUAGES.find(l => l.value === language)?.label}] Compiling...`);
-      lines.push(`[${LANGUAGES.find(l => l.value === language)?.label}] Running...`);
-      lines.push("");
-
-      // Simple mock output based on language
-      if (code.includes("Hello, World") || code.includes("Hello, World!")) {
-        lines.push("Hello, World!");
-      } else if (code.includes("print") || code.includes("console.log") || code.includes("cout") || code.includes("printf") || code.includes("println")) {
-        lines.push("Program executed successfully.");
-      } else {
-        lines.push("Program executed with no output.");
+    executeMutation.mutate(
+      { language, code, stdin: input || undefined },
+      {
+        onSuccess: (data) => {
+          const lines: string[] = [];
+          if (data.stdout) lines.push(data.stdout);
+          if (data.stderr) {
+            lines.push("");
+            lines.push("--- stderr ---");
+            lines.push(data.stderr);
+          }
+          if (data.compile_output) {
+            lines.push("");
+            lines.push("--- Compilation Output ---");
+            lines.push(data.compile_output);
+          }
+          lines.push("");
+          lines.push(`Process finished | Time: ${data.time_ms ?? 0}ms | Memory: ${data.memory_kb ? Math.round(data.memory_kb / 1024) + "MB" : "N/A"}`);
+          setOutput(lines.join("\n"));
+        },
+        onError: (err: any) => {
+          setOutput(`Error: ${err.message || "Execution failed"}`);
+        },
       }
-
-      if (input.trim()) {
-        lines.push("");
-        lines.push(`--- Input received (${input.split("\n").length} line(s)) ---`);
-      }
-
-      lines.push("");
-      lines.push(`Process finished with exit code 0`);
-      lines.push(`Execution time: ${Math.floor(Math.random() * 50 + 5)}ms | Memory: ${Math.floor(Math.random() * 5 + 2)}MB`);
-
-      setOutput(lines.join("\n"));
-      setIsRunning(false);
-    }, 1200);
-  }, [code, input, language]);
+    );
+  }, [code, input, language, executeMutation]);
 
   // Ctrl+Enter to run
   useEffect(() => {
@@ -95,6 +88,8 @@ export default function CodeEditorPage() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleRun]);
+
+  const isRunning = executeMutation.isPending;
 
   return (
     <div className="h-[calc(100vh-5.5rem)] flex flex-col gap-3">
@@ -149,7 +144,7 @@ export default function CodeEditorPage() {
             <div className="flex-1">
               <Editor
                 height="100%"
-                language={language === "cpp" ? "cpp" : language}
+                language={language === "cpp" ? "cpp" : language === "python3" ? "python" : language}
                 value={code}
                 onChange={(v) => setCode(v || "")}
                 theme={theme === "dark" ? "vs-dark" : "light"}

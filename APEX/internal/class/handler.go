@@ -100,6 +100,47 @@ func GetClass(c *gin.Context) {
 	})
 }
 
+type updateClassRequest struct {
+	Name       *string `json:"name"`
+	Section    *string `json:"section"`
+	CoverImage *string `json:"cover_image"`
+}
+
+func UpdateClass(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+	classID := c.Param("id")
+
+	var class models.Class
+	if err := database.DB.Where("id = ? AND teacher_id = ?", classID, teacherID).First(&class).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+
+	var req updateClassRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Section != nil {
+		updates["section"] = *req.Section
+	}
+	if req.CoverImage != nil {
+		updates["cover_image"] = *req.CoverImage
+	}
+
+	if len(updates) > 0 {
+		database.DB.Model(&class).Updates(updates)
+	}
+
+	database.DB.First(&class, class.ID)
+	c.JSON(http.StatusOK, class)
+}
+
 func DeleteClass(c *gin.Context) {
 	teacherID := c.GetUint("user_id")
 	classID := c.Param("id")

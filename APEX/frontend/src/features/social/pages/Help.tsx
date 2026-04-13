@@ -1,7 +1,7 @@
-import { HelpCircle, BookOpen, MessageCircle, FileText, ExternalLink } from "lucide-react";
+import { HelpCircle, BookOpen, MessageCircle, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 import {
   Accordion,
   AccordionContent,
@@ -25,7 +25,6 @@ const resources = [
 ];
 
 export default function HelpPage() {
-  const { toast } = useToast();
   return (
     <div className="space-y-6">
       <div>
@@ -67,10 +66,9 @@ export default function HelpPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {resources.map((r, i) => (
-                <button
+                <div
                   key={i}
-                  onClick={() => toast({ title: "Coming soon", description: `${r.title} documentation is coming soon.` })}
-                  className="flex items-center gap-3 rounded-xl border border-border/50 bg-secondary/20 p-3 hover:bg-secondary/40 transition-colors cursor-pointer w-full text-left"
+                  className="flex items-center gap-3 rounded-xl border border-border/50 bg-secondary/20 p-3 opacity-60"
                 >
                   <div className="rounded-lg bg-primary/10 p-2">
                     <r.icon className="h-4 w-4 text-primary" />
@@ -79,8 +77,8 @@ export default function HelpPage() {
                     <p className="text-sm font-medium text-foreground">{r.title}</p>
                     <p className="text-xs text-muted-foreground">{r.desc}</p>
                   </div>
-                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                </button>
+                  <Badge variant="secondary" className="text-[10px]">Soon</Badge>
+                </div>
               ))}
             </CardContent>
           </Card>

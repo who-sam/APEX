@@ -11,35 +11,77 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { useUser, useRole } from "@/contexts/AuthContext";
+import { useProfile, useUpdateProfile, useChangePassword } from "@/hooks/useProfile";
 import { useTheme } from "next-themes";
 import { Badge } from "@/components/ui/badge";
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const { firstName, middleName, lastName, studentId, email, profilePhoto, setUser, setProfilePhoto } = useUser();
+  const { firstName, middleName, lastName, studentId, email } = useUser();
   const { role } = useRole();
   const { theme, setTheme } = useTheme();
+  const { data: profileData } = useProfile();
+  const updateProfileMutation = useUpdateProfile();
+  const changePasswordMutation = useChangePassword();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [profile, setProfile] = useState({ firstName, middleName, lastName, email, bio: "Full-stack developer passionate about clean code." });
-  const [notifications, setNotifications] = useState(() => {
-    const stored = localStorage.getItem("apex-notification-prefs");
-    return stored ? JSON.parse(stored) : { email: true, push: true, examReminders: true, results: false, marketing: false };
-  });
+  const profilePhoto = profileData?.profile?.avatar_url || null;
+  const [profile, setProfile] = useState({ firstName, middleName, lastName, email, bio: "" });
+  const [notifications, setNotifications] = useState({ email: true, push: true, examReminders: true, results: false });
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [originalProfile, setOriginalProfile] = useState(profile);
+  const [originalNotifications, setOriginalNotifications] = useState(notifications);
 
-  const handleSave = () => {
-    setUser({ firstName: profile.firstName, middleName: profile.middleName, lastName: profile.lastName, email: profile.email, studentId });
-    toast({ title: "Settings saved", description: "Your profile has been updated." });
+  // Load bio + notification prefs from API once profile data arrives
+  if (profileData && !profileLoaded) {
+    const prof = profileData.profile || {};
+    const loadedProfile = { firstName, middleName, lastName, email, bio: prof.bio || "" };
+    setProfile(loadedProfile);
+    setOriginalProfile(loadedProfile);
+    const loadedNotifications = {
+      email: prof.notify_email ?? true,
+      push: prof.notify_push ?? true,
+      examReminders: prof.notify_exam_reminders ?? true,
+      results: prof.notify_results ?? false,
+    };
+    setNotifications(loadedNotifications);
+    setOriginalNotifications(loadedNotifications);
+    setProfileLoaded(true);
+  }
+
+  const isProfileDirty = JSON.stringify(profile) !== JSON.stringify(originalProfile);
+  const isNotificationsDirty = JSON.stringify(notifications) !== JSON.stringify(originalNotifications);
+  const isPasswordDirty = currentPassword !== "" || newPassword !== "" || confirmPassword !== "";
+
+  const handleSave = async () => {
+    const fullName = [profile.firstName, profile.middleName, profile.lastName].filter(Boolean).join(" ");
+    try {
+      await updateProfileMutation.mutateAsync({ name: fullName, bio: profile.bio });
+      setOriginalProfile(profile);
+      toast({ title: "Settings saved", description: "Your profile has been updated." });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
   };
 
-  const handleSaveNotifications = () => {
-    localStorage.setItem("apex-notification-prefs", JSON.stringify(notifications));
-    toast({ title: "Preferences saved", description: "Your notification preferences have been updated." });
+  const handleSaveNotifications = async () => {
+    try {
+      await updateProfileMutation.mutateAsync({
+        notify_email: notifications.email,
+        notify_push: notifications.push,
+        notify_exam_reminders: notifications.examReminders,
+        notify_results: notifications.results,
+      });
+      setOriginalNotifications(notifications);
+      toast({ title: "Preferences saved", description: "Your notification preferences have been updated." });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
   };
 
-  const handlePasswordUpdate = () => {
+  const handlePasswordUpdate = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast({ title: "Error", description: "Please fill in all password fields.", variant: "destructive" });
       return;
@@ -52,10 +94,15 @@ export default function SettingsPage() {
       toast({ title: "Error", description: "New password and confirmation do not match.", variant: "destructive" });
       return;
     }
-    toast({ title: "Password updated", description: "Your password has been changed successfully." });
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
+    try {
+      await changePasswordMutation.mutateAsync({ current_password: currentPassword, new_password: newPassword });
+      toast({ title: "Password updated", description: "Your password has been changed successfully." });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -101,7 +148,7 @@ export default function SettingsPage() {
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       if (file.size > 2 * 1024 * 1024) {
@@ -109,9 +156,14 @@ export default function SettingsPage() {
                         return;
                       }
                       const reader = new FileReader();
-                      reader.onload = () => {
-                        setProfilePhoto(reader.result as string);
-                        toast({ title: "Photo updated", description: "Your profile photo has been changed." });
+                      reader.onload = async () => {
+                        const dataUrl = reader.result as string;
+                        try {
+                          await updateProfileMutation.mutateAsync({ avatar_url: dataUrl });
+                          toast({ title: "Photo updated", description: "Your profile photo has been changed." });
+                        } catch (err: any) {
+                          toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+                        }
                       };
                       reader.readAsDataURL(file);
                       e.target.value = "";
@@ -124,7 +176,7 @@ export default function SettingsPage() {
                   <div className="flex gap-2 mt-1">
                     <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>Upload</Button>
                     {profilePhoto && (
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setProfilePhoto(""); toast({ title: "Photo removed" }); }}>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={async () => { try { await updateProfileMutation.mutateAsync({ avatar_url: "" }); toast({ title: "Photo removed" }); } catch {} }}>
                         <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
                       </Button>
                     )}
@@ -162,7 +214,7 @@ export default function SettingsPage() {
                 <Label htmlFor="bio">Bio</Label>
                 <Textarea id="bio" value={profile.bio} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} rows={3} />
               </div>
-              <Button onClick={handleSave} className="gap-2">
+              <Button onClick={handleSave} disabled={!isProfileDirty} className="gap-2">
                 <Settings className="h-4 w-4" /> Save Changes
               </Button>
             </CardContent>
@@ -181,7 +233,6 @@ export default function SettingsPage() {
                 { key: "push" as const, label: "Push Notifications", desc: "Browser push notifications" },
                 { key: "examReminders" as const, label: "Exam Reminders", desc: "Get reminded before upcoming exams" },
                 { key: "results" as const, label: "Result Alerts", desc: "Notify when results are published" },
-                { key: "marketing" as const, label: "Marketing Emails", desc: "Tips, product updates, and offers" },
               ].map((item) => (
                 <div key={item.key} className="flex items-center justify-between">
                   <div>
@@ -195,7 +246,7 @@ export default function SettingsPage() {
                 </div>
               ))}
               <Separator />
-              <Button onClick={handleSaveNotifications}>Save Preferences</Button>
+              <Button onClick={handleSaveNotifications} disabled={!isNotificationsDirty}>Save Preferences</Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -242,7 +293,7 @@ export default function SettingsPage() {
                   <Input id="confirm-pw" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                 </div>
               </div>
-              <Button onClick={handlePasswordUpdate}>Update Password</Button>
+              <Button onClick={handlePasswordUpdate} disabled={!isPasswordDirty}>Update Password</Button>
             </CardContent>
           </Card>
         </TabsContent>

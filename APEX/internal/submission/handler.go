@@ -135,6 +135,45 @@ func RunSolution(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
+type gradeRequest struct {
+	Score  float64 `json:"score" binding:"required"`
+	Status string  `json:"status" binding:"required"`
+}
+
+func GradeSubmission(c *gin.Context) {
+	submissionID := c.Param("id")
+
+	var req gradeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "score and status are required"})
+		return
+	}
+
+	var sub models.Submission
+	if err := database.DB.First(&sub, submissionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "submission not found"})
+		return
+	}
+
+	sub.Score = req.Score
+	sub.Status = req.Status
+	sub.PassedCount = int(req.Score)
+	sub.TotalCount = 100
+
+	if err := database.DB.Save(&sub).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update submission"})
+		return
+	}
+
+	notification.Create(sub.UserID, "result",
+		"Submission Graded",
+		"Your written submission has been graded.",
+		"/dashboard/results",
+	)
+
+	c.JSON(http.StatusOK, sub)
+}
+
 func GetSubmission(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	submissionID := c.Param("id")

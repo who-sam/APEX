@@ -78,6 +78,36 @@ func GetClasses(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func GetClass(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	classID := c.Param("id")
+
+	var member models.ClassMember
+	if err := database.DB.Where("class_id = ? AND user_id = ?", classID, userID).First(&member).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+
+	var class models.Class
+	if err := database.DB.First(&class, member.ClassID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+
+	var count int64
+	database.DB.Model(&models.ClassMember{}).Where("class_id = ?", class.ID).Count(&count)
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":           class.ID,
+		"name":         class.Name,
+		"section":      class.Section,
+		"invite_code":  class.InviteCode,
+		"cover_image":  class.CoverImage,
+		"member_count": count,
+		"created_at":   class.CreatedAt,
+	})
+}
+
 func GetExams(c *gin.Context) {
 	userID := c.GetUint("user_id")
 

@@ -41,3 +41,7 @@ export function useStudentExams() {
 export function useStudentExam(id: number) {
   return useQuery({ queryKey: ["student-exam", id], queryFn: () => api.getStudentExam(id), enabled: !!id });
 }
+
+export function useExamResults(examId: number) {
+  return useQuery({ queryKey: ["exam-results", examId], queryFn: () => api.getExamResults(examId), enabled: !!examId });
+}

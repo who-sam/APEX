@@ -13,6 +13,7 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 		classes.POST("", CreateClass)
 		classes.GET("", GetClasses)
 		classes.GET("/:id", GetClass)
+		classes.PUT("/:id", UpdateClass)
 		classes.DELETE("/:id", DeleteClass)
 		classes.GET("/:id/stats", GetClassStats)
 	}

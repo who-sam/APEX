@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -7,37 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Medal, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useUser } from "@/contexts/AuthContext";
-import type { LeaderboardEntry } from "@/features/results/types/leaderboard";
-
-interface ExtendedEntry extends LeaderboardEntry {
-  class: string;
-  weekScore: number;
-  monthScore: number;
-}
-
-const classEntries: ExtendedEntry[] = [
-  { rank: 1, studentName: "Alice Chen", avatar: "AC", score: 96, examsCompleted: 24, streak: 30, trend: "up", class: "cs201", weekScore: 98, monthScore: 97 },
-  { rank: 2, studentName: "Bob Kumar", avatar: "BK", score: 93, examsCompleted: 22, streak: 18, trend: "up", class: "cs201", weekScore: 90, monthScore: 92 },
-  { rank: 3, studentName: "Carla Ruiz", avatar: "CR", score: 91, examsCompleted: 23, streak: 25, trend: "same", class: "cs201", weekScore: 85, monthScore: 89 },
-  { rank: 4, studentName: "John Doe", avatar: "JD", score: 88, examsCompleted: 20, streak: 12, trend: "up", class: "cs201", weekScore: 92, monthScore: 88 },
-  { rank: 5, studentName: "Emily Park", avatar: "EP", score: 85, examsCompleted: 21, streak: 8, trend: "down", class: "cs301", weekScore: 80, monthScore: 83 },
-  { rank: 6, studentName: "Farhan Ali", avatar: "FA", score: 82, examsCompleted: 19, streak: 5, trend: "same", class: "cs301", weekScore: 78, monthScore: 80 },
-  { rank: 7, studentName: "Grace Liu", avatar: "GL", score: 79, examsCompleted: 18, streak: 3, trend: "down", class: "cs101", weekScore: 75, monthScore: 77 },
-  { rank: 8, studentName: "Henry Wu", avatar: "HW", score: 76, examsCompleted: 17, streak: 15, trend: "up", class: "cs101", weekScore: 82, monthScore: 78 },
-];
-
-const globalEntries: ExtendedEntry[] = [
-  { rank: 1, studentName: "Mei Tanaka", avatar: "MT", score: 99, examsCompleted: 40, streak: 60, trend: "up", class: "all", weekScore: 100, monthScore: 99 },
-  { rank: 2, studentName: "Alice Chen", avatar: "AC", score: 96, examsCompleted: 24, streak: 30, trend: "up", class: "all", weekScore: 98, monthScore: 97 },
-  { rank: 3, studentName: "Raj Patel", avatar: "RP", score: 95, examsCompleted: 35, streak: 45, trend: "same", class: "all", weekScore: 93, monthScore: 94 },
-  { rank: 4, studentName: "Bob Kumar", avatar: "BK", score: 93, examsCompleted: 22, streak: 18, trend: "up", class: "all", weekScore: 90, monthScore: 92 },
-  { rank: 5, studentName: "Carla Ruiz", avatar: "CR", score: 91, examsCompleted: 23, streak: 25, trend: "down", class: "all", weekScore: 85, monthScore: 89 },
-  { rank: 6, studentName: "John Doe", avatar: "JD", score: 88, examsCompleted: 20, streak: 12, trend: "up", class: "all", weekScore: 92, monthScore: 88 },
-  { rank: 7, studentName: "Emily Park", avatar: "EP", score: 85, examsCompleted: 21, streak: 8, trend: "down", class: "all", weekScore: 80, monthScore: 83 },
-  { rank: 8, studentName: "Farhan Ali", avatar: "FA", score: 82, examsCompleted: 19, streak: 5, trend: "same", class: "all", weekScore: 78, monthScore: 80 },
-];
+import { useClassLeaderboard, useGlobalLeaderboard } from "@/hooks/useLeaderboard";
+import { useStudentClasses } from "@/hooks/useClasses";
+import { PageSkeleton } from "@/components/PageSkeleton";
+import { EmptyState } from "@/components/EmptyState";
 
 const medalColors = ["text-yellow-500", "text-gray-400", "text-amber-700"];
+
+function getInitials(name: string) {
+  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+}
 
 function TrendIcon({ trend }: { trend: string }) {
   if (trend === "up") return <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-500" />;
@@ -45,14 +24,7 @@ function TrendIcon({ trend }: { trend: string }) {
   return <Minus className="h-4 w-4 text-muted-foreground" />;
 }
 
-function filterAndSort(entries: ExtendedEntry[], classFilter: string, timeFilter: string, currentUserName: string) {
-  let filtered = classFilter === "all" ? entries : entries.filter((e) => e.class === classFilter || e.class === "all");
-  const scoreKey = timeFilter === "week" ? "weekScore" : timeFilter === "month" ? "monthScore" : "score";
-  const sorted = [...filtered].sort((a, b) => b[scoreKey] - a[scoreKey]);
-  return sorted.map((e, i) => ({ ...e, rank: i + 1, displayScore: e[scoreKey], isCurrentUser: e.studentName === currentUserName }));
-}
-
-function Podium({ entries }: { entries: (ExtendedEntry & { displayScore: number })[] }) {
+function Podium({ entries }: { entries: any[] }) {
   const top3 = entries.slice(0, 3);
   const order = [1, 0, 2];
   return (
@@ -62,14 +34,16 @@ function Podium({ entries }: { entries: (ExtendedEntry & { displayScore: number 
         if (!e) return null;
         const isFirst = idx === 0;
         return (
-          <Card key={e.rank} className={`bg-card/80 backdrop-blur-md border-border/50 flex flex-col items-center p-4 ${isFirst ? "pb-8 -mt-4" : "pb-6"} w-36`}>
+          <Card key={e.rank || idx} className={`bg-card/80 backdrop-blur-md border-border/50 flex flex-col items-center p-4 ${isFirst ? "pb-8 -mt-4" : "pb-6"} w-36`}>
             <Medal className={`h-6 w-6 mb-2 ${medalColors[idx]}`} />
             <Avatar className="h-12 w-12 mb-2">
-              <AvatarFallback className="bg-primary/20 font-semibold text-primary">{e.avatar}</AvatarFallback>
+              <AvatarFallback className="bg-primary/20 font-semibold text-primary">
+                {getInitials(e.student_name || e.name || "?")}
+              </AvatarFallback>
             </Avatar>
-            <p className="font-semibold text-sm text-foreground text-center">{e.studentName}</p>
-            <p className="text-lg font-bold text-primary mt-1">{e.displayScore}%</p>
-            {e.isCurrentUser && <Badge className="mt-1 text-xs">You</Badge>}
+            <p className="font-semibold text-sm text-foreground text-center">{e.student_name || e.name}</p>
+            <p className="text-lg font-bold text-primary mt-1">{e.score || e.avg_score || 0}%</p>
+            {e.is_current_user && <Badge className="mt-1 text-xs">You</Badge>}
           </Card>
         );
       })}
@@ -77,7 +51,7 @@ function Podium({ entries }: { entries: (ExtendedEntry & { displayScore: number 
   );
 }
 
-function RankedTable({ entries }: { entries: (ExtendedEntry & { displayScore: number })[] }) {
+function RankedTable({ entries, userName }: { entries: any[]; userName: string }) {
   return (
     <Card className="bg-card/80 backdrop-blur-md border-border/50">
       <CardContent className="pt-6">
@@ -93,26 +67,32 @@ function RankedTable({ entries }: { entries: (ExtendedEntry & { displayScore: nu
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entries.map((e) => (
-              <TableRow key={e.studentName + e.rank} className={e.isCurrentUser ? "border border-primary/30 bg-primary/5" : ""}>
-                <TableCell className="font-bold text-foreground">
-                  {e.rank <= 3 ? <Medal className={`h-4 w-4 inline ${medalColors[e.rank - 1]}`} /> : `#${e.rank}`}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback className="bg-primary/20 text-xs font-semibold text-primary">{e.avatar}</AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium text-foreground">{e.studentName}</span>
-                    {e.isCurrentUser && <Badge variant="secondary" className="text-xs">You</Badge>}
-                  </div>
-                </TableCell>
-                <TableCell className="font-semibold text-foreground">{e.displayScore}%</TableCell>
-                <TableCell className="text-muted-foreground">{e.examsCompleted}</TableCell>
-                <TableCell className="text-muted-foreground">{e.streak}🔥</TableCell>
-                <TableCell><TrendIcon trend={e.trend} /></TableCell>
-              </TableRow>
-            ))}
+            {entries.map((e: any, i: number) => {
+              const rank = e.rank || i + 1;
+              const isCurrentUser = e.is_current_user || (e.student_name || e.name) === userName;
+              return (
+                <TableRow key={e.user_id || i} className={isCurrentUser ? "border border-primary/30 bg-primary/5" : ""}>
+                  <TableCell className="font-bold text-foreground">
+                    {rank <= 3 ? <Medal className={`h-4 w-4 inline ${medalColors[rank - 1]}`} /> : `#${rank}`}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-7 w-7">
+                        <AvatarFallback className="bg-primary/20 text-xs font-semibold text-primary">
+                          {getInitials(e.student_name || e.name || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium text-foreground">{e.student_name || e.name}</span>
+                      {isCurrentUser && <Badge variant="secondary" className="text-xs">You</Badge>}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-semibold text-foreground">{e.score || e.avg_score || 0}%</TableCell>
+                  <TableCell className="text-muted-foreground">{e.exams_completed || e.exams || 0}</TableCell>
+                  <TableCell className="text-muted-foreground">{e.streak || 0}</TableCell>
+                  <TableCell><TrendIcon trend={e.trend || "same"} /></TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </CardContent>
@@ -122,12 +102,22 @@ function RankedTable({ entries }: { entries: (ExtendedEntry & { displayScore: nu
 
 export default function Leaderboard() {
   const { name: userName } = useUser();
-  const [selectedClass, setSelectedClass] = useState("cs201");
+  const { data: classes } = useStudentClasses();
+  const [selectedClassId, setSelectedClassId] = useState<number>(0);
   const [classTimeFilter, setClassTimeFilter] = useState("all");
   const [globalTimeFilter, setGlobalTimeFilter] = useState("all");
 
-  const filteredClass = useMemo(() => filterAndSort(classEntries, selectedClass, classTimeFilter, userName), [selectedClass, classTimeFilter, userName]);
-  const filteredGlobal = useMemo(() => filterAndSort(globalEntries, "all", globalTimeFilter, userName), [globalTimeFilter, userName]);
+  const { data: classLeaderboard, isLoading: classLoading } = useClassLeaderboard(selectedClassId, classTimeFilter);
+  const { data: globalLeaderboard, isLoading: globalLoading } = useGlobalLeaderboard(globalTimeFilter);
+
+  const classList = classes || [];
+  const classEntries = classLeaderboard || [];
+  const globalEntries = globalLeaderboard || [];
+
+  // Auto-select first class
+  if (selectedClassId === 0 && classList.length > 0) {
+    setSelectedClassId(classList[0].id);
+  }
 
   return (
     <div className="space-y-6">
@@ -141,12 +131,12 @@ export default function Leaderboard() {
 
         <TabsContent value="class" className="mt-4 space-y-4">
           <div className="flex items-center gap-4">
-            <Select value={selectedClass} onValueChange={setSelectedClass}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <Select value={String(selectedClassId)} onValueChange={(v) => setSelectedClassId(Number(v))}>
+              <SelectTrigger className="w-48"><SelectValue placeholder="Select class" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="cs201">CS201 - Data Structures</SelectItem>
-                <SelectItem value="cs301">CS301 - Algorithms</SelectItem>
-                <SelectItem value="cs101">CS101 - Intro to CS</SelectItem>
+                {classList.map((c: any) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <div className="flex gap-1 rounded-full border border-border bg-card/80 px-1 py-0.5 backdrop-blur-md">
@@ -161,8 +151,16 @@ export default function Leaderboard() {
               ))}
             </div>
           </div>
-          <Podium entries={filteredClass} />
-          <RankedTable entries={filteredClass} />
+          {classLoading ? (
+            <PageSkeleton rows={5} />
+          ) : classEntries.length === 0 ? (
+            <EmptyState icon={Medal} title="No data" description="No leaderboard entries for this class yet." />
+          ) : (
+            <>
+              <Podium entries={classEntries} />
+              <RankedTable entries={classEntries} userName={userName} />
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="global" className="mt-4 space-y-4">
@@ -177,8 +175,16 @@ export default function Leaderboard() {
               </button>
             ))}
           </div>
-          <Podium entries={filteredGlobal} />
-          <RankedTable entries={filteredGlobal} />
+          {globalLoading ? (
+            <PageSkeleton rows={5} />
+          ) : globalEntries.length === 0 ? (
+            <EmptyState icon={Medal} title="No data" description="No global leaderboard entries yet." />
+          ) : (
+            <>
+              <Podium entries={globalEntries} />
+              <RankedTable entries={globalEntries} userName={userName} />
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </div>

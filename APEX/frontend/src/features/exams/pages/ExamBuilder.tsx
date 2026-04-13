@@ -11,24 +11,22 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Save, CalendarIcon, Search, CheckSquare, FileText, Code2, ArrowLeft } from "lucide-react";
+import { Save, CalendarIcon, Search, CheckSquare, FileText, Code2, ArrowLeft, Loader2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { getQuestions as getBankQuestions, addQuestion as addBankQuestion, type BankQuestion } from "@/features/exams/lib/questionBankStore";
+import { useClasses } from "@/hooks/useClasses";
+import { useCreateExam, useAssignExam } from "@/hooks/useExams";
+import { useAllProblems, useAddProblem } from "@/hooks/useProblems";
+import { PageSkeleton } from "@/components/PageSkeleton";
+import { ErrorState } from "@/components/ErrorState";
 import type { Question, QuestionType, MCQQuestion, WrittenQuestion, CodingQuestion } from "@/features/exams/types/exam";
 import QuestionTypeDialog from "@/features/exams/components/QuestionTypeDialog";
 import QuestionList from "@/features/exams/components/QuestionList";
 import MCQEditor from "@/features/exams/components/MCQEditor";
 import WrittenEditor from "@/features/exams/components/WrittenEditor";
 import CodingEditorComponent from "@/features/exams/components/CodingEditor";
-
-const mockCourses = [
-  { id: "APX-CS101", name: "CS101 — Intro to Programming" },
-  { id: "APX-CS201", name: "CS201 — Data Structures" },
-  { id: "APX-CS301", name: "CS301 — Algorithms" },
-];
 
 const typeIcons: Record<string, React.ElementType> = {
   mcq: CheckSquare,
@@ -63,15 +61,29 @@ function createQuestion(type: QuestionType): Question {
   }
 }
 
-function bankToExamQuestion(bq: BankQuestion): Question {
-  const base = { id: crypto.randomUUID(), points: bq.points, difficulty: "medium" as const, text: bq.text, imageUrl: "" };
-  switch (bq.type) {
-    case "mcq":
-      return { ...base, type: "mcq", options: [{ id: crypto.randomUUID(), text: "" }, { id: crypto.randomUUID(), text: "" }, { id: crypto.randomUUID(), text: "" }, { id: crypto.randomUUID(), text: "" }], correctOptionIds: [], multipleCorrect: false, explanation: "" } as MCQQuestion;
+function bankProblemToQuestion(p: any): Question {
+  const base = { id: crypto.randomUUID(), points: p.points || 10, difficulty: (p.difficulty || "medium") as "easy" | "medium" | "hard", text: p.title || p.text || "", imageUrl: "" };
+  const type = p.type || "coding";
+  switch (type) {
+    case "mcq": {
+      const opts = Array.isArray(p.options) ? p.options : (typeof p.options === "string" ? JSON.parse(p.options || "[]") : []);
+      return {
+        ...base, type: "mcq",
+        options: opts.length > 0 ? opts.map((o: any, i: number) => ({ id: o.id || String(i), text: o.text || o })) : [{ id: "a", text: "" }, { id: "b", text: "" }, { id: "c", text: "" }, { id: "d", text: "" }],
+        correctOptionIds: Array.isArray(p.correct_option_ids) ? p.correct_option_ids : [],
+        multipleCorrect: p.multiple_correct || false,
+        explanation: p.explanation || "",
+      } as MCQQuestion;
+    }
     case "written":
-      return { ...base, type: "written", maxWordCount: 500, rubric: "", requireManualGrading: true } as WrittenQuestion;
-    case "coding":
-      return { ...base, type: "coding", description: "", starterCode: { python: "", javascript: "", c: "", cpp: "" }, testCases: [], hints: "", timeLimitMs: 2000, memoryLimitKb: 262144 } as CodingQuestion;
+      return { ...base, type: "written", maxWordCount: p.max_word_count || 500, rubric: p.rubric || "", requireManualGrading: true } as WrittenQuestion;
+    default:
+      return {
+        ...base, type: "coding", description: p.description || "",
+        starterCode: { python: p.starter_code || "", javascript: p.starter_code || "" },
+        testCases: (p.test_cases || []).map((tc: any) => ({ id: String(tc.id), input: tc.input, expectedOutput: tc.expected_output, isSample: tc.is_sample })),
+        hints: p.hints || "", timeLimitMs: p.time_limit_ms || 2000, memoryLimitKb: p.memory_limit_kb || 262144,
+      } as CodingQuestion;
   }
 }
 
@@ -81,6 +93,13 @@ export default function ExamBuilder() {
   const navigate = useNavigate();
   const editExam = (location.state as any)?.editExam;
   const isEditing = !!editExam;
+
+  // Real API hooks
+  const { data: classes, isLoading: classesLoading, error: classesError, refetch: refetchClasses } = useClasses();
+  const { data: bankProblems } = useAllProblems();
+  const createExamMutation = useCreateExam();
+  const assignExamMutation = useAssignExam();
+  const addProblemMutation = useAddProblem();
 
   const [title, setTitle] = useState(editExam?.title || "");
   const [description, setDescription] = useState(editExam?.description || "");
@@ -99,6 +118,7 @@ export default function ExamBuilder() {
   const [bankSearch, setBankSearch] = useState("");
   const [bankTypeFilter, setBankTypeFilter] = useState<string>("all");
   const [selectedBankIds, setSelectedBankIds] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
 
   const addQuestion = (type: QuestionType) => {
     const q = createQuestion(type);
@@ -118,7 +138,7 @@ export default function ExamBuilder() {
     setQuestions((prev) => prev.map((old, i) => (i === selectedIdx ? q : old)));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim()) {
       toast({ title: "Validation error", description: "Please enter an exam title.", variant: "destructive" });
       return;
@@ -131,18 +151,86 @@ export default function ExamBuilder() {
       toast({ title: "Validation error", description: "Add at least one question.", variant: "destructive" });
       return;
     }
-    const examData = { title, description, duration, passingScore, shuffle, showResults, questions, startDate, startTime, assignedCourse };
-    console.log("Exam saved:", examData);
-    toast({ title: "Exam saved!", description: `"${title}" with ${questions.length} question(s) assigned to ${assignedCourse}.` });
+
+    setIsSaving(true);
+    try {
+      // Build start/end times
+      let startTimeISO: string | undefined;
+      let endTimeISO: string | undefined;
+      if (startDate) {
+        const [h, m] = startTime.split(":").map(Number);
+        const start = new Date(startDate);
+        start.setHours(h, m, 0, 0);
+        startTimeISO = start.toISOString();
+        const end = new Date(start.getTime() + duration * 60 * 1000);
+        endTimeISO = end.toISOString();
+      }
+
+      // 1. Create exam
+      const exam = await createExamMutation.mutateAsync({
+        title,
+        description,
+        duration_minutes: duration,
+        start_time: startTimeISO,
+        end_time: endTimeISO,
+        shuffle_questions: shuffle,
+        show_results_after: showResults,
+        passing_score: passingScore,
+      });
+
+      // 2. Add each question as a problem
+      for (const q of questions) {
+        const problemData: any = {
+          title: q.text,
+          type: q.type,
+          points: q.points,
+          difficulty: q.difficulty,
+        };
+
+        if (q.type === "mcq") {
+          const mcq = q as MCQQuestion;
+          problemData.options = JSON.stringify(mcq.options);
+          problemData.correct_option_ids = JSON.stringify(mcq.correctOptionIds);
+          problemData.multiple_correct = mcq.multipleCorrect;
+          problemData.explanation = mcq.explanation;
+        } else if (q.type === "written") {
+          const w = q as WrittenQuestion;
+          problemData.max_word_count = w.maxWordCount;
+          problemData.rubric = w.rubric;
+          problemData.require_manual_grading = w.requireManualGrading;
+        } else {
+          const c = q as CodingQuestion;
+          problemData.description = c.description;
+          problemData.starter_code = c.starterCode?.python || c.starterCode?.javascript || "";
+          problemData.hints = c.hints;
+          problemData.time_limit_ms = c.timeLimitMs;
+          problemData.memory_limit_kb = c.memoryLimitKb;
+        }
+
+        await addProblemMutation.mutateAsync({ examId: exam.id, data: problemData });
+      }
+
+      // 3. Assign to class
+      const classId = Number(assignedCourse);
+      if (classId) {
+        await assignExamMutation.mutateAsync({ id: exam.id, classIds: [classId] });
+      }
+
+      toast({ title: "Exam saved!", description: `"${title}" with ${questions.length} question(s) created successfully.` });
+      navigate("/dashboard/exams");
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Bank import logic
-  const allBankQuestions = getBankQuestions();
-  const filteredBankQuestions = allBankQuestions.filter((bq) => {
-    const matchesCourse = !assignedCourse || bq.courseId === assignedCourse;
-    const matchesSearch = bq.text.toLowerCase().includes(bankSearch.toLowerCase()) || bq.tags.some((t) => t.toLowerCase().includes(bankSearch.toLowerCase()));
-    const matchesType = bankTypeFilter === "all" || bq.type === bankTypeFilter;
-    return matchesCourse && matchesSearch && matchesType;
+  // Bank import logic — now from real API
+  const allBankProblems = bankProblems || [];
+  const filteredBankProblems = allBankProblems.filter((p: any) => {
+    const matchesSearch = (p.title || "").toLowerCase().includes(bankSearch.toLowerCase()) || (p.description || "").toLowerCase().includes(bankSearch.toLowerCase());
+    const matchesType = bankTypeFilter === "all" || p.type === bankTypeFilter;
+    return matchesSearch && matchesType;
   });
 
   const toggleBankSelection = (id: string) => {
@@ -154,53 +242,25 @@ export default function ExamBuilder() {
   };
 
   const importFromBank = () => {
-    const toImport = allBankQuestions.filter((bq) => selectedBankIds.has(bq.id));
-    const newQuestions = toImport.map(bankToExamQuestion);
+    const toImport = allBankProblems.filter((p: any) => selectedBankIds.has(String(p.id)));
+    const newQuestions = toImport.map(bankProblemToQuestion);
     setQuestions((prev) => [...prev, ...newQuestions]);
     setSelectedIdx(questions.length);
     setBankDialogOpen(false);
     setSelectedBankIds(new Set());
     setBankSearch("");
     setBankTypeFilter("all");
-    toast({ title: "Imported", description: `${newQuestions.length} question(s) imported from the bank.` });
+    toast({ title: "Imported", description: `${newQuestions.length} question(s) imported.` });
   };
 
-  const handleSaveToBank = (q: Question) => {
-    if (!q.text.trim()) {
-      toast({ title: "Cannot save", description: "Please fill in the question text first.", variant: "destructive" });
-      return;
-    }
-    if (!assignedCourse) {
-      toast({ title: "Cannot save", description: "Please assign the exam to a course first.", variant: "destructive" });
-      return;
-    }
-    const bankQ: BankQuestion = {
-      id: `qb-${crypto.randomUUID().slice(0, 8)}`,
-      type: q.type,
-      text: q.text,
-      points: q.points,
-      courseId: assignedCourse,
-      tags: [],
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    if (q.type === "mcq") {
-      const mcq = q as MCQQuestion;
-      bankQ.mcqData = {
-        options: mcq.options.map((o) => o.text).filter(Boolean),
-        correctIndices: mcq.options.map((o, i) => mcq.correctOptionIds.includes(o.id) ? i : -1).filter((i) => i >= 0),
-        explanation: mcq.explanation,
-      };
-    } else if (q.type === "written") {
-      const w = q as WrittenQuestion;
-      bankQ.writtenData = { rubric: w.rubric, maxWordCount: w.maxWordCount };
-    } else {
-      const c = q as CodingQuestion;
-      bankQ.codingData = { description: c.description, starterCode: c.starterCode.python || "", hints: c.hints };
-    }
-    addBankQuestion(bankQ);
-    toast({ title: "Saved to Question Bank", description: `"${q.text.slice(0, 50)}..." added to the bank.` });
+  const handleSaveToBank = () => {
+    toast({ title: "Info", description: "Questions are saved to the bank when you save the exam." });
   };
 
+  if (classesLoading) return <PageSkeleton rows={3} cards={4} />;
+  if (classesError) return <ErrorState message="Failed to load classes" onRetry={refetchClasses} />;
+
+  const courseList = (classes || []).map((c: any) => ({ id: String(c.id), name: c.name + (c.section ? ` — ${c.section}` : "") }));
   const selected = questions[selectedIdx];
 
   return (
@@ -217,8 +277,9 @@ export default function ExamBuilder() {
             {isEditing ? "Edit Exam" : "Exam Builder"}
           </h1>
         </div>
-        <Button className="gap-2 rounded-full" onClick={handleSave}>
-          <Save className="h-4 w-4" /> {isEditing ? "Update Exam" : "Save Exam"}
+        <Button className="gap-2 rounded-full" onClick={handleSave} disabled={isSaving}>
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {isSaving ? "Saving..." : isEditing ? "Update Exam" : "Save Exam"}
         </Button>
       </div>
 
@@ -235,7 +296,7 @@ export default function ExamBuilder() {
               <SelectValue placeholder="Select course" />
             </SelectTrigger>
             <SelectContent>
-              {mockCourses.map((c) => (
+              {courseList.map((c: any) => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))}
             </SelectContent>
@@ -329,23 +390,20 @@ export default function ExamBuilder() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Import from Question Bank Dialog */}
+      {/* Import from Problem Bank Dialog */}
       <Dialog open={bankDialogOpen} onOpenChange={setBankDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Import from Question Bank</DialogTitle>
             <DialogDescription>
-              {assignedCourse
-                ? `Showing questions for ${mockCourses.find((c) => c.id === assignedCourse)?.name || assignedCourse}. Select questions to import.`
-                : "Select a course first in the exam settings to filter questions, or browse all."}
+              Select existing problems to import into this exam.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Filters */}
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search questions or tags..." className="pl-9" value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} />
+              <Input placeholder="Search problems..." className="pl-9" value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} />
             </div>
             <Select value={bankTypeFilter} onValueChange={setBankTypeFilter}>
               <SelectTrigger className="w-32">
@@ -360,43 +418,34 @@ export default function ExamBuilder() {
             </Select>
           </div>
 
-          {/* Question list */}
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            {filteredBankQuestions.length === 0 ? (
+            {filteredBankProblems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <FileText className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">No questions found.</p>
+                <p className="text-sm">No problems found.</p>
               </div>
             ) : (
-              filteredBankQuestions.map((bq) => {
-                const Icon = typeIcons[bq.type];
-                const isSelected = selectedBankIds.has(bq.id);
+              filteredBankProblems.map((p: any) => {
+                const Icon = typeIcons[p.type] || Code2;
+                const isSelected = selectedBankIds.has(String(p.id));
                 return (
                   <div
-                    key={bq.id}
+                    key={p.id}
                     className={cn(
                       "flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
                       isSelected ? "border-primary bg-primary/5" : "border-border/50 hover:border-primary/30 hover:bg-muted/30"
                     )}
-                    onClick={() => toggleBankSelection(bq.id)}
+                    onClick={() => toggleBankSelection(String(p.id))}
                   >
                     <Checkbox checked={isSelected} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="text-xs font-medium text-muted-foreground uppercase">{bq.type}</span>
-                        <span className="text-xs text-muted-foreground">•</span>
-                        <span className="text-xs text-muted-foreground">{bq.points} pts</span>
-                        {!assignedCourse && (
-                          <Badge variant="secondary" className="text-[10px] font-mono ml-auto">{bq.courseId}</Badge>
-                        )}
+                        <span className="text-xs font-medium text-muted-foreground uppercase">{p.type}</span>
+                        <span className="text-xs text-muted-foreground">{p.points} pts</span>
+                        <Badge variant="secondary" className="text-[10px] ml-auto">{p.difficulty}</Badge>
                       </div>
-                      <p className="text-sm text-foreground">{bq.text}</p>
-                      <div className="flex gap-1 mt-1.5">
-                        {bq.tags.map((t) => (
-                          <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>
-                        ))}
-                      </div>
+                      <p className="text-sm text-foreground">{p.title || p.text}</p>
                     </div>
                   </div>
                 );

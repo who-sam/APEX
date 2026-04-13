@@ -10,15 +10,14 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/EmptyState";
-import { useUser } from "@/contexts/AuthContext";
+import { PageSkeleton } from "@/components/PageSkeleton";
+import { ErrorState } from "@/components/ErrorState";
+import { useMessages, useSendMessage, useMarkMessageRead, useToggleMessageStar, useDeleteMessage } from "@/hooks/useMessages";
+import { formatDistanceToNow } from "date-fns";
 
-const initialMessages = [
-  { id: 1, from: "Kernel Team", initials: "KT", subject: "Welcome to Kernel!", body: "Thanks for joining Kernel. Start by exploring your dashboard, setting up your profile, and taking your first practice exam.", time: "2h ago", read: false, starred: false, type: "system" },
-  { id: 2, from: "Dr. Sarah Chen", initials: "SC", subject: "React Exam Feedback", body: "Great job on your React exam! Your understanding of hooks is solid. I'd recommend reviewing useReducer and custom hooks for the next assessment.", time: "1d ago", read: false, starred: true, type: "feedback" },
-  { id: 3, from: "Study Group", initials: "SG", subject: "DSA Session Tomorrow", body: "Hey team, our Data Structures study session is tomorrow at 3 PM. We'll be covering binary trees and graph traversal algorithms.", time: "2d ago", read: true, starred: false, type: "group" },
-  { id: 4, from: "Kernel Team", initials: "KT", subject: "New Exam Available: SQL Mastery", body: "A new practice exam is now available! Test your SQL skills with 35 questions covering joins, subqueries, and window functions.", time: "3d ago", read: true, starred: false, type: "system" },
-  { id: 5, from: "Alex Rivera", initials: "AR", subject: "TypeScript Study Notes", body: "I've compiled notes from our TypeScript session. Attached are the key takeaways on generics, utility types, and type narrowing techniques.", time: "5d ago", read: true, starred: true, type: "direct" },
-];
+function getInitials(name: string) {
+  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) || "??";
+}
 
 const typeColor = (t: string) => {
   if (t === "system") return "bg-primary/15 text-primary border-primary/30";
@@ -29,8 +28,12 @@ const typeColor = (t: string) => {
 
 export default function MessagesPage() {
   const { toast } = useToast();
-  const { name: userName } = useUser();
-  const [messages, setMessages] = useState(initialMessages);
+  const { data: messagesData, isLoading, error, refetch } = useMessages();
+  const sendMessageMutation = useSendMessage();
+  const markReadMutation = useMarkMessageRead();
+  const toggleStarMutation = useToggleMessageStar();
+  const deleteMessageMutation = useDeleteMessage();
+
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
@@ -39,18 +42,70 @@ export default function MessagesPage() {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
 
-  const selected = messages.find((m) => m.id === selectedId);
-  const filtered = messages.filter((m) => m.subject.toLowerCase().includes(search.toLowerCase()) || m.from.toLowerCase().includes(search.toLowerCase()));
-  const unread = messages.filter((m) => !m.read).length;
+  if (isLoading) return <PageSkeleton cards={2} rows={5} />;
+  if (error) return <ErrorState message="Failed to load messages" onRetry={refetch} />;
 
-  const toggleRead = (id: number) => setMessages((ms) => ms.map((m) => m.id === id ? { ...m, read: !m.read } : m));
-  const toggleStar = (id: number) => setMessages((ms) => ms.map((m) => m.id === id ? { ...m, starred: !m.starred } : m));
-  const deleteMsg = (id: number) => { setMessages((ms) => ms.filter((m) => m.id !== id)); if (selectedId === id) setSelectedId(null); };
+  const messages = (messagesData || []).map((m: any) => ({
+    id: m.id,
+    from_id: m.from_id,
+    from: m.from_user?.name || m.sender_name || "Unknown",
+    initials: getInitials(m.from_user?.name || m.sender_name || "?"),
+    subject: m.subject || "(no subject)",
+    body: m.body || "",
+    time: m.created_at ? formatDistanceToNow(new Date(m.created_at), { addSuffix: true }) : "",
+    read: !!m.read,
+    starred: !!m.starred,
+    type: m.type || "direct",
+  }));
 
-  const handleReply = () => {
-    if (!replyText.trim()) return;
-    toast({ title: "Reply sent", description: `Your reply to "${selected?.from}" has been sent.` });
-    setReplyText("");
+  const selected = messages.find((m: any) => m.id === selectedId);
+  const filtered = messages.filter((m: any) =>
+    m.subject.toLowerCase().includes(search.toLowerCase()) ||
+    m.from.toLowerCase().includes(search.toLowerCase())
+  );
+  const unread = messages.filter((m: any) => !m.read).length;
+
+  const handleSelect = (id: number, isRead: boolean) => {
+    setSelectedId(id);
+    if (!isRead) markReadMutation.mutate(id);
+  };
+
+  const handleReply = async () => {
+    if (!replyText.trim() || !selected) return;
+    try {
+      await sendMessageMutation.mutateAsync({
+        to_id: selected.from_id,
+        subject: `Re: ${selected.subject}`,
+        body: replyText,
+        type: "direct",
+      });
+      toast({ title: "Reply sent", description: `Your reply to "${selected.from}" has been sent.` });
+      setReplyText("");
+    } catch (err: any) {
+      toast({ title: "Reply failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleCompose = async () => {
+    if (!composeTo.trim() || !composeSubject.trim()) {
+      toast({ title: "Missing fields", description: "Please fill in recipient and subject.", variant: "destructive" });
+      return;
+    }
+    try {
+      await sendMessageMutation.mutateAsync({
+        to_id: Number(composeTo),
+        subject: composeSubject,
+        body: composeBody,
+        type: "direct",
+      });
+      setComposeTo("");
+      setComposeSubject("");
+      setComposeBody("");
+      setComposeOpen(false);
+      toast({ title: "Message sent" });
+    } catch (err: any) {
+      toast({ title: "Send failed", description: err.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -76,12 +131,12 @@ export default function MessagesPage() {
           </CardHeader>
           <CardContent className="space-y-1 max-h-[500px] overflow-y-auto">
             {filtered.length === 0 ? (
-              <EmptyState icon={Mail} title="No messages found" description="Try adjusting your search terms." />
+              <EmptyState icon={Mail} title="No messages found" description={search ? "Try adjusting your search." : "No messages yet."} />
             ) : (
-              filtered.map((msg) => (
+              filtered.map((msg: any) => (
                 <div
                   key={msg.id}
-                  onClick={() => { setSelectedId(msg.id); if (!msg.read) toggleRead(msg.id); }}
+                  onClick={() => handleSelect(msg.id, msg.read)}
                   className={`flex items-start gap-3 rounded-xl p-3 cursor-pointer transition-all ${
                     selectedId === msg.id ? "bg-primary/5 border border-primary/30" : "hover:bg-secondary/50"
                   } ${!msg.read ? "bg-secondary/30" : ""}`}
@@ -117,13 +172,13 @@ export default function MessagesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button size="icon" variant="ghost" onClick={() => toggleStar(selected.id)} aria-label="Star message">
+                    <Button size="icon" variant="ghost" onClick={() => toggleStarMutation.mutate(selected.id)} aria-label="Star message">
                       <Star className={`h-4 w-4 ${selected.starred ? "fill-accent text-accent" : "text-muted-foreground"}`} />
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => toggleRead(selected.id)} aria-label="Toggle read">
+                    <Button size="icon" variant="ghost" onClick={() => markReadMutation.mutate(selected.id)} aria-label="Toggle read">
                       {selected.read ? <MailOpen className="h-4 w-4 text-muted-foreground" /> : <Mail className="h-4 w-4 text-primary" />}
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => deleteMsg(selected.id)} className="text-destructive hover:text-destructive" aria-label="Delete message">
+                    <Button size="icon" variant="ghost" onClick={() => { deleteMessageMutation.mutate(selected.id); setSelectedId(null); }} className="text-destructive hover:text-destructive" aria-label="Delete message">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -161,19 +216,14 @@ export default function MessagesPage() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>New Message</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="To (recipient)" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} />
+            <Input placeholder="Recipient user ID" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} />
             <Input placeholder="Subject" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} />
             <Textarea placeholder="Write your message..." rows={4} value={composeBody} onChange={(e) => setComposeBody(e.target.value)} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setComposeOpen(false)}>Cancel</Button>
-            <Button onClick={() => {
-              if (!composeTo.trim() || !composeSubject.trim()) { toast({ title: "Missing fields", description: "Please fill in recipient and subject.", variant: "destructive" }); return; }
-              setComposeTo(""); setComposeSubject(""); setComposeBody("");
-              setComposeOpen(false);
-              toast({ title: "Message sent", description: `Your message has been sent to ${composeTo}.` });
-            }} className="gap-2">
-              <Send className="h-4 w-4" /> Send
+            <Button onClick={handleCompose} disabled={sendMessageMutation.isPending} className="gap-2">
+              <Send className="h-4 w-4" /> {sendMessageMutation.isPending ? "Sending..." : "Send"}
             </Button>
           </DialogFooter>
         </DialogContent>

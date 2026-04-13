@@ -21,9 +21,12 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (res.status === 401) {
-    localStorage.removeItem("kernel-token");
-    localStorage.removeItem("kernel-role");
-    window.location.href = "/auth";
+    // Only redirect if we had a token (session expired). No token = just throw.
+    if (token) {
+      localStorage.removeItem("kernel-token");
+      localStorage.removeItem("kernel-role");
+      window.location.href = "/auth";
+    }
     throw new ApiError("Unauthorized", 401);
   }
 
@@ -59,8 +62,17 @@ export function getClasses() {
   return apiFetch<any[]>("/classes");
 }
 
-export function getClass(id: number) {
-  return apiFetch<any>(`/classes/${id}`);
+export async function getClass(id: number) {
+  const res = await apiFetch<any>(`/classes/${id}`);
+  return { ...res.class, members: res.members };
+}
+
+export function getStudentClass(id: number) {
+  return apiFetch<any>(`/student/classes/${id}`);
+}
+
+export function updateClass(id: number, data: { name?: string; section?: string; cover_image?: string }) {
+  return apiFetch<any>(`/classes/${id}`, { method: "PUT", body: JSON.stringify(data) });
 }
 
 export function deleteClass(id: number) {
@@ -191,7 +203,7 @@ export function getProfile() {
   return apiFetch<any>("/profile");
 }
 
-export function updateProfile(data: { name?: string; bio?: string; avatar_url?: string }) {
+export function updateProfile(data: { name?: string; bio?: string; avatar_url?: string; notify_email?: boolean; notify_push?: boolean; notify_exam_reminders?: boolean; notify_results?: boolean }) {
   return apiFetch<any>("/profile", { method: "PUT", body: JSON.stringify(data) });
 }
 
@@ -208,7 +220,7 @@ export function getMessage(id: number) {
   return apiFetch<any>(`/messages/${id}`);
 }
 
-export function sendMessage(data: { recipient_id: number; subject: string; body: string }) {
+export function sendMessage(data: { to_id: number; subject: string; body: string; type?: string }) {
   return apiFetch<any>("/messages", { method: "POST", body: JSON.stringify(data) });
 }
 
@@ -270,6 +282,21 @@ export function getGlobalLeaderboard(period = "all") {
 // ── Teacher ───────────────────────────────────────────
 export function getTeacherDashboard() {
   return apiFetch<any>("/teacher/dashboard");
+}
+
+// ── Problems ─────────────────────────────────────────
+export function getAllProblems() {
+  return apiFetch<any[]>("/problems");
+}
+
+// ── Class Stats ──────────────────────────────────────
+export function getClassStats(id: number) {
+  return apiFetch<any>(`/classes/${id}/stats`);
+}
+
+// ── Grade Written ────────────────────────────────────
+export function gradeSubmission(id: number, data: { score: number; status: string }) {
+  return apiFetch<any>(`/submissions/${id}/grade`, { method: "PUT", body: JSON.stringify(data) });
 }
 
 // ── Execute ───────────────────────────────────────────

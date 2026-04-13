@@ -153,8 +153,5 @@ export function useUser() {
     lastName,
     email: user?.email ?? "",
     studentId: "",
-    profilePhoto: null as string | null,
-    setUser: (_data: any) => {},
-    setProfilePhoto: (_url: string) => {},
   };
 }
