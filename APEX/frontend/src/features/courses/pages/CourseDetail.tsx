@@ -479,7 +479,7 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem className="gap-2" onSelect={() => setTimeout(() => setViewStudent(s))}>
-                                <Eye className="h-4 w-4" /> View Grades
+                                <Eye className="h-4 w-4" /> View Submission
                               </DropdownMenuItem>
                               <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => removeStudent(s.id || s.user_id)}>
                                 <Trash2 className="h-4 w-4" /> Remove
