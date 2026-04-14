@@ -132,23 +132,27 @@ func GetDashboard(c *gin.Context) {
 			Scan(&resp.AverageScore)
 	}
 
-	var recentSubs []models.Submission
+	var recentAttempts []models.ExamAttempt
 	if len(examIDs) > 0 {
-		database.DB.Where("exam_id IN ?", examIDs).
+		database.DB.Where("exam_id IN ? AND status = ?", examIDs, "submitted").
 			Preload("User").
-			Preload("Problem").
+			Preload("Exam").
 			Order("submitted_at desc").
 			Limit(10).
-			Find(&recentSubs)
+			Find(&recentAttempts)
 	}
 
-	resp.RecentActivity = make([]activityItem, len(recentSubs))
-	for i, sub := range recentSubs {
-		resp.RecentActivity[i] = activityItem{
-			Type:        "submission",
-			Description: sub.User.Name + " submitted " + sub.Problem.Title,
-			Timestamp:   sub.SubmittedAt,
+	resp.RecentActivity = make([]activityItem, 0, len(recentAttempts))
+	for _, att := range recentAttempts {
+		ts := att.StartedAt
+		if att.SubmittedAt != nil {
+			ts = *att.SubmittedAt
 		}
+		resp.RecentActivity = append(resp.RecentActivity, activityItem{
+			Type:        "submission",
+			Description: att.User.Name + " submitted " + att.Exam.Title,
+			Timestamp:   ts,
+		})
 	}
 
 	var classes []models.Class

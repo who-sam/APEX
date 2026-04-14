@@ -7,6 +7,7 @@ import { useUser } from "@/contexts/AuthContext";
 import { useStudentStats } from "@/hooks/useStudentStats";
 import { useStudentExams } from "@/hooks/useExams";
 import { useStudentSubmissions } from "@/hooks/useSubmissions";
+import { useMyAttempts } from "@/hooks/useAttempts";
 import { useStudentClasses } from "@/hooks/useClasses";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -28,6 +29,7 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useStudentStats();
   const { data: exams, isLoading: examsLoading, error: examsError, refetch } = useStudentExams();
   const { data: submissions } = useStudentSubmissions();
+  const { data: attempts } = useMyAttempts();
   const { data: classes } = useStudentClasses();
 
   if (examsLoading || statsLoading) return <PageSkeleton cards={4} rows={3} />;
@@ -39,7 +41,16 @@ export default function Dashboard() {
     (e: any) => e.status === "active" && !submittedExamIds.has(Number(e.id))
   );
   const upcomingExams = allExams.filter((e: any) => e.status === "upcoming").slice(0, 4);
-  const recentSubmissions = (submissions || []).slice(0, 5);
+  const recentSubmissions = (attempts || [])
+    .filter((a: any) => a.status === "submitted")
+    .slice(0, 5)
+    .map((a: any) => ({
+      id: a.id,
+      status: (a.score ?? 0) >= 60 ? "accepted" : a.status,
+      score: a.score,
+      submitted_at: a.submitted_at || a.started_at,
+      exam_title: a.exam?.title,
+    }));
   const enrolledClasses = classes || [];
 
   const hasActiveExam = !!activeExam;
@@ -162,6 +173,7 @@ export default function Dashboard() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm text-foreground">
+                      {a.exam_title ? `${a.exam_title} — ` : ""}
                       {a.status === "accepted" ? "Passed" : a.status} — Score: {a.score?.toFixed(0) || 0}%
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">

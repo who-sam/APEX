@@ -11,7 +11,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { useStudentSubmissions } from "@/hooks/useSubmissions";
+import { useMyAttempts } from "@/hooks/useAttempts";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
@@ -54,13 +54,21 @@ function computeTrend(results: any[], index: number): string {
 
 export default function StudentResults() {
   const navigate = useNavigate();
-  const { data: submissions, isLoading, error, refetch } = useStudentSubmissions();
+  const { data: attempts, isLoading, error, refetch } = useMyAttempts();
   const [selected, setSelected] = useState<any | null>(null);
 
   if (isLoading) return <PageSkeleton cards={3} rows={5} />;
   if (error) return <ErrorState message="Failed to load results" onRetry={refetch} />;
 
-  const results = submissions || [];
+  const results: any[] = (attempts || []).map((a: any) => ({
+    id: a.id,
+    exam_id: a.exam_id,
+    exam: a.exam,
+    score: a.score,
+    submitted_at: a.submitted_at || a.started_at,
+    status: a.status,
+    submissions: a.submissions || [],
+  }));
 
   if (results.length === 0) {
     return (
