@@ -19,30 +19,34 @@ import { useTheme } from "next-themes";
 import { useExecuteCode } from "@/hooks/useExecuteCode";
 
 const LANGUAGES = [
-  { value: "python3", label: "Python" },
+  { value: "python", label: "Python" },
   { value: "javascript", label: "JavaScript" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "java", label: "Java" },
   { value: "c", label: "C" },
   { value: "cpp", label: "C++" },
 ];
 
 const DEFAULT_CODE: Record<string, string> = {
-  python3: `# Write your code here\nprint("Hello, World!")`,
+  python: `# Write your code here\nprint("Hello, World!")`,
   javascript: `// Write your code here\nconsole.log("Hello, World!");`,
+  typescript: `// Write your code here\nconsole.log("Hello, World!");`,
+  java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`,
   c: `#include <stdio.h>\n\nint main() {\n    printf("Hello, World!\\n");\n    return 0;\n}`,
   cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`,
 };
 
 export default function CodeEditorPage() {
   const { theme } = useTheme();
-  const [language, setLanguage] = useState("python3");
-  const [code, setCode] = useState(DEFAULT_CODE["python3"]);
+  const executeMutation = useExecuteCode();
+  const [language, setLanguage] = useState("python");
+  const [code, setCode] = useState(DEFAULT_CODE["python"]);
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [codeStore, setCodeStore] = useState<Record<string, string>>({ ...DEFAULT_CODE });
 
-  const executeMutation = useExecuteCode();
-
   const handleLanguageChange = (lang: string) => {
+    // Save current code
     setCodeStore((prev) => ({ ...prev, [language]: code }));
     setLanguage(lang);
     setCode(codeStore[lang] || DEFAULT_CODE[lang] || "");
@@ -144,7 +148,7 @@ export default function CodeEditorPage() {
             <div className="flex-1">
               <Editor
                 height="100%"
-                language={language === "cpp" ? "cpp" : language === "python3" ? "python" : language}
+                language={language === "cpp" ? "cpp" : language}
                 value={code}
                 onChange={(v) => setCode(v || "")}
                 theme={theme === "dark" ? "vs-dark" : "light"}

@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
+import { useUser } from "@/contexts/AuthContext";
 import { useMessages, useSendMessage, useMarkMessageRead, useToggleMessageStar, useDeleteMessage } from "@/hooks/useMessages";
 import { formatDistanceToNow } from "date-fns";
 
@@ -28,6 +29,7 @@ const typeColor = (t: string) => {
 
 export default function MessagesPage() {
   const { toast } = useToast();
+  const { name: userName } = useUser();
   const { data: messagesData, isLoading, error, refetch } = useMessages();
   const sendMessageMutation = useSendMessage();
   const markReadMutation = useMarkMessageRead();
@@ -102,7 +104,7 @@ export default function MessagesPage() {
       setComposeSubject("");
       setComposeBody("");
       setComposeOpen(false);
-      toast({ title: "Message sent" });
+      toast({ title: "Message sent", description: `Your message has been sent.` });
     } catch (err: any) {
       toast({ title: "Send failed", description: err.message, variant: "destructive" });
     }
@@ -131,7 +133,7 @@ export default function MessagesPage() {
           </CardHeader>
           <CardContent className="space-y-1 max-h-[500px] overflow-y-auto">
             {filtered.length === 0 ? (
-              <EmptyState icon={Mail} title="No messages found" description={search ? "Try adjusting your search." : "No messages yet."} />
+              <EmptyState icon={Mail} title="No messages found" description="Try adjusting your search terms." />
             ) : (
               filtered.map((msg: any) => (
                 <div
@@ -216,7 +218,7 @@ export default function MessagesPage() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>New Message</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="Recipient user ID" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} />
+            <Input placeholder="To (recipient)" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} />
             <Input placeholder="Subject" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} />
             <Textarea placeholder="Write your message..." rows={4} value={composeBody} onChange={(e) => setComposeBody(e.target.value)} />
           </div>

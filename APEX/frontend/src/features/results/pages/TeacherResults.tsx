@@ -45,6 +45,7 @@ export default function TeacherResults() {
   const { toast } = useToast();
   const location = useLocation();
   const routeState = location.state as { courseId?: number; examId?: number } | null;
+
   const { data: classes, isLoading: classesLoading, error: classesError, refetch: refetchClasses } = useClasses();
   const { data: allExams, isLoading: examsLoading } = useExams();
 
@@ -71,9 +72,9 @@ export default function TeacherResults() {
   const courseList = classes || [];
   const examList = allExams || [];
 
-  // Filter exams by selected class (exams have class_ids or class_id)
+  // Filter exams by selected class
   const examsForClass = selectedClassId
-    ? examList.filter((e: any) => e.class_id === selectedClassId || (e.classes || []).some((c: any) => c.id === selectedClassId))
+    ? examList.filter((e: any) => e.class_id === selectedClassId || (e.classes || []).some((c: any) => c.id === selectedClassId) || (e.exam_classes || []).some((ec: any) => ec.class_id === selectedClassId))
     : [];
 
   const selectedExam = examList.find((e: any) => e.id === selectedExamId);
@@ -101,7 +102,7 @@ export default function TeacherResults() {
     toast({ title: "Exported", description: "Results downloaded as CSV." });
   };
 
-  // ---- No course selected ----
+  // ── No course selected yet ──
   if (!selectedClassId) {
     return (
       <div className="space-y-6">
@@ -124,8 +125,10 @@ export default function TeacherResults() {
                   <CardContent className="p-5 flex items-center justify-between">
                     <div>
                       <p className="font-semibold text-foreground">{c.name}</p>
-                      {c.section && <p className="text-xs text-muted-foreground mt-0.5">{c.section}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{examCount} exam(s)</p>
+                      {c.section && <p className="text-xs text-muted-foreground font-mono mt-1">{c.section}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {examCount} exam(s)
+                      </p>
                     </div>
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </CardContent>
@@ -138,7 +141,7 @@ export default function TeacherResults() {
     );
   }
 
-  // ---- Course selected, no exam ----
+  // ── Course selected but no exam ──
   if (!selectedExamId) {
     const selectedClass = courseList.find((c: any) => c.id === selectedClassId);
     return (
@@ -148,7 +151,9 @@ export default function TeacherResults() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{selectedClass?.name || "Course"}</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              {selectedClass?.name || "Course"}
+            </h1>
             <p className="text-sm text-muted-foreground mt-0.5">Select an exam to view results</p>
           </div>
         </div>
@@ -165,12 +170,16 @@ export default function TeacherResults() {
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-foreground">{e.title}</p>
+                      <p className="font-semibold text-foreground">{e.title || e.name}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {e.duration_minutes || 60} min &middot; {e.problem_count || 0} questions
+                        {e.start_time ? new Date(e.start_time).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}
                       </p>
                     </div>
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
+                    <span>{e.duration_minutes || 60} min</span>
+                    <span>{e.problem_count || 0} questions</span>
                   </div>
                 </CardContent>
               </Card>
@@ -181,7 +190,7 @@ export default function TeacherResults() {
     );
   }
 
-  // ---- Exam selected: full analytics ----
+  // ── Exam selected: full analytics ──
   if (resultsLoading) return <PageSkeleton cards={4} rows={6} />;
 
   const selectedClass = courseList.find((c: any) => c.id === selectedClassId);
@@ -194,8 +203,10 @@ export default function TeacherResults() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{selectedExam?.title}</h1>
-            <p className="text-sm text-muted-foreground">{selectedClass?.name}</p>
+            <h1 className="text-2xl font-bold text-foreground">{selectedExam?.title || selectedExam?.name}</h1>
+            <p className="text-sm text-muted-foreground">
+              {selectedClass?.name} {selectedExam?.start_time ? `\u2022 ${new Date(selectedExam.start_time).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}
+            </p>
           </div>
         </div>
         <Button variant="outline" className="gap-2" onClick={handleExport} disabled={results.length === 0}>
@@ -210,7 +221,7 @@ export default function TeacherResults() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <Users className="h-4 w-4" />
-              <span className="text-xs">Students</span>
+              <span className="text-xs">Submissions</span>
             </div>
             <p className="text-2xl font-bold text-foreground">{results.length}</p>
           </CardContent>
@@ -245,53 +256,51 @@ export default function TeacherResults() {
       </div>
 
       {/* Charts row */}
-      {results.length > 0 && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <Card className="border-border/50 bg-card/80 backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Question Performance (Class Avg %)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={questionPerformance}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                      labelStyle={{ color: "hsl(var(--foreground))" }}
-                    />
-                    <Bar dataKey="avgScore" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card className="border-border/50 bg-card/80 backdrop-blur-md">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Question Performance (Class Avg %)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={questionPerformance}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                  />
+                  <Bar dataKey="avgScore" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
 
-          <Card className="border-border/50 bg-card/80 backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" />
-                Programming — Test Case Pass Rates
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {testCaseResults.map((tc) => (
-                  <div key={tc.name} className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground w-12">{tc.name}</span>
-                    <Progress value={tc.passRate} className="h-3 flex-1" />
-                    <span className={`text-sm font-medium w-12 text-right ${tc.passRate >= 70 ? "text-green-500" : "text-destructive"}`}>
-                      {tc.passRate}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+        <Card className="border-border/50 bg-card/80 backdrop-blur-md">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              Programming — Test Case Pass Rates
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {testCaseResults.map((tc) => (
+                <div key={tc.name} className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground w-12">{tc.name}</span>
+                  <Progress value={tc.passRate} className="h-3 flex-1" />
+                  <span className={`text-sm font-medium w-12 text-right ${tc.passRate >= 70 ? "text-green-500" : "text-destructive"}`}>
+                    {tc.passRate}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Student results table */}
       {results.length === 0 ? (
@@ -309,32 +318,34 @@ export default function TeacherResults() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Student</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Avg Score</TableHead>
-                  <TableHead>Submissions</TableHead>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Score</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Time</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {results.map((s: any) => {
-                  const status = s.avg_score >= 60 ? "passed" : "failed";
+                  const score = s.avg_score != null ? Math.round(s.avg_score) : 0;
+                  const status = score >= 60 ? "passed" : "failed";
+                  const time = s.duration_minutes ? `${s.duration_minutes} min` : "—";
                   return (
                     <TableRow key={s.user_id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{s.email}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{s.user_id}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">{s.avg_score?.toFixed(0) || 0}%</span>
-                          <Progress value={s.avg_score || 0} className="h-1.5 w-16" />
+                          <span className="font-semibold">{score}/{s.total_score ? Math.round(s.total_score) : 100}</span>
+                          <Progress value={score} className="h-1.5 w-16" />
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{s.submissions?.length || 0}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={status === "passed" ? "bg-green-500/15 text-green-500 border-green-500/30" : "bg-destructive/15 text-destructive border-destructive/30"}>
                           {status === "passed" ? "Passed" : "Failed"}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-muted-foreground">{time}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setViewingStudent(s)}>
                           <Eye className="h-3.5 w-3.5" /> View
@@ -349,44 +360,50 @@ export default function TeacherResults() {
         </Card>
       )}
 
-      {/* Individual student submission dialog */}
+      {/* Individual student answer dialog */}
       <Dialog open={!!viewingStudent} onOpenChange={(open) => { if (!open) setViewingStudent(null); }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>{viewingStudent?.name}'s Submissions</span>
+              <span>{viewingStudent?.name}'s Answers</span>
               <Badge variant={viewingStudent?.avg_score >= 60 ? "default" : "destructive"} className="ml-2">
-                Avg: {viewingStudent?.avg_score?.toFixed(0) || 0}%
+                {viewingStudent?.avg_score?.toFixed(0) || 0}/{viewingStudent?.total_score ? Math.round(viewingStudent.total_score) : 100}
               </Badge>
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             {(viewingStudent?.submissions || []).map((sub: any, i: number) => (
               <Card key={sub.id || i} className="border-border/50">
-                <CardContent className="p-4 space-y-2">
+                <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="text-[10px]">{sub.type || sub.problem?.type || "—"}</Badge>
-                      <span className="text-sm font-medium text-foreground">
-                        {sub.problem?.title || `Problem #${sub.problem_id}`}
-                      </span>
+                      <span className="text-sm font-medium text-foreground">Q{i + 1}: {sub.problem?.title || sub.question || `Problem #${sub.problem_id}`}</span>
                     </div>
                     <span className={`text-sm font-bold ${sub.score >= 80 ? "text-green-500" : sub.score < 50 ? "text-destructive" : "text-foreground"}`}>
-                      {sub.score?.toFixed(0) || 0}%
+                      {sub.score?.toFixed(0) || 0}/{sub.max_score || sub.maxPoints || 100}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <Badge variant="outline" className={sub.status === "accepted" ? "bg-green-500/15 text-green-500 border-green-500/30" : "bg-destructive/15 text-destructive border-destructive/30"}>
-                      {sub.status}
-                    </Badge>
-                    {sub.language && <span>Language: {sub.language}</span>}
+
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Student's Answer</p>
+                      {(sub.type === "Coding" || sub.language) ? (
+                        <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground">{sub.code || sub.text_answer || sub.studentAnswer || "—"}</pre>
+                      ) : (
+                        <p className={`text-sm rounded-md p-2 ${sub.status === "accepted" || sub.is_correct ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-foreground"}`}>
+                          {sub.text_answer || sub.studentAnswer || sub.selected_option || "—"}
+                        </p>
+                      )}
+                    </div>
+
+                    {sub.correct_answer && sub.type !== "Coding" && !sub.language && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Correct Answer</p>
+                        <p className="text-sm bg-green-500/10 rounded-md p-2 text-green-700 dark:text-green-400">{sub.correct_answer}</p>
+                      </div>
+                    )}
                   </div>
-                  {sub.code && (
-                    <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground max-h-40">{sub.code}</pre>
-                  )}
-                  {sub.text_answer && (
-                    <p className="text-sm bg-muted/30 rounded-md p-2 text-foreground">{sub.text_answer}</p>
-                  )}
                 </CardContent>
               </Card>
             ))}

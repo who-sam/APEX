@@ -73,6 +73,11 @@ func SubmitSolution(c *gin.Context) {
 		}
 	}
 
+	selectedOptions := req.SelectedOptions
+	if selectedOptions == "" {
+		selectedOptions = "null"
+	}
+
 	sub := models.Submission{
 		UserID:          userID,
 		ProblemID:       req.ProblemID,
@@ -80,7 +85,7 @@ func SubmitSolution(c *gin.Context) {
 		Type:            submissionType,
 		Language:        req.Language,
 		Code:            req.Code,
-		SelectedOptions: req.SelectedOptions,
+		SelectedOptions: selectedOptions,
 		TextAnswer:      req.TextAnswer,
 		Status:          "pending",
 	}

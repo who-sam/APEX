@@ -24,7 +24,7 @@ function TrendIcon({ trend }: { trend: string }) {
   return <Minus className="h-4 w-4 text-muted-foreground" />;
 }
 
-function Podium({ entries }: { entries: any[] }) {
+function Podium({ entries, userName }: { entries: any[]; userName: string }) {
   const top3 = entries.slice(0, 3);
   const order = [1, 0, 2];
   return (
@@ -33,17 +33,20 @@ function Podium({ entries }: { entries: any[] }) {
         const e = top3[idx];
         if (!e) return null;
         const isFirst = idx === 0;
+        const isCurrentUser = e.is_current_user || (e.student_name || e.name) === userName;
+        const displayName = e.student_name || e.name || "?";
+        const displayScore = e.score || e.avg_score || 0;
         return (
           <Card key={e.rank || idx} className={`bg-card/80 backdrop-blur-md border-border/50 flex flex-col items-center p-4 ${isFirst ? "pb-8 -mt-4" : "pb-6"} w-36`}>
             <Medal className={`h-6 w-6 mb-2 ${medalColors[idx]}`} />
             <Avatar className="h-12 w-12 mb-2">
               <AvatarFallback className="bg-primary/20 font-semibold text-primary">
-                {getInitials(e.student_name || e.name || "?")}
+                {getInitials(displayName)}
               </AvatarFallback>
             </Avatar>
-            <p className="font-semibold text-sm text-foreground text-center">{e.student_name || e.name}</p>
-            <p className="text-lg font-bold text-primary mt-1">{e.score || e.avg_score || 0}%</p>
-            {e.is_current_user && <Badge className="mt-1 text-xs">You</Badge>}
+            <p className="font-semibold text-sm text-foreground text-center">{displayName}</p>
+            <p className="text-lg font-bold text-primary mt-1">{displayScore}%</p>
+            {isCurrentUser && <Badge className="mt-1 text-xs">You</Badge>}
           </Card>
         );
       })}
@@ -70,6 +73,8 @@ function RankedTable({ entries, userName }: { entries: any[]; userName: string }
             {entries.map((e: any, i: number) => {
               const rank = e.rank || i + 1;
               const isCurrentUser = e.is_current_user || (e.student_name || e.name) === userName;
+              const displayName = e.student_name || e.name || "?";
+              const displayScore = e.score || e.avg_score || 0;
               return (
                 <TableRow key={e.user_id || i} className={isCurrentUser ? "border border-primary/30 bg-primary/5" : ""}>
                   <TableCell className="font-bold text-foreground">
@@ -79,15 +84,15 @@ function RankedTable({ entries, userName }: { entries: any[]; userName: string }
                     <div className="flex items-center gap-2">
                       <Avatar className="h-7 w-7">
                         <AvatarFallback className="bg-primary/20 text-xs font-semibold text-primary">
-                          {getInitials(e.student_name || e.name || "?")}
+                          {getInitials(displayName)}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="font-medium text-foreground">{e.student_name || e.name}</span>
+                      <span className="font-medium text-foreground">{displayName}</span>
                       {isCurrentUser && <Badge variant="secondary" className="text-xs">You</Badge>}
                     </div>
                   </TableCell>
-                  <TableCell className="font-semibold text-foreground">{e.score || e.avg_score || 0}%</TableCell>
-                  <TableCell className="text-muted-foreground">{e.exams_completed || e.exams || 0}</TableCell>
+                  <TableCell className="font-semibold text-foreground">{displayScore}%</TableCell>
+                  <TableCell className="text-muted-foreground">{e.exams_completed || e.examsCompleted || e.exams || 0}</TableCell>
                   <TableCell className="text-muted-foreground">{e.streak || 0}</TableCell>
                   <TableCell><TrendIcon trend={e.trend || "same"} /></TableCell>
                 </TableRow>
@@ -157,7 +162,7 @@ export default function Leaderboard() {
             <EmptyState icon={Medal} title="No data" description="No leaderboard entries for this class yet." />
           ) : (
             <>
-              <Podium entries={classEntries} />
+              <Podium entries={classEntries} userName={userName} />
               <RankedTable entries={classEntries} userName={userName} />
             </>
           )}
@@ -181,7 +186,7 @@ export default function Leaderboard() {
             <EmptyState icon={Medal} title="No data" description="No global leaderboard entries yet." />
           ) : (
             <>
-              <Podium entries={globalEntries} />
+              <Podium entries={globalEntries} userName={userName} />
               <RankedTable entries={globalEntries} userName={userName} />
             </>
           )}

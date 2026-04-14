@@ -83,10 +83,11 @@ func GetDashboard(c *gin.Context) {
 			continue
 		}
 
-		var ec models.ExamClass
+		var ecs []models.ExamClass
 		className := ""
-		if err := database.DB.Where("exam_id = ?", exam.ID).Preload("Class").First(&ec).Error; err == nil {
-			className = ec.Class.Name
+		database.DB.Where("exam_id = ?", exam.ID).Preload("Class").Limit(1).Find(&ecs)
+		if len(ecs) > 0 {
+			className = ecs[0].Class.Name
 		}
 
 		var subCount int64

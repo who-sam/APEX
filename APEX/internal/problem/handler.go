@@ -45,6 +45,15 @@ func AddProblem(c *gin.Context) {
 		return
 	}
 
+	options := req.Options
+	if options == "" {
+		options = "null"
+	}
+	correctOptionIDs := req.CorrectOptionIDs
+	if correctOptionIDs == "" {
+		correctOptionIDs = "null"
+	}
+
 	problem := models.Problem{
 		ExamID:               exam.ID,
 		Title:                req.Title,
@@ -57,8 +66,8 @@ func AddProblem(c *gin.Context) {
 		TimeLimitMs:          req.TimeLimitMs,
 		MemoryLimitKb:        req.MemoryLimitKb,
 		OrderIndex:           req.OrderIndex,
-		Options:              req.Options,
-		CorrectOptionIDs:     req.CorrectOptionIDs,
+		Options:              options,
+		CorrectOptionIDs:     correctOptionIDs,
 		MultipleCorrect:      req.MultipleCorrect,
 		Explanation:          req.Explanation,
 		MaxWordCount:         req.MaxWordCount,
@@ -155,6 +164,15 @@ func UpdateProblem(c *gin.Context) {
 		return
 	}
 
+	options := req.Options
+	if options == "" {
+		options = "null"
+	}
+	correctOptionIDs := req.CorrectOptionIDs
+	if correctOptionIDs == "" {
+		correctOptionIDs = "null"
+	}
+
 	database.DB.Model(&problem).Updates(map[string]any{
 		"title":                  req.Title,
 		"description":            req.Description,
@@ -166,8 +184,8 @@ func UpdateProblem(c *gin.Context) {
 		"time_limit_ms":          req.TimeLimitMs,
 		"memory_limit_kb":        req.MemoryLimitKb,
 		"order_index":            req.OrderIndex,
-		"options":                req.Options,
-		"correct_option_ids":     req.CorrectOptionIDs,
+		"options":                options,
+		"correct_option_ids":     correctOptionIDs,
 		"multiple_correct":       req.MultipleCorrect,
 		"explanation":            req.Explanation,
 		"max_word_count":         req.MaxWordCount,

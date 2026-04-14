@@ -97,6 +97,36 @@ func GetClass(c *gin.Context) {
 	var count int64
 	database.DB.Model(&models.ClassMember{}).Where("class_id = ?", class.ID).Count(&count)
 
+	// Load exams assigned to this class
+	var examIDs []uint
+	database.DB.Model(&models.ExamClass{}).Where("class_id = ?", class.ID).Pluck("exam_id", &examIDs)
+
+	type ExamWithStatus struct {
+		models.Exam
+		Status       string `json:"status"`
+		ProblemCount int64  `json:"problem_count"`
+	}
+
+	exams := []ExamWithStatus{}
+	if len(examIDs) > 0 {
+		var rawExams []models.Exam
+		database.DB.Where("id IN ?", examIDs).Order("start_time asc").Find(&rawExams)
+		now := time.Now()
+		for _, exam := range rawExams {
+			status := "upcoming"
+			if exam.StartTime != nil && exam.EndTime != nil {
+				if now.After(*exam.EndTime) {
+					status = "completed"
+				} else if now.After(*exam.StartTime) {
+					status = "active"
+				}
+			}
+			var problemCount int64
+			database.DB.Model(&models.Problem{}).Where("exam_id = ?", exam.ID).Count(&problemCount)
+			exams = append(exams, ExamWithStatus{Exam: exam, Status: status, ProblemCount: problemCount})
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":           class.ID,
 		"name":         class.Name,
@@ -105,6 +135,7 @@ func GetClass(c *gin.Context) {
 		"cover_image":  class.CoverImage,
 		"member_count": count,
 		"created_at":   class.CreatedAt,
+		"exams":        exams,
 	})
 }
 

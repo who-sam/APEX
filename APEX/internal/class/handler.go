@@ -145,14 +145,32 @@ func DeleteClass(c *gin.Context) {
 	teacherID := c.GetUint("user_id")
 	classID := c.Param("id")
 
-	result := database.DB.Where("id = ? AND teacher_id = ?", classID, teacherID).Delete(&models.Class{})
-	if result.RowsAffected == 0 {
+	var class models.Class
+	if err := database.DB.Where("id = ? AND teacher_id = ?", classID, teacherID).First(&class).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
 		return
 	}
 
-	database.DB.Where("class_id = ?", classID).Delete(&models.ClassMember{})
-	database.DB.Where("class_id = ?", classID).Delete(&models.ExamClass{})
+	tx := database.DB.Begin()
+	if err := tx.Where("class_id = ?", classID).Delete(&models.ClassMember{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete class members"})
+		return
+	}
+	if err := tx.Where("class_id = ?", classID).Delete(&models.ExamClass{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam-class links"})
+		return
+	}
+	if err := tx.Delete(&class).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete class"})
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "class deleted"})
 }

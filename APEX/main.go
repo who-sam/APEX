@@ -1,6 +1,7 @@
 package main
 
 import (
+	"apex/internal/announcement"
 	"apex/internal/auth"
 	"apex/internal/class"
 	"apex/internal/config"
@@ -48,6 +49,7 @@ func main() {
 	message.RegisterRoutes(public, protected)
 	team.RegisterRoutes(public, protected)
 	teacher.RegisterRoutes(public, protected)
+	announcement.RegisterRoutes(public, protected)
 
 	r.Run(":8080")
 }

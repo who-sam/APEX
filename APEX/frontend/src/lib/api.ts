@@ -53,6 +53,10 @@ export function login(email: string, password: string) {
   });
 }
 
+export function deleteAccount() {
+  return apiFetch<{ message: string }>("/auth/account", { method: "DELETE" });
+}
+
 // ── Classes ───────────────────────────────────────────
 export function createClass(data: { name: string; section?: string }) {
   return apiFetch<any>("/classes", { method: "POST", body: JSON.stringify(data) });
@@ -307,4 +311,17 @@ export function executeCode(data: { language: string; code: string; stdin?: stri
 // ── Exam Results (teacher) ────────────────────────────
 export function getExamResults(examId: number) {
   return apiFetch<any>(`/exams/${examId}/results`);
+}
+
+// ── Announcements ─────────────────────────────────────
+export function getAnnouncements(classId: number) {
+  return apiFetch<any[]>(`/classes/${classId}/announcements`);
+}
+
+export function createAnnouncement(classId: number, data: { title: string; body?: string }) {
+  return apiFetch<any>(`/classes/${classId}/announcements`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function deleteAnnouncement(id: number) {
+  return apiFetch<any>(`/announcements/${id}`, { method: "DELETE" });
 }

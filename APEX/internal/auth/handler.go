@@ -116,6 +116,126 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": user})
 }
 
+func DeleteAccount(c *gin.Context) {
+	userID := c.MustGet("user_id").(uint)
+	role := c.MustGet("role").(string)
+
+	tx := database.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start transaction"})
+		return
+	}
+
+	// Shared (both roles)
+	if err := tx.Where("user_id = ?", userID).Delete(&models.UserProfile{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete profile"})
+		return
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.Notification{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete notifications"})
+		return
+	}
+	if err := tx.Where("from_id = ? OR to_id = ?", userID, userID).Delete(&models.Message{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete messages"})
+		return
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.TeamMember{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete team memberships"})
+		return
+	}
+
+	if role == "teacher" {
+		// Collect class IDs taught by this teacher, then clear class-scoped children
+		var classIDs []uint
+		tx.Model(&models.Class{}).Where("teacher_id = ?", userID).Pluck("id", &classIDs)
+		if len(classIDs) > 0 {
+			if err := tx.Where("class_id IN ?", classIDs).Delete(&models.ClassMember{}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete class members"})
+				return
+			}
+			if err := tx.Where("class_id IN ?", classIDs).Delete(&models.ExamClass{}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam-class links"})
+				return
+			}
+		}
+		// Collect exam IDs by teacher, cascade exam -> problems/testcases/submissions/exam_classes
+		var examIDs []uint
+		tx.Model(&models.Exam{}).Where("teacher_id = ?", userID).Pluck("id", &examIDs)
+		if len(examIDs) > 0 {
+			var problemIDs []uint
+			tx.Model(&models.Problem{}).Where("exam_id IN ?", examIDs).Pluck("id", &problemIDs)
+			if len(problemIDs) > 0 {
+				if err := tx.Where("problem_id IN ?", problemIDs).Delete(&models.Submission{}).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete submissions"})
+					return
+				}
+				if err := tx.Where("problem_id IN ?", problemIDs).Delete(&models.TestCase{}).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete test cases"})
+					return
+				}
+			}
+			if err := tx.Where("exam_id IN ?", examIDs).Delete(&models.Problem{}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete problems"})
+				return
+			}
+			if err := tx.Where("exam_id IN ?", examIDs).Delete(&models.ExamClass{}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam-class links"})
+				return
+			}
+		}
+		if err := tx.Where("teacher_id = ?", userID).Delete(&models.Exam{}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exams"})
+			return
+		}
+		if err := tx.Where("teacher_id = ?", userID).Delete(&models.Announcement{}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete announcements"})
+			return
+		}
+		if err := tx.Where("teacher_id = ?", userID).Delete(&models.Class{}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete classes"})
+			return
+		}
+	} else {
+		// Student
+		if err := tx.Where("user_id = ?", userID).Delete(&models.ClassMember{}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to leave classes"})
+			return
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&models.Submission{}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete submissions"})
+			return
+		}
+	}
+
+	if err := tx.Delete(&models.User{}, userID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete account"})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit deletion"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "account deleted"})
+}
+
 func generateToken(user models.User) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": user.ID,

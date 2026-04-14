@@ -4,6 +4,12 @@ import { Clock } from "lucide-react";
 import { useStudentExams } from "@/hooks/useExams";
 import { format } from "date-fns";
 
+const difficultyColor = (d: string) => {
+  if (d === "Easy") return "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30";
+  if (d === "Medium") return "bg-accent/15 text-accent border-accent/30";
+  return "bg-destructive/15 text-destructive border-destructive/30";
+};
+
 export function UpcomingExams() {
   const { data: examsData } = useStudentExams();
   const upcoming = (examsData || [])
@@ -37,6 +43,11 @@ export function UpcomingExams() {
                   <span>{exam.problem_count || 0} questions</span>
                 </div>
               </div>
+              {exam.difficulty && (
+                <Badge variant="outline" className={difficultyColor(exam.difficulty)}>
+                  {exam.difficulty}
+                </Badge>
+              )}
             </div>
           ))
         )}

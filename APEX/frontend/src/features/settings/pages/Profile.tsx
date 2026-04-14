@@ -1,13 +1,16 @@
 import { useState } from "react";
+import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { useNavigate } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  BookOpen, FileText, Award, Settings, Hash, Users, GraduationCap,
+  BookOpen, FileText, Award, Lock, CheckCircle,
+  Zap, Globe, Target, Trophy, Star, Settings, Hash, Users, GraduationCap,
 } from "lucide-react";
 import { useUser, useRole, useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
@@ -15,7 +18,22 @@ import { useStudentStats } from "@/hooks/useStudentStats";
 import { useStudentSubmissions } from "@/hooks/useSubmissions";
 import { useStudentClasses, useClasses } from "@/hooks/useClasses";
 import { useTeacherDashboard } from "@/hooks/useTeacherDashboard";
-import { formatDistanceToNow, format } from "date-fns";
+import type { Achievement } from "@/features/settings/types/achievement";
+
+const iconMap: Record<string, React.ElementType> = {
+  CheckCircle, Star, Trophy, Zap, Globe, Target, BookOpen,
+};
+
+/* ── Static achievements (until backend supports them) ── */
+const defaultAchievements: Achievement[] = [
+  { id: "1", name: "First Submit", description: "Submit your first exam", icon: "CheckCircle", maxProgress: 1, unlocked: true, earnedAt: "2025-09-15" },
+  { id: "2", name: "Perfect Score", description: "Score 100% on any exam", icon: "Star", maxProgress: 1, unlocked: true, earnedAt: "2025-11-20" },
+  { id: "3", name: "10 Exams Completed", description: "Complete 10 exams", icon: "Trophy", maxProgress: 10, progress: 8, unlocked: false },
+  { id: "4", name: "Speed Demon", description: "Finish an exam in under half the time", icon: "Zap", maxProgress: 1, unlocked: true, earnedAt: "2026-02-27" },
+  { id: "5", name: "Polyglot", description: "Submit in 3 different languages", icon: "Globe", maxProgress: 3, progress: 3, unlocked: true, earnedAt: "2026-01-10" },
+  { id: "6", name: "Top 3", description: "Rank in the top 3 on the leaderboard", icon: "Target", maxProgress: 1, unlocked: false, progress: 0 },
+  { id: "7", name: "Bookworm", description: "Complete all practice sets", icon: "BookOpen", maxProgress: 15, progress: 12, unlocked: false },
+];
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -27,7 +45,7 @@ export default function Profile() {
 
   const { data: profileData } = useProfile();
   const profilePhoto = profileData?.profile?.avatar_url || null;
-  const { data: studentStats } = useStudentStats();
+  const { data: studentStatsData } = useStudentStats();
   const { data: teacherDash } = useTeacherDashboard();
   const { data: submissions } = useStudentSubmissions();
   const { data: studentClasses } = useStudentClasses();
@@ -39,22 +57,26 @@ export default function Profile() {
     ? [
         { label: "Courses", value: String(teacherDash?.total_classes || 0), icon: BookOpen },
         { label: "Students", value: String(teacherDash?.total_students || 0), icon: Users },
-        { label: "Active Exams", value: String(teacherDash?.active_exams || 0), icon: FileText },
+        { label: "Exams Created", value: String(teacherDash?.active_exams || 0), icon: FileText },
       ]
     : [
-        { label: "Exams Taken", value: String(studentStats?.exams_taken || 0), icon: FileText },
-        { label: "Average Score", value: `${studentStats?.avg_score?.toFixed(0) || 0}%`, icon: Award },
-        { label: "Total Submissions", value: String(studentStats?.total_submissions || 0), icon: FileText },
+        { label: "Exams Taken", value: String(studentStatsData?.exams_taken || 0), icon: FileText },
+        { label: "Average Score", value: `${studentStatsData?.avg_score?.toFixed(0) || 0}%`, icon: Award },
+        { label: "Total Submissions", value: String(studentStatsData?.total_submissions || 0), icon: CheckCircle },
       ];
 
   const recentSubmissions = (submissions || []).slice(0, 5);
   const classes = isTeacher ? (teacherClasses || []) : (studentClasses || []);
+
   const recentActivity = isTeacher
     ? (teacherDash?.recent_activity || []).slice(0, 5)
     : recentSubmissions.map((s: any) => ({
         text: `${s.status === "accepted" ? "Passed" : s.status} — Score: ${s.score?.toFixed(0) || 0}%`,
         time: s.submitted_at ? formatDistanceToNow(new Date(s.submitted_at), { addSuffix: true }) : "",
       }));
+
+  // TODO: replace with API achievements when backend supports them
+  const achievements = defaultAchievements;
 
   return (
     <div className="space-y-6">
@@ -80,13 +102,15 @@ export default function Profile() {
                 <span>Student ID: <span className="font-mono font-medium text-foreground">{user.id}</span></span>
               </div>
             )}
-            {profileData?.user?.created_at && (
+            {profileData?.user?.created_at ? (
               <p className="text-sm text-muted-foreground">
                 Member since {format(new Date(profileData.user.created_at), "MMMM yyyy")}
               </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Member since --</p>
             )}
             {profileData?.profile?.bio && (
-              <p className="text-sm text-foreground/70">{profileData.profile.bio}</p>
+              <p className="text-sm text-foreground/80 mt-2">{profileData.profile.bio}</p>
             )}
           </div>
           <Button variant="outline" onClick={() => navigate("/dashboard/settings")} className="gap-2">
@@ -117,6 +141,7 @@ export default function Profile() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           {!isTeacher && <TabsTrigger value="submissions">Submissions</TabsTrigger>}
+          {!isTeacher && <TabsTrigger value="achievements">Achievements</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6 mt-4">
@@ -169,20 +194,28 @@ export default function Profile() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Problem</TableHead>
+                        <TableHead>Exam Name</TableHead>
                         <TableHead>Score</TableHead>
                         <TableHead>Language</TableHead>
+                        <TableHead>Date</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {recentSubmissions.map((s: any) => (
-                        <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableRow
+                          key={s.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => navigate(`/dashboard/exam/${s.exam_id || s.id}/review`)}
+                        >
                           <TableCell className="font-medium text-foreground">
-                            {s.problem?.title || `Problem #${s.problem_id}`}
+                            {s.exam?.title || s.problem?.title || `Exam #${s.exam_id || s.problem_id || s.id}`}
                           </TableCell>
-                          <TableCell className="text-foreground">{s.score != null ? `${Math.round(s.score)}%` : "—"}</TableCell>
-                          <TableCell className="text-muted-foreground">{s.language || "—"}</TableCell>
+                          <TableCell className="text-foreground">{s.score != null ? `${Math.round(s.score)}%` : "---"}</TableCell>
+                          <TableCell className="text-muted-foreground">{s.language || "---"}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {s.submitted_at ? format(new Date(s.submitted_at), "yyyy-MM-dd") : "---"}
+                          </TableCell>
                           <TableCell>
                             <Badge variant="secondary" className="capitalize">{s.status}</Badge>
                           </TableCell>
@@ -193,6 +226,37 @@ export default function Profile() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+        )}
+
+        {!isTeacher && (
+          <TabsContent value="achievements" className="mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {achievements.map((a) => {
+                const Icon = iconMap[a.icon] || Award;
+                return (
+                  <Card key={a.id} className={`bg-card/80 backdrop-blur-md border-border/50 transition-all ${!a.unlocked ? "opacity-50 grayscale" : ""}`}>
+                    <CardContent className="flex flex-col items-center text-center gap-3 pt-6">
+                      <div className={`rounded-full p-3 ${a.unlocked ? "bg-primary/15" : "bg-muted"}`}>
+                        {a.unlocked ? <Icon className="h-6 w-6 text-primary" /> : <Lock className="h-6 w-6 text-muted-foreground" />}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-foreground">{a.name}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{a.description}</p>
+                      </div>
+                      {a.unlocked ? (
+                        <p className="text-xs text-primary">{a.earnedAt ? format(parseISO(a.earnedAt), "MMM d, yyyy") : ""}</p>
+                      ) : (
+                        <div className="w-full space-y-1">
+                          <Progress value={((a.progress || 0) / a.maxProgress) * 100} className="h-1.5" />
+                          <p className="text-xs text-muted-foreground">{a.progress}/{a.maxProgress}</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </TabsContent>
         )}
       </Tabs>

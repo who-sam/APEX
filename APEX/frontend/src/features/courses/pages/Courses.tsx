@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useStudentClasses, useJoinClass } from "@/hooks/useClasses";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
-import { EmptyState } from "@/components/EmptyState";
 import {
   BookOpen, Plus, Users, Upload, Copy, Check, Search, LogIn,
   MoreHorizontal, Eye, Pencil, Trash2, ImagePlus, X,
@@ -47,12 +46,21 @@ function TeacherCourses() {
   const [editName, setEditName] = useState("");
   const [editPhoto, setEditPhoto] = useState<string | null>(null);
 
+  // Open create dialog if navigated with state
   useEffect(() => {
     if ((location.state as any)?.openCreate) {
       setCreateOpen(true);
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setNewPhoto(reader.result as string);
+    reader.readAsDataURL(file);
+  };
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -68,36 +76,12 @@ function TeacherCourses() {
       toast({
         title: "Course created",
         description: created?.invite_code
-          ? <span>Invite code: <strong>{created.invite_code}</strong> — share with students.</span>
+          ? <span>Invite code: <strong>{created.invite_code}</strong> — share this with your students so they can enroll.</span>
           : "Course created successfully.",
       });
     } catch (err: any) {
       toast({ title: "Create failed", description: err.message, variant: "destructive" });
     }
-  };
-
-  const handleDelete = async (id: number, name: string) => {
-    try {
-      await deleteClassMutation.mutateAsync(id);
-      toast({ title: "Course deleted", description: `${name} has been deleted.` });
-    } catch (err: any) {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
-    }
-  };
-
-  const copyCode = (code: string, id: number) => {
-    navigator.clipboard.writeText(code);
-    setCopiedId(id);
-    toast({ title: "Copied!", description: `Invite code copied to clipboard.` });
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setNewPhoto(reader.result as string);
-    reader.readAsDataURL(file);
   };
 
   const handleChangePhoto = (courseId: number) => {
@@ -116,6 +100,22 @@ function TeacherCourses() {
       reader.readAsDataURL(file);
     };
     input.click();
+  };
+
+  const copyCode = (code: string, id: number) => {
+    navigator.clipboard.writeText(code);
+    setCopiedId(id);
+    toast({ title: "Copied!", description: `Invite code ${code} copied to clipboard.` });
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleDelete = async (id: number, name: string) => {
+    try {
+      await deleteClassMutation.mutateAsync(id);
+      toast({ title: "Course deleted", description: `${name} has been deleted.` });
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
   };
 
   const openEditDialog = (course: any) => {
@@ -168,96 +168,96 @@ function TeacherCourses() {
         </Button>
       </div>
 
-      {courses.length === 0 ? (
-        <EmptyState icon={BookOpen} title="No courses" description="Create your first course to get started." actionLabel="Create Course" onAction={() => setCreateOpen(true)} />
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course: any) => (
-            <Card
-              key={course.id}
-              className="border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-              onClick={() => navigate(`/dashboard/courses/${course.id}`)}
-            >
-              <div className="relative h-40 overflow-hidden group">
-                <img
-                  src={course.cover_image || defaultCourseCover}
-                  alt={course.name}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleChangePhoto(course.id); }}
-                  className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
-                  aria-label="Change cover photo"
-                >
-                  <ImagePlus className="h-6 w-6 text-white" />
-                </button>
-              </div>
-              <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-primary" />
-                  {course.name}
-                </CardTitle>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem className="gap-2" onSelect={(e) => e.preventDefault()}>
-                      <Eye className="h-4 w-4" /> View Details
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="gap-2" onSelect={(e) => { e.preventDefault(); openEditDialog(course); }} onClick={(e) => e.stopPropagation()}>
-                      <Pencil className="h-4 w-4" /> Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="gap-2 text-destructive focus:text-destructive"
-                      onSelect={(e) => { e.preventDefault(); handleDelete(course.id, course.name); }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Trash2 className="h-4 w-4" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {course.invite_code && (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="font-mono text-xs tracking-wider">
-                      {course.invite_code}
-                    </Badge>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); copyCode(course.invite_code, course.id); }}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                      aria-label="Copy invite code"
-                    >
-                      {copiedId === course.id ? (
-                        <Check className="h-3.5 w-3.5 text-green-500" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <Users className="h-4 w-4" />
-                    {course.member_count || 0} students
-                  </span>
-                  {course.section && <span className="text-muted-foreground">{course.section}</span>}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {courses.map((course: any) => (
+          <Card
+            key={course.id}
+            className="border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            onClick={() => {
+              if (editOpen) return;
+              navigate(`/dashboard/courses/${course.id}`);
+            }}
+          >
+            {/* Cover image -- always shown, uses default if none set */}
+            <div className="relative h-40 overflow-hidden group">
+              <img
+                src={course.cover_image || defaultCourseCover}
+                alt={course.name}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <button
+                onClick={(e) => { e.stopPropagation(); handleChangePhoto(course.id); }}
+                className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Change cover photo"
+              >
+                <ImagePlus className="h-6 w-6 text-white" />
+              </button>
+            </div>
+            <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-primary" />
+                {course.name}
+              </CardTitle>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem className="gap-2" onSelect={(e) => e.preventDefault()}>
+                    <Eye className="h-4 w-4" /> View Details
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2" onSelect={(e) => { e.preventDefault(); openEditDialog(course); }} onClick={(e) => e.stopPropagation()}>
+                    <Pencil className="h-4 w-4" /> Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2 text-destructive focus:text-destructive"
+                    onSelect={(e) => { e.preventDefault(); handleDelete(course.id, course.name); }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {course.invite_code && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="font-mono text-xs tracking-wider">
+                    {course.invite_code}
+                  </Badge>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); copyCode(course.invite_code, course.id); }}
+                    className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    aria-label="Copy invite code"
+                  >
+                    {copiedId === course.id ? (
+                      <Check className="h-3.5 w-3.5 text-green-500" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                 </div>
+              )}
 
-                <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <Upload className="h-3.5 w-3.5" />
-                  Enroll via CSV
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <Users className="h-4 w-4" />
+                  {course.member_count || 0} students
+                </span>
+                <span className="text-muted-foreground">{course.exam_count || 0} exams</span>
+              </div>
+
+              <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <Upload className="h-3.5 w-3.5" />
+                Enroll via CSV
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       {/* Edit Course Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -408,7 +408,7 @@ function StudentCourses() {
       await joinClassMutation.mutateAsync(code);
       setCourseIdInput("");
       setEnrollOpen(false);
-      toast({ title: "Enrolled!", description: `You have been enrolled successfully.` });
+      toast({ title: "Enrolled!", description: `You have been enrolled in the course.` });
     } catch (err: any) {
       toast({ title: "Enrollment failed", description: err.message, variant: "destructive" });
     }
@@ -450,13 +450,15 @@ function StudentCourses() {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState
-          icon={BookOpen}
-          title="No courses found"
-          description={searchQuery ? "Try a different search." : "Enroll in a course using the invite code from your teacher."}
-          actionLabel={searchQuery ? undefined : "Enroll"}
-          onAction={searchQuery ? undefined : () => setEnrollOpen(true)}
-        />
+        <Card className="border-border/50 bg-card/80 backdrop-blur-sm">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <BookOpen className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-foreground font-medium">No courses found</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {searchQuery ? "Try a different search." : "Enroll in a course using the invite code from your teacher."}
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((course: any) => (
@@ -465,6 +467,7 @@ function StudentCourses() {
               className="border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
               onClick={() => navigate(`/dashboard/courses/${course.id}`)}
             >
+              {/* Cover image */}
               <div className="h-40 overflow-hidden">
                 <img
                   src={course.cover_image || defaultCourseCover}
@@ -485,9 +488,10 @@ function StudentCourses() {
                     {course.invite_code}
                   </Badge>
                 )}
+                {course.teacher_name && <p className="text-sm text-muted-foreground">Instructor: {course.teacher_name}</p>}
                 {course.section && <p className="text-sm text-muted-foreground">{course.section}</p>}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{course.member_count || 0} members</span>
+                  <span className="text-muted-foreground">{course.exam_count || 0} exams</span>
                 </div>
               </CardContent>
             </Card>
@@ -509,7 +513,7 @@ function StudentCourses() {
               <Label htmlFor="enroll-id">Invite Code</Label>
               <Input
                 id="enroll-id"
-                placeholder="e.g. ABC123"
+                placeholder="e.g. APX-CS101"
                 className="font-mono"
                 value={courseIdInput}
                 onChange={(e) => setCourseIdInput(e.target.value)}

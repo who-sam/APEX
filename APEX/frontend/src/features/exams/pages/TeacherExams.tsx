@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BookOpen, Clock, Search, Plus, Filter, MoreHorizontal,
-  Pencil, Eye, Trash2, Users, FileText,
+  Pencil, Eye, Trash2, Users, FileText, CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useExams, useDeleteExam } from "@/hooks/useExams";
@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 
 type ExamStatus = "upcoming" | "active" | "completed" | "draft";
 
-const statusConfig: Record<string, { label: string; className: string }> = {
+const statusConfig: Record<ExamStatus, { label: string; className: string }> = {
   upcoming: { label: "Upcoming", className: "bg-accent/15 text-accent border-accent/30" },
   active: { label: "Active", className: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30" },
   completed: { label: "Completed", className: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30" },
@@ -61,17 +61,20 @@ export default function TeacherExams() {
     examDate: new Date(e.start_time || e.created_at || Date.now()),
   }));
 
-  const stats = {
+  const stats = useMemo(() => ({
     total: exams.length,
     upcoming: exams.filter((e: any) => e.derivedStatus === "upcoming").length,
     active: exams.filter((e: any) => e.derivedStatus === "active").length,
     completed: exams.filter((e: any) => e.derivedStatus === "completed").length,
-  };
+    drafts: exams.filter((e: any) => e.derivedStatus === "draft").length,
+  }), [exams]);
 
-  const filtered = exams
-    .filter((e: any) => statusFilter === "all" || e.derivedStatus === statusFilter)
-    .filter((e: any) => !search || (e.title || "").toLowerCase().includes(search.toLowerCase()))
-    .sort((a: any, b: any) => b.examDate.getTime() - a.examDate.getTime());
+  const filtered = useMemo(() => {
+    return exams
+      .filter((e: any) => statusFilter === "all" || e.derivedStatus === statusFilter)
+      .filter((e: any) => !search || (e.title || "").toLowerCase().includes(search.toLowerCase()) || (e.class_name || "").toLowerCase().includes(search.toLowerCase()))
+      .sort((a: any, b: any) => b.examDate.getTime() - a.examDate.getTime());
+  }, [exams, statusFilter, search]);
 
   const handleDelete = async (id: number, title: string) => {
     try {
@@ -122,7 +125,7 @@ export default function TeacherExams() {
         </Card>
       </div>
 
-      {/* Filters + Exam list */}
+      {/* Filters */}
       <Card className="border-border/50 bg-card/80 backdrop-blur-md">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -135,7 +138,7 @@ export default function TeacherExams() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search exams..."
+                placeholder="Search exams or courses..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 h-9 bg-secondary/30 border-border/50"
@@ -162,13 +165,11 @@ export default function TeacherExams() {
               icon={BookOpen}
               title="No exams found"
               description="Try adjusting your filters or create a new exam."
-              actionLabel="Create Exam"
-              onAction={() => navigate("/dashboard/exam-builder")}
             />
           ) : (
             <div className="space-y-3">
               {filtered.map((exam: any) => {
-                const cfg = statusConfig[exam.derivedStatus] || statusConfig.draft;
+                const cfg = statusConfig[exam.derivedStatus as ExamStatus] || statusConfig.draft;
                 return (
                   <div
                     key={exam.id}
@@ -216,14 +217,14 @@ export default function TeacherExams() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/exam-builder", { state: { editExam: exam } })}>
+                          <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/exam-builder", { state: { editExam: { id: exam.id, title: exam.title, duration: exam.duration_minutes, courseId: exam.class_id } } })}>
                             <Pencil className="h-4 w-4" /> Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem className="gap-2" onClick={() => navigate(`/dashboard/exam-preview/${exam.id}`)}>
                             <Eye className="h-4 w-4" /> Preview
                           </DropdownMenuItem>
                           {exam.derivedStatus === "completed" && (
-                            <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/results")}>
+                            <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/results", { state: { courseId: exam.class_id, examId: exam.id } })}>
                               <FileText className="h-4 w-4" /> View Results
                             </DropdownMenuItem>
                           )}

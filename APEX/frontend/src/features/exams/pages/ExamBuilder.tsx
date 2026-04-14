@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useClasses } from "@/hooks/useClasses";
 import { useCreateExam, useAssignExam } from "@/hooks/useExams";
 import { useAllProblems, useAddProblem } from "@/hooks/useProblems";
+import { addTestCase } from "@/lib/api";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import type { Question, QuestionType, MCQQuestion, WrittenQuestion, CodingQuestion } from "@/features/exams/types/exam";
@@ -147,6 +148,10 @@ export default function ExamBuilder() {
       toast({ title: "Validation error", description: "Please assign the exam to a course.", variant: "destructive" });
       return;
     }
+    if (!Number.isFinite(Number(assignedCourse)) || Number(assignedCourse) <= 0) {
+      toast({ title: "Validation error", description: "Invalid course selection.", variant: "destructive" });
+      return;
+    }
     if (questions.length === 0) {
       toast({ title: "Validation error", description: "Add at least one question.", variant: "destructive" });
       return;
@@ -182,6 +187,7 @@ export default function ExamBuilder() {
       for (const q of questions) {
         const problemData: any = {
           title: q.text,
+          description: q.text,
           type: q.type,
           points: q.points,
           difficulty: q.difficulty,
@@ -200,14 +206,31 @@ export default function ExamBuilder() {
           problemData.require_manual_grading = w.requireManualGrading;
         } else {
           const c = q as CodingQuestion;
-          problemData.description = c.description;
+          problemData.description = c.description || q.text;
           problemData.starter_code = c.starterCode?.python || c.starterCode?.javascript || "";
           problemData.hints = c.hints;
           problemData.time_limit_ms = c.timeLimitMs;
           problemData.memory_limit_kb = c.memoryLimitKb;
         }
 
-        await addProblemMutation.mutateAsync({ examId: exam.id, data: problemData });
+        const createdProblem = await addProblemMutation.mutateAsync({ examId: exam.id, data: problemData });
+
+        // Add test cases for coding problems
+        if (q.type === "coding") {
+          const c = q as CodingQuestion;
+          const validTCs = c.testCases.filter(
+            (tc) => tc.input.trim() !== "" && tc.expectedOutput.trim() !== ""
+          );
+          for (let i = 0; i < validTCs.length; i++) {
+            const tc = validTCs[i];
+            await addTestCase(createdProblem.id, {
+              input: tc.input,
+              expected_output: tc.expectedOutput,
+              is_sample: tc.isSample,
+              order_index: i,
+            });
+          }
+        }
       }
 
       // 3. Assign to class
@@ -225,7 +248,7 @@ export default function ExamBuilder() {
     }
   };
 
-  // Bank import logic — now from real API
+  // Bank import logic -- now from real API
   const allBankProblems = bankProblems || [];
   const filteredBankProblems = allBankProblems.filter((p: any) => {
     const matchesSearch = (p.title || "").toLowerCase().includes(bankSearch.toLowerCase()) || (p.description || "").toLowerCase().includes(bankSearch.toLowerCase());
@@ -250,7 +273,7 @@ export default function ExamBuilder() {
     setSelectedBankIds(new Set());
     setBankSearch("");
     setBankTypeFilter("all");
-    toast({ title: "Imported", description: `${newQuestions.length} question(s) imported.` });
+    toast({ title: "Imported", description: `${newQuestions.length} question(s) imported from the bank.` });
   };
 
   const handleSaveToBank = () => {
@@ -260,7 +283,7 @@ export default function ExamBuilder() {
   if (classesLoading) return <PageSkeleton rows={3} cards={4} />;
   if (classesError) return <ErrorState message="Failed to load classes" onRetry={refetchClasses} />;
 
-  const courseList = (classes || []).map((c: any) => ({ id: String(c.id), name: c.name + (c.section ? ` — ${c.section}` : "") }));
+  const courseList = (classes || []).map((c: any) => ({ id: String(c.id), name: c.name + (c.section ? ` \u2014 ${c.section}` : "") }));
   const selected = questions[selectedIdx];
 
   return (
@@ -390,20 +413,23 @@ export default function ExamBuilder() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Import from Problem Bank Dialog */}
+      {/* Import from Question Bank Dialog */}
       <Dialog open={bankDialogOpen} onOpenChange={setBankDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Import from Question Bank</DialogTitle>
             <DialogDescription>
-              Select existing problems to import into this exam.
+              {assignedCourse
+                ? `Showing questions for ${courseList.find((c: any) => c.id === assignedCourse)?.name || assignedCourse}. Select questions to import.`
+                : "Select a course first in the exam settings to filter questions, or browse all."}
             </DialogDescription>
           </DialogHeader>
 
+          {/* Filters */}
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search problems..." className="pl-9" value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} />
+              <Input placeholder="Search questions or tags..." className="pl-9" value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} />
             </div>
             <Select value={bankTypeFilter} onValueChange={setBankTypeFilter}>
               <SelectTrigger className="w-32">
@@ -418,11 +444,12 @@ export default function ExamBuilder() {
             </Select>
           </div>
 
+          {/* Question list */}
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
             {filteredBankProblems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <FileText className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">No problems found.</p>
+                <p className="text-sm">No questions found.</p>
               </div>
             ) : (
               filteredBankProblems.map((p: any) => {
@@ -446,6 +473,13 @@ export default function ExamBuilder() {
                         <Badge variant="secondary" className="text-[10px] ml-auto">{p.difficulty}</Badge>
                       </div>
                       <p className="text-sm text-foreground">{p.title || p.text}</p>
+                      {Array.isArray(p.tags) && p.tags.length > 0 && (
+                        <div className="flex gap-1 mt-1.5">
+                          {p.tags.map((t: string) => (
+                            <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

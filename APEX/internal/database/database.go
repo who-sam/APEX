@@ -33,6 +33,7 @@ func Connect(cfg config.Config) {
 		&models.Notification{},
 		&models.Team{},
 		&models.TeamMember{},
+		&models.Announcement{},
 	); err != nil {
 		log.Fatal("Failed to migrate database: ", err)
 	}

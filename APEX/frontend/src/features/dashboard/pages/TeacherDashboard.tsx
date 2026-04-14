@@ -58,7 +58,6 @@ export default function TeacherDashboard() {
   ];
 
   const pendingGrading = d.pending_grading || [];
-
   const activeExamList = d.active_exam_list || [];
   const recentActivity = d.recent_activity || [];
   const classPerformance = d.class_performance || [];
@@ -128,6 +127,7 @@ export default function TeacherDashboard() {
 
       {/* Active Courses + Pending Grading */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Active Courses */}
         <Card className="lg:col-span-3 bg-card/80 backdrop-blur-md border-border/50">
           <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base font-semibold">Active Courses</CardTitle>
@@ -146,13 +146,13 @@ export default function TeacherDashboard() {
                   className="flex items-center gap-3 rounded-lg border border-border/30 p-3 hover:bg-muted/30 transition-colors cursor-pointer"
                 >
                   <img
-                    src={defaultCourseCover}
+                    src={c.cover_image || defaultCourseCover}
                     alt={c.name}
                     className="h-12 w-20 rounded-md object-cover shrink-0"
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">{c.member_count || 0} students{c.section ? ` • ${c.section}` : ""}</p>
+                    <p className="text-xs text-muted-foreground">{c.member_count || 0} students{c.section ? ` \u2022 ${c.section}` : ""}</p>
                   </div>
                   {c.invite_code && (
                     <Badge variant="secondary" className="font-mono text-[10px] shrink-0">{c.invite_code}</Badge>
@@ -163,6 +163,7 @@ export default function TeacherDashboard() {
           </CardContent>
         </Card>
 
+        {/* Pending Grading */}
         <Card className="lg:col-span-2 bg-card/80 backdrop-blur-md border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -199,6 +200,7 @@ export default function TeacherDashboard() {
 
       {/* Active Exams + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Active Exams */}
         <Card className="lg:col-span-3 bg-card/80 backdrop-blur-md border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Active Exams</CardTitle>
@@ -213,8 +215,9 @@ export default function TeacherDashboard() {
                     <tr className="border-b border-border/50 text-muted-foreground">
                       <th className="px-5 py-2 text-left font-medium">Exam</th>
                       <th className="px-3 py-2 text-left font-medium">Class</th>
-                      <th className="px-3 py-2 text-left font-medium">Submissions</th>
+                      <th className="px-3 py-2 text-left font-medium">Progress</th>
                       <th className="px-3 py-2 text-left font-medium">Time</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
                       <th className="px-3 py-2" />
                     </tr>
                   </thead>
@@ -222,28 +225,35 @@ export default function TeacherDashboard() {
                     {activeExamList.map((e: any) => (
                       <tr key={e.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
                         <td className="px-5 py-3 font-medium text-foreground">{e.title}</td>
-                        <td className="px-3 py-3 text-muted-foreground">{e.class_name || "—"}</td>
+                        <td className="px-3 py-3 text-muted-foreground">{e.class_name || "\u2014"}</td>
                         <td className="px-3 py-3 text-muted-foreground">{e.submissions || 0}/{e.students || 0}</td>
                         <td className="px-3 py-3">
                           <span className="flex items-center gap-1 text-muted-foreground">
                             <Clock className="h-3 w-3" />
-                            {e.end_time ? formatDistanceToNow(new Date(e.end_time), { addSuffix: true }) : "—"}
+                            {e.end_time ? formatDistanceToNow(new Date(e.end_time), { addSuffix: true }) : "\u2014"}
                           </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge variant={e.status === "active" ? "default" : "secondary"} className="rounded-full text-xs capitalize">
+                            {e.status || "active"}
+                          </Badge>
                         </td>
                         <td className="px-3 py-3">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="More options">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => navigate(`/dashboard/exam-preview/${e.id}`)} className="gap-2">
-                                <Eye className="h-4 w-4" /> Preview
+                                <Eye className="h-4 w-4" /> Preview as Student
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => navigate("/dashboard/exam-builder", { state: { editExam: e } })} className="gap-2">
                                 <Pencil className="h-4 w-4" /> Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => navigate("/dashboard/results")} className="gap-2">
-                                <BarChart3 className="h-4 w-4" /> Results
+                                <BarChart3 className="h-4 w-4" /> View Results
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDeleteExam(e.id, e.title)} className="gap-2 text-destructive focus:text-destructive">
                                 <Trash2 className="h-4 w-4" /> Delete
@@ -260,6 +270,7 @@ export default function TeacherDashboard() {
           </CardContent>
         </Card>
 
+        {/* Recent Activity */}
         <Card className="lg:col-span-2 bg-card/80 backdrop-blur-md border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
@@ -272,7 +283,7 @@ export default function TeacherDashboard() {
                 <div key={i} className="flex items-start gap-3">
                   <Avatar className="h-8 w-8 shrink-0">
                     <AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">
-                      {(a.type || "?")[0].toUpperCase()}
+                      {(a.user_name || a.type || "?").substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0">
@@ -297,29 +308,56 @@ export default function TeacherDashboard() {
               <p className="text-xs text-muted-foreground mt-1">Average scores across all sections</p>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "hsl(142, 71%, 45%)" }} />&ge; 80%</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" />70-79%</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "hsl(142, 71%, 45%)" }} />{"\u2265"} 80%</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" />70{"\u2013"}79%</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "hsl(0, 84%, 60%)" }} />&lt; 70%</span>
             </div>
           </CardHeader>
           <CardContent>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={classPerformance.map((c: any) => ({ name: c.class_name, avg: c.average_score, students: c.student_count }))} barCategoryGap="20%">
+                <BarChart data={classPerformance.map((c: any) => ({ name: c.class_name, avg: c.average_score, students: c.student_count, trend: c.trend || 0 }))} barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={{ stroke: "hsl(var(--border))" }} tickLine={false} />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} domain={[0, 100]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
-                  <ReferenceLine y={classAvg} stroke="hsl(var(--muted-foreground))" strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: `Avg ${classAvg}%`, position: "right", fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                    axisLine={{ stroke: "hsl(var(--border))" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                    domain={[0, 100]}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <ReferenceLine
+                    y={classAvg}
+                    stroke="hsl(var(--muted-foreground))"
+                    strokeDasharray="6 4"
+                    strokeOpacity={0.5}
+                    label={{
+                      value: `Avg ${classAvg}%`,
+                      position: "right",
+                      fill: "hsl(var(--muted-foreground))",
+                      fontSize: 11,
+                    }}
+                  />
                   <Tooltip
                     cursor={{ fill: "hsl(var(--muted-foreground) / 0.06)" }}
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
                       const entry = payload[0].payload;
+                      const trendIcon = entry.trend > 0 ? "\u2191" : entry.trend < 0 ? "\u2193" : "\u2192";
+                      const trendColor = entry.trend > 0 ? "text-green-500" : entry.trend < 0 ? "text-red-500" : "text-muted-foreground";
                       return (
                         <div className="rounded-xl border border-border bg-card p-3 shadow-lg">
                           <p className="text-sm font-semibold text-foreground">{entry.name}</p>
-                          <p className="text-foreground font-bold">Score: {entry.avg}%</p>
-                          <p className="text-xs text-muted-foreground">{entry.students} students</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-foreground font-bold">Score: {entry.avg}%</span>
+                            <span className={`text-xs font-medium ${trendColor}`}>{trendIcon} {Math.abs(entry.trend)}%</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{entry.students} students</p>
                         </div>
                       );
                     }}

@@ -9,17 +9,25 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useUser, useRole } from "@/contexts/AuthContext";
+import { useUser, useRole, useAuth } from "@/contexts/AuthContext";
 import { useProfile, useUpdateProfile, useChangePassword } from "@/hooks/useProfile";
 import { useTheme } from "next-themes";
 import { Badge } from "@/components/ui/badge";
+import { deleteAccount } from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { firstName, middleName, lastName, studentId, email } = useUser();
   const { role } = useRole();
+  const { logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const { data: profileData } = useProfile();
   const updateProfileMutation = useUpdateProfile();
   const changePasswordMutation = useChangePassword();
@@ -78,6 +86,18 @@ export default function SettingsPage() {
       toast({ title: "Preferences saved", description: "Your notification preferences have been updated." });
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeletingAccount(true);
+    try {
+      await deleteAccount();
+      logout();
+      navigate("/auth");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setIsDeletingAccount(false);
     }
   };
 
@@ -296,8 +316,55 @@ export default function SettingsPage() {
               <Button onClick={handlePasswordUpdate} disabled={!isPasswordDirty}>Update Password</Button>
             </CardContent>
           </Card>
+
+          <Card className="border-destructive/50 bg-card/80 backdrop-blur-md">
+            <CardHeader>
+              <CardTitle className="text-lg text-destructive">Danger Zone</CardTitle>
+              <CardDescription>Permanent actions that cannot be undone.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">Delete Account</p>
+                  <p className="text-sm text-muted-foreground">Permanently delete your account and all associated data.</p>
+                </div>
+                <Button variant="destructive" onClick={() => { setDeleteConfirmText(""); setShowDeleteDialog(true); }}>
+                  <Trash2 className="h-4 w-4 mr-2" /> Delete Account
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Account</DialogTitle>
+            <DialogDescription>
+              This will permanently delete your account and all your data. This action cannot be undone.
+              Type <strong>DELETE</strong> to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder="Type DELETE to confirm"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isDeletingAccount}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteConfirmText !== "DELETE" || isDeletingAccount}
+              onClick={handleDeleteAccount}
+            >
+              {isDeletingAccount ? "Deleting..." : "Delete Account"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
