@@ -67,11 +67,20 @@ function bankProblemToQuestion(p: any): Question {
   const type = p.type || "coding";
   switch (type) {
     case "mcq": {
-      const opts = Array.isArray(p.options) ? p.options : (typeof p.options === "string" ? JSON.parse(p.options || "[]") : []);
+      const rawOpts = Array.isArray(p.options) ? p.options : (typeof p.options === "string" ? (() => { try { return JSON.parse(p.options || "[]"); } catch { return []; } })() : []);
+      const opts = rawOpts.map((o: any, i: number) => {
+        if (o && typeof o === "object") return { id: String(o.id ?? i), text: String(o.text ?? "") };
+        return { id: String(i), text: String(o ?? "") };
+      });
+      const rawCorrect = Array.isArray(p.correct_option_ids)
+        ? p.correct_option_ids
+        : typeof p.correct_option_ids === "string"
+          ? (() => { try { return JSON.parse(p.correct_option_ids || "[]"); } catch { return []; } })()
+          : [];
       return {
         ...base, type: "mcq",
-        options: opts.length > 0 ? opts.map((o: any, i: number) => ({ id: o.id || String(i), text: o.text || o })) : [{ id: "a", text: "" }, { id: "b", text: "" }, { id: "c", text: "" }, { id: "d", text: "" }],
-        correctOptionIds: Array.isArray(p.correct_option_ids) ? p.correct_option_ids : [],
+        options: opts.length > 0 ? opts : [{ id: "a", text: "" }, { id: "b", text: "" }, { id: "c", text: "" }, { id: "d", text: "" }],
+        correctOptionIds: rawCorrect.map(String),
         multipleCorrect: p.multiple_correct || false,
         explanation: p.explanation || "",
       } as MCQQuestion;

@@ -115,7 +115,7 @@ export default function MCQEditor({ question, onChange, onSaveToBank }: Props) {
               {String.fromCharCode(65 + i)}
             </button>
             <Input
-              value={opt.text}
+              value={String(opt.text ?? "")}
               onChange={(e) => {
                 const opts = [...question.options];
                 opts[i] = { ...opts[i], text: e.target.value };
