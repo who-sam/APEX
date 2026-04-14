@@ -2,7 +2,9 @@ package exam
 
 import (
 	"apex/internal/database"
+	"apex/internal/judge0"
 	"apex/internal/models"
+	"apex/internal/notification"
 	"fmt"
 	"net/http"
 	"time"
@@ -195,6 +197,9 @@ func DeleteExam(c *gin.Context) {
 		if err := tx.Where("exam_id = ?", exam.ID).Delete(&models.Submission{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("exam_id = ?", exam.ID).Delete(&models.ExamAttempt{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("exam_id = ?", exam.ID).Delete(&models.Problem{}).Error; err != nil {
 			return err
 		}
@@ -295,6 +300,166 @@ func GetExamResults(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, results)
+}
+
+// StartAttempt returns an existing in-progress attempt for the user/exam,
+// or creates a new one. Idempotent.
+func StartAttempt(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	examID := c.Param("id")
+
+	var exam models.Exam
+	if err := database.DB.First(&exam, examID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+
+	var attempt models.ExamAttempt
+	err := database.DB.Where("user_id = ? AND exam_id = ?", userID, exam.ID).First(&attempt).Error
+	if err == gorm.ErrRecordNotFound {
+		attempt = models.ExamAttempt{
+			UserID: userID,
+			ExamID: exam.ID,
+			Status: "in_progress",
+		}
+		if err := database.DB.Create(&attempt).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start attempt"})
+			return
+		}
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load attempt"})
+		return
+	}
+
+	c.JSON(http.StatusOK, attempt)
+}
+
+type submitAnswer struct {
+	ProblemID       uint   `json:"problem_id"`
+	Type            string `json:"type"`
+	Language        string `json:"language"`
+	Code            string `json:"code"`
+	SelectedOptions string `json:"selected_options"`
+	TextAnswer      string `json:"text_answer"`
+}
+
+type submitAttemptRequest struct {
+	Answers []submitAnswer `json:"answers"`
+}
+
+// SubmitAttempt finalises an attempt: creates one Submission per answer
+// linked to the attempt, schedules grading, and posts a single notification.
+func SubmitAttempt(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	examID := c.Param("id")
+
+	var exam models.Exam
+	if err := database.DB.First(&exam, examID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+
+	var req submitAttemptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	var attempt models.ExamAttempt
+	err := database.DB.Where("user_id = ? AND exam_id = ?", userID, exam.ID).First(&attempt).Error
+	if err == gorm.ErrRecordNotFound {
+		attempt = models.ExamAttempt{UserID: userID, ExamID: exam.ID, Status: "in_progress"}
+		if err := database.DB.Create(&attempt).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create attempt"})
+			return
+		}
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load attempt"})
+		return
+	}
+
+	if attempt.Status == "submitted" {
+		c.JSON(http.StatusConflict, gin.H{"error": "attempt already submitted"})
+		return
+	}
+
+	createdIDs := make([]uint, 0, len(req.Answers))
+	for _, a := range req.Answers {
+		submissionType := a.Type
+		if submissionType == "" {
+			var p models.Problem
+			if err := database.DB.First(&p, a.ProblemID).Error; err == nil {
+				submissionType = p.Type
+			}
+			if submissionType == "" {
+				submissionType = "coding"
+			}
+		}
+		selected := a.SelectedOptions
+		if selected == "" {
+			selected = "null"
+		}
+
+		sub := models.Submission{
+			UserID:          userID,
+			ProblemID:       a.ProblemID,
+			ExamID:          exam.ID,
+			ExamAttemptID:   &attempt.ID,
+			Type:            submissionType,
+			Language:        a.Language,
+			Code:            a.Code,
+			SelectedOptions: selected,
+			TextAnswer:      a.TextAnswer,
+			Status:          "pending",
+		}
+		if err := database.DB.Create(&sub).Error; err != nil {
+			continue
+		}
+		createdIDs = append(createdIDs, sub.ID)
+
+		switch submissionType {
+		case "mcq":
+			go judge0.GradeMCQ(sub.ID)
+		case "written":
+			go judge0.GradeWritten(sub.ID)
+		default:
+			go judge0.Grade(sub.ID)
+		}
+	}
+
+	now := time.Now()
+	database.DB.Model(&attempt).Updates(map[string]any{
+		"status":       "submitted",
+		"submitted_at": now,
+	})
+
+	notification.Create(userID, "submission",
+		"Exam Submitted",
+		fmt.Sprintf("Your submission for \"%s\" has been received and is being graded.", exam.Title),
+		"/dashboard/results",
+	)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"attempt_id":     attempt.ID,
+		"submission_ids": createdIDs,
+	})
+}
+
+// GetMyAttempts returns all exam attempts for the current user, with
+// their associated submissions preloaded. Used by student results and
+// dashboard pages to render one row per attempt.
+func GetMyAttempts(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	var attempts []models.ExamAttempt
+	database.DB.Where("user_id = ?", userID).
+		Preload("Exam").
+		Preload("Submissions").
+		Preload("Submissions.Problem").
+		Order("started_at desc").
+		Find(&attempts)
+
+	c.JSON(http.StatusOK, attempts)
 }
 
 func computeExamStatus(e models.Exam, now time.Time) string {
