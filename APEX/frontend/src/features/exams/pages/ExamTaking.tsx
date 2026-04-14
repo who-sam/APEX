@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import { useStudentExam } from "@/hooks/useExams";
-import { useSubmitSolution } from "@/hooks/useSubmissions";
+import { submitExamAttempt } from "@/lib/api";
 import { useExecuteCode } from "@/hooks/useExecuteCode";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -158,7 +158,6 @@ export default function ExamTaking() {
 
   const examId = Number(id);
   const { data: examData, isLoading, error, refetch } = useStudentExam(examId);
-  const submitMutation = useSubmitSolution();
   const executeMutation = useExecuteCode();
 
   const [started, setStarted] = useState(false);
@@ -352,13 +351,12 @@ export default function ExamTaking() {
     setSubmitDialogOpen(false);
 
     try {
-      // Submit each answered question
+      const answerPayloads: any[] = [];
       for (let i = 0; i < questions.length; i++) {
         const q = questions[i];
         const a = answers[i];
         const payload: any = {
           problem_id: Number(q.id),
-          exam_id: examId,
           type: q.type,
         };
 
@@ -373,8 +371,10 @@ export default function ExamTaking() {
           continue; // skip unanswered
         }
 
-        await submitMutation.mutateAsync(payload);
+        answerPayloads.push(payload);
       }
+
+      await submitExamAttempt(examId, answerPayloads);
 
       try {
         localStorage.removeItem(sessionKey);

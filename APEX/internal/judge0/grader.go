@@ -98,11 +98,14 @@ func Grade(submissionID uint) {
 		"memory_kb":         maxMemoryKb,
 	})
 
-	notification.Create(submission.UserID, "result",
-		"Submission Graded",
-		fmt.Sprintf("Your coding submission scored %.0f%% (%d/%d test cases passed)", score, passed, total),
-		"/dashboard/results",
-	)
+	if submission.ExamAttemptID == nil {
+		notification.Create(submission.UserID, "result",
+			"Submission Graded",
+			fmt.Sprintf("Your coding submission scored %.0f%% (%d/%d test cases passed)", score, passed, total),
+			"/dashboard/results",
+		)
+	}
+	maybeFinalizeAttempt(submission.ExamAttemptID)
 }
 
 func GradeMCQ(submissionID uint) {
@@ -196,11 +199,14 @@ func GradeMCQ(submissionID uint) {
 	if isCorrect {
 		resultText = "correct"
 	}
-	notification.Create(submission.UserID, "result",
-		"MCQ Graded",
-		fmt.Sprintf("Your MCQ answer was %s", resultText),
-		"/dashboard/results",
-	)
+	if submission.ExamAttemptID == nil {
+		notification.Create(submission.UserID, "result",
+			"MCQ Graded",
+			fmt.Sprintf("Your MCQ answer was %s", resultText),
+			"/dashboard/results",
+		)
+	}
+	maybeFinalizeAttempt(submission.ExamAttemptID)
 }
 
 func GradeWritten(submissionID uint) {
@@ -217,11 +223,45 @@ func GradeWritten(submissionID uint) {
 		"score":        0.0,
 	})
 
-	notification.Create(submission.UserID, "submission",
-		"Written Answer Received",
-		"Your written answer has been submitted and is pending review.",
-		"/dashboard/results",
-	)
+	if submission.ExamAttemptID == nil {
+		notification.Create(submission.UserID, "submission",
+			"Written Answer Received",
+			"Your written answer has been submitted and is pending review.",
+			"/dashboard/results",
+		)
+	}
+	maybeFinalizeAttempt(submission.ExamAttemptID)
+}
+
+// maybeFinalizeAttempt aggregates score across all submissions once none
+// remain in pending/running state. Safe to call multiple times.
+func maybeFinalizeAttempt(attemptID *uint) {
+	if attemptID == nil {
+		return
+	}
+	var pending int64
+	database.DB.Model(&models.Submission{}).
+		Where("exam_attempt_id = ? AND status IN ?", *attemptID, []string{"pending", "running"}).
+		Count(&pending)
+	if pending > 0 {
+		return
+	}
+
+	var subs []models.Submission
+	database.DB.Where("exam_attempt_id = ?", *attemptID).Find(&subs)
+	if len(subs) == 0 {
+		return
+	}
+
+	var total float64
+	for _, s := range subs {
+		total += s.Score
+	}
+	avg := total / float64(len(subs))
+
+	database.DB.Model(&models.ExamAttempt{}).
+		Where("id = ?", *attemptID).
+		Update("score", avg)
 }
 
 type TestCaseResult struct {

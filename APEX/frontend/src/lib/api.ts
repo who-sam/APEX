@@ -87,6 +87,22 @@ export function removeClassMember(classId: number, userId: number) {
   return apiFetch<any>(`/classes/${classId}/members/${userId}`, { method: "DELETE" });
 }
 
+// ── Exam Attempts ─────────────────────────────────────
+export function startExamAttempt(examId: number) {
+  return apiFetch<any>(`/student/exams/${examId}/start`, { method: "POST" });
+}
+
+export function submitExamAttempt(examId: number, answers: any[]) {
+  return apiFetch<any>(`/student/exams/${examId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ answers }),
+  });
+}
+
+export function getMyAttempts() {
+  return apiFetch<any[]>("/attempts/mine");
+}
+
 export function joinClass(inviteCode: string) {
   return apiFetch<any>("/student/classes/join", { method: "POST", body: JSON.stringify({ invite_code: inviteCode }) });
 }
