@@ -166,19 +166,48 @@ func DeleteExam(c *gin.Context) {
 	teacherID := c.GetUint("user_id")
 	examID := c.Param("id")
 
-	result := database.DB.Where("id = ? AND teacher_id = ?", examID, teacherID).Delete(&models.Exam{})
-	if result.RowsAffected == 0 {
+	var exam models.Exam
+	if err := database.DB.Where("id = ? AND teacher_id = ?", examID, teacherID).First(&exam).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
 		return
 	}
 
-	var problemIDs []uint
-	database.DB.Model(&models.Problem{}).Where("exam_id = ?", examID).Pluck("id", &problemIDs)
-	if len(problemIDs) > 0 {
-		database.DB.Where("problem_id IN ?", problemIDs).Delete(&models.TestCase{})
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var problemIDs []uint
+		if err := tx.Model(&models.Problem{}).Where("exam_id = ?", exam.ID).Pluck("id", &problemIDs).Error; err != nil {
+			return err
+		}
+
+		if len(problemIDs) > 0 {
+			if err := tx.Where("submission_id IN (?)",
+				tx.Model(&models.Submission{}).Select("id").Where("exam_id = ?", exam.ID),
+			).Delete(&models.TestResult{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("problem_id IN ?", problemIDs).Delete(&models.TestCase{}).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Where("exam_id = ?", exam.ID).Delete(&models.Submission{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("exam_id = ?", exam.ID).Delete(&models.Problem{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("exam_id = ?", exam.ID).Delete(&models.ExamClass{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&exam).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam: " + err.Error()})
+		return
 	}
-	database.DB.Where("exam_id = ?", examID).Delete(&models.Problem{})
-	database.DB.Where("exam_id = ?", examID).Delete(&models.ExamClass{})
 
 	c.JSON(http.StatusOK, gin.H{"message": "exam deleted"})
 }
