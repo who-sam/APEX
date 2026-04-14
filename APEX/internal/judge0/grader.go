@@ -38,9 +38,11 @@ func Grade(submissionID uint) {
 	for _, tc := range testCases {
 		result := RunCode(submission.Code, submission.Language, tc.Input)
 
-		actualOutput := strings.TrimSpace(result.Stdout)
-		expectedOutput := strings.TrimSpace(tc.ExpectedOutput)
-		isPassed := actualOutput == expectedOutput && result.StatusID == 3
+		actualOutput := normalizeOutput(result.Stdout)
+		expectedOutput := normalizeOutput(tc.ExpectedOutput)
+		// StatusID 3 = Accepted; treat StatusID 4 (Wrong Answer) as valid-run-but-compare.
+		ran := result.StatusID == 3 || result.StatusID == 4
+		isPassed := ran && actualOutput == expectedOutput
 
 		if isPassed {
 			passed++
@@ -137,11 +139,28 @@ func GradeMCQ(submissionID uint) {
 
 	correctSet := make(map[string]bool)
 	for _, id := range correctIDs {
-		correctSet[id] = true
+		id = strings.TrimSpace(id)
+		if id != "" {
+			correctSet[id] = true
+		}
 	}
 	selectedSet := make(map[string]bool)
 	for _, id := range selectedIDs {
-		selectedSet[id] = true
+		id = strings.TrimSpace(id)
+		if id != "" {
+			selectedSet[id] = true
+		}
+	}
+
+	// No correct answers configured → cannot fail student; mark pending_review.
+	if len(correctSet) == 0 {
+		database.DB.Model(&submission).Updates(map[string]any{
+			"status":       "pending_review",
+			"score":        0.0,
+			"passed_count": 0,
+			"total_count":  1,
+		})
+		return
 	}
 
 	isCorrect := len(correctSet) == len(selectedSet)
@@ -192,7 +211,10 @@ func GradeWritten(submissionID uint) {
 	}
 
 	database.DB.Model(&submission).Updates(map[string]any{
-		"status": "pending_review",
+		"status":       "pending_review",
+		"total_count":  1,
+		"passed_count": 0,
+		"score":        0.0,
 	})
 
 	notification.Create(submission.UserID, "submission",
@@ -217,19 +239,33 @@ func RunAgainstTestCases(code, language string, testCases []models.TestCase) []T
 	results := make([]TestCaseResult, len(testCases))
 	for i, tc := range testCases {
 		result := RunCode(code, language, tc.Input)
-		actualOutput := strings.TrimSpace(result.Stdout)
-		expectedOutput := strings.TrimSpace(tc.ExpectedOutput)
+		actualOutput := normalizeOutput(result.Stdout)
+		expectedOutput := normalizeOutput(tc.ExpectedOutput)
+		ran := result.StatusID == 3 || result.StatusID == 4
 
 		results[i] = TestCaseResult{
 			TestCaseID:     tc.ID,
 			Input:          tc.Input,
 			ExpectedOutput: tc.ExpectedOutput,
 			ActualOutput:   actualOutput,
-			Passed:         actualOutput == expectedOutput && result.StatusID == 3,
+			Passed:         ran && actualOutput == expectedOutput,
 			Status:         "completed",
 			TimeMs:         result.TimeMs,
 			MemoryKb:       result.MemoryKb,
 		}
 	}
 	return results
+}
+
+// normalizeOutput strips CR, trailing whitespace on each line, and trims edges
+// so Judge0 output (often \r\n with trailing newline) compares cleanly to
+// teacher-entered expected output.
+func normalizeOutput(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		lines[i] = strings.TrimRight(ln, " \t")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
