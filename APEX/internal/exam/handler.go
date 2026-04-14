@@ -79,10 +79,12 @@ func GetExams(c *gin.Context) {
 
 	type ExamWithMeta struct {
 		models.Exam
-		ProblemCount int64 `json:"problem_count"`
-		ClassCount   int   `json:"class_count"`
+		ProblemCount int64  `json:"problem_count"`
+		ClassCount   int    `json:"class_count"`
+		Status       string `json:"status"`
 	}
 
+	now := time.Now()
 	result := make([]ExamWithMeta, len(exams))
 	for i, e := range exams {
 		var problemCount int64
@@ -91,6 +93,7 @@ func GetExams(c *gin.Context) {
 			Exam:         e,
 			ProblemCount: problemCount,
 			ClassCount:   len(e.ExamClasses),
+			Status:       computeExamStatus(e, now),
 		}
 	}
 
@@ -292,6 +295,19 @@ func GetExamResults(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, results)
+}
+
+func computeExamStatus(e models.Exam, now time.Time) string {
+	if e.StartTime == nil {
+		return "draft"
+	}
+	if e.EndTime != nil && now.After(*e.EndTime) {
+		return "completed"
+	}
+	if now.Before(*e.StartTime) {
+		return "upcoming"
+	}
+	return "active"
 }
 
 func parseTime(s string) (time.Time, error) {
