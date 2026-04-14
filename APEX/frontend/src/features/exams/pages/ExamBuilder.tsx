@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -17,9 +17,9 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useClasses } from "@/hooks/useClasses";
-import { useCreateExam, useAssignExam } from "@/hooks/useExams";
+import { useCreateExam, useAssignExam, useExam, useUpdateExam } from "@/hooks/useExams";
 import { useAllProblems, useAddProblem } from "@/hooks/useProblems";
-import { addTestCase } from "@/lib/api";
+import { addTestCase, deleteProblem } from "@/lib/api";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import type { Question, QuestionType, MCQQuestion, WrittenQuestion, CodingQuestion } from "@/features/exams/types/exam";
@@ -93,12 +93,15 @@ export default function ExamBuilder() {
   const location = useLocation();
   const navigate = useNavigate();
   const editExam = (location.state as any)?.editExam;
-  const isEditing = !!editExam;
+  const editId: number = editExam?.id || 0;
+  const isEditing = !!editId;
 
   // Real API hooks
   const { data: classes, isLoading: classesLoading, error: classesError, refetch: refetchClasses } = useClasses();
   const { data: bankProblems } = useAllProblems();
+  const { data: examData } = useExam(editId);
   const createExamMutation = useCreateExam();
+  const updateExamMutation = useUpdateExam();
   const assignExamMutation = useAssignExam();
   const addProblemMutation = useAddProblem();
 
@@ -120,6 +123,32 @@ export default function ExamBuilder() {
   const [bankTypeFilter, setBankTypeFilter] = useState<string>("all");
   const [selectedBankIds, setSelectedBankIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing || hydrated || !examData) return;
+    setTitle(examData.title || "");
+    setDescription(examData.description || "");
+    setDuration(examData.duration_minutes || 60);
+    setPassingScore(examData.passing_score ?? 50);
+    setShuffle(!!examData.shuffle_questions);
+    setShowResults(examData.show_results_after !== false);
+    if (examData.start_time) {
+      const d = new Date(examData.start_time);
+      setStartDate(d);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      setStartTime(`${hh}:${mm}`);
+    }
+    const ecs = examData.exam_classes || examData.ExamClasses || [];
+    if (ecs.length > 0) {
+      const cid = ecs[0].class_id ?? ecs[0].ClassID ?? ecs[0].Class?.ID;
+      if (cid) setAssignedCourse(String(cid));
+    }
+    const problems = examData.problems || examData.Problems || [];
+    setQuestions(problems.map(bankProblemToQuestion));
+    setHydrated(true);
+  }, [examData, isEditing, hydrated]);
 
   const addQuestion = (type: QuestionType) => {
     const q = createQuestion(type);
@@ -171,17 +200,40 @@ export default function ExamBuilder() {
         endTimeISO = end.toISOString();
       }
 
-      // 1. Create exam
-      const exam = await createExamMutation.mutateAsync({
-        title,
-        description,
-        duration_minutes: duration,
-        start_time: startTimeISO,
-        end_time: endTimeISO,
-        shuffle_questions: shuffle,
-        show_results_after: showResults,
-        passing_score: passingScore,
-      });
+      // 1. Create or update exam
+      let exam: any;
+      if (isEditing) {
+        exam = await updateExamMutation.mutateAsync({
+          id: editId,
+          data: {
+            title,
+            description,
+            duration_minutes: duration,
+            start_time: startTimeISO,
+            end_time: endTimeISO,
+            shuffle_questions: shuffle,
+            show_results_after: showResults,
+            passing_score: passingScore,
+          },
+        });
+        exam.id = editId;
+        // Remove existing problems (simple replace strategy)
+        const existing = examData?.problems || examData?.Problems || [];
+        for (const p of existing) {
+          try { await deleteProblem(p.id ?? p.ID); } catch {}
+        }
+      } else {
+        exam = await createExamMutation.mutateAsync({
+          title,
+          description,
+          duration_minutes: duration,
+          start_time: startTimeISO,
+          end_time: endTimeISO,
+          shuffle_questions: shuffle,
+          show_results_after: showResults,
+          passing_score: passingScore,
+        });
+      }
 
       // 2. Add each question as a problem
       for (const q of questions) {
@@ -239,7 +291,7 @@ export default function ExamBuilder() {
         await assignExamMutation.mutateAsync({ id: exam.id, classIds: [classId] });
       }
 
-      toast({ title: "Exam saved!", description: `"${title}" with ${questions.length} question(s) created successfully.` });
+      toast({ title: isEditing ? "Exam updated!" : "Exam saved!", description: `"${title}" with ${questions.length} question(s) ${isEditing ? "updated" : "created"} successfully.` });
       navigate("/dashboard/exams");
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message || "Please try again.", variant: "destructive" });
