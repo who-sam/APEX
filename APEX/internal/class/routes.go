@@ -16,5 +16,6 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 		classes.PUT("/:id", UpdateClass)
 		classes.DELETE("/:id", DeleteClass)
 		classes.GET("/:id/stats", GetClassStats)
+		classes.DELETE("/:id/members/:userId", RemoveClassMember)
 	}
 }

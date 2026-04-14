@@ -228,3 +228,27 @@ func GetClassStats(c *gin.Context) {
 		"pass_rate":         passRate,
 	})
 }
+
+func RemoveClassMember(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+	classID := c.Param("id")
+	userID := c.Param("userId")
+
+	var class models.Class
+	if err := database.DB.Where("id = ? AND teacher_id = ?", classID, teacherID).First(&class).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+
+	result := database.DB.Where("class_id = ? AND user_id = ?", class.ID, userID).Delete(&models.ClassMember{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "member not found in class"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "member removed"})
+}

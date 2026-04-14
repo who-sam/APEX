@@ -83,6 +83,10 @@ export function deleteClass(id: number) {
   return apiFetch<any>(`/classes/${id}`, { method: "DELETE" });
 }
 
+export function removeClassMember(classId: number, userId: number) {
+  return apiFetch<any>(`/classes/${classId}/members/${userId}`, { method: "DELETE" });
+}
+
 export function joinClass(inviteCode: string) {
   return apiFetch<any>("/student/classes/join", { method: "POST", body: JSON.stringify({ invite_code: inviteCode }) });
 }

@@ -19,6 +19,8 @@ import { Slider } from "@/components/ui/slider";
 import { useExams, useExamResults } from "@/hooks/useExams";
 import { useStudentSubmissions } from "@/hooks/useSubmissions";
 import { useAnnouncements, useCreateAnnouncement } from "@/hooks/useAnnouncements";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { removeClassMember } from "@/lib/api";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
@@ -285,6 +287,14 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
   const createAnnouncementMutation = useCreateAnnouncement(classData.id);
   const [gradesAnnounced, setGradesAnnounced] = useState(classData.grades_announced || false);
   const [passingThreshold, setPassingThreshold] = useState(classData.passing_threshold ?? 60);
+  const qc = useQueryClient();
+  const removeMemberMutation = useMutation({
+    mutationFn: (userId: number) => removeClassMember(classData.id, userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["class", classData.id] });
+      qc.invalidateQueries({ queryKey: ["classes"] });
+    },
+  });
 
   const examsForClass = (allExams || []).filter((e: any) =>
     (e.exam_classes || []).some((ec: any) => ec.class_id === classData.id)
@@ -304,9 +314,15 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  const removeStudent = (studentId: string) => {
-    // TODO: wire to API when endpoint is available
-    toast({ title: "Student removed" });
+  const removeStudent = async (studentId: string | number) => {
+    const uid = Number(studentId);
+    if (!uid) return;
+    try {
+      await removeMemberMutation.mutateAsync(uid);
+      toast({ title: "Student removed" });
+    } catch (err: any) {
+      toast({ title: "Failed to remove", description: err.message || "Please try again.", variant: "destructive" });
+    }
   };
 
   const postAnnouncement = async () => {
