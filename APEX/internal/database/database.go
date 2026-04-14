@@ -27,6 +27,7 @@ func Connect(cfg config.Config) {
 		&models.ExamClass{},
 		&models.Problem{},
 		&models.TestCase{},
+		&models.ExamAttempt{},
 		&models.Submission{},
 		&models.TestResult{},
 		&models.Message{},

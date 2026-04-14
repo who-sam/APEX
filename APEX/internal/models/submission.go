@@ -9,6 +9,7 @@ type Submission struct {
 	ProblemID       uint      `gorm:"not null;index" json:"problem_id"`
 	Problem         Problem   `gorm:"foreignKey:ProblemID" json:"problem,omitempty"`
 	ExamID          uint      `gorm:"not null;index" json:"exam_id"`
+	ExamAttemptID   *uint     `gorm:"index" json:"exam_attempt_id,omitempty"`
 	Type            string    `gorm:"size:20;not null;default:coding" json:"type"`
 	Language        string    `gorm:"size:20" json:"language"`
 	Code            string    `gorm:"type:text" json:"code"`
