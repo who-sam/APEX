@@ -3,6 +3,7 @@ package announcement
 import (
 	"apex/internal/database"
 	"apex/internal/models"
+	"apex/internal/notification"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,19 @@ func Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create announcement"})
 		return
 	}
+
+	// Notify each enrolled student.
+	var memberIDs []uint
+	database.DB.Model(&models.ClassMember{}).Where("class_id = ?", class.ID).Pluck("user_id", &memberIDs)
+	link := "/dashboard/courses"
+	for _, uid := range memberIDs {
+		notification.Create(uid, "announcement",
+			class.Name+": "+a.Title,
+			a.Body,
+			link,
+		)
+	}
+
 	c.JSON(http.StatusCreated, a)
 }
 
