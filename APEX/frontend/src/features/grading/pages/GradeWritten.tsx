@@ -45,7 +45,7 @@ export default function GradeWritten() {
   const courseList = classes || [];
   const examList = allExams || [];
   const examsForCourse = selectedCourseId
-    ? examList.filter((e: any) => e.class_id === selectedCourseId || (e.classes || []).some((c: any) => c.id === selectedCourseId))
+    ? examList.filter((e: any) => e.class_id === selectedCourseId || (e.classes || []).some((c: any) => c.id === selectedCourseId) || (e.exam_classes || []).some((ec: any) => ec.class_id === selectedCourseId))
     : [];
 
   // Flatten all submissions from exam results for grading

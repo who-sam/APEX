@@ -11,5 +11,6 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 	t.Use(middleware.RequireRole("teacher"))
 	{
 		t.GET("/dashboard", GetDashboard)
+		t.GET("/grading/pending", GetPendingGrading)
 	}
 }

@@ -10,13 +10,21 @@ import (
 )
 
 type dashboardResponse struct {
-	TotalStudents    int64              `json:"total_students"`
-	ActiveExams      int64              `json:"active_exams"`
-	TotalClasses     int64              `json:"total_classes"`
-	AverageScore     float64            `json:"average_score"`
-	ActiveExamList   []activeExamInfo   `json:"active_exam_list"`
-	RecentActivity   []activityItem     `json:"recent_activity"`
-	ClassPerformance []classPerformance `json:"class_performance"`
+	TotalStudents    int64                `json:"total_students"`
+	ActiveExams      int64                `json:"active_exams"`
+	TotalClasses     int64                `json:"total_classes"`
+	AverageScore     float64              `json:"average_score"`
+	ActiveExamList   []activeExamInfo     `json:"active_exam_list"`
+	RecentActivity   []activityItem       `json:"recent_activity"`
+	ClassPerformance []classPerformance   `json:"class_performance"`
+	PendingGrading   []pendingGradingItem `json:"pending_grading"`
+}
+
+type pendingGradingItem struct {
+	ExamID     uint   `json:"exam_id"`
+	ExamName   string `json:"exam_name"`
+	CourseName string `json:"course_name"`
+	Pending    int64  `json:"pending"`
 }
 
 type activeExamInfo struct {
@@ -173,5 +181,56 @@ func GetDashboard(c *gin.Context) {
 		})
 	}
 
+	resp.PendingGrading = []pendingGradingItem{}
+	if len(examIDs) > 0 {
+		type row struct {
+			ExamID uint
+			Title  string
+			Count  int64
+		}
+		var rows []row
+		database.DB.Model(&models.Submission{}).
+			Select("submissions.exam_id, exams.title, COUNT(*) as count").
+			Joins("JOIN exams ON exams.id = submissions.exam_id").
+			Where("submissions.exam_id IN ? AND submissions.status = ?", examIDs, "pending_review").
+			Group("submissions.exam_id, exams.title").
+			Scan(&rows)
+
+		for _, r := range rows {
+			var ec models.ExamClass
+			courseName := ""
+			if err := database.DB.Where("exam_id = ?", r.ExamID).Preload("Class").First(&ec).Error; err == nil {
+				courseName = ec.Class.Name
+			}
+			resp.PendingGrading = append(resp.PendingGrading, pendingGradingItem{
+				ExamID:     r.ExamID,
+				ExamName:   r.Title,
+				CourseName: courseName,
+				Pending:    r.Count,
+			})
+		}
+	}
+
 	c.JSON(http.StatusOK, resp)
+}
+
+func GetPendingGrading(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+
+	var examIDs []uint
+	database.DB.Model(&models.Exam{}).Where("teacher_id = ?", teacherID).Pluck("id", &examIDs)
+	if len(examIDs) == 0 {
+		c.JSON(http.StatusOK, []any{})
+		return
+	}
+
+	var submissions []models.Submission
+	database.DB.
+		Where("exam_id IN ? AND status = ?", examIDs, "pending_review").
+		Preload("User").
+		Preload("Problem").
+		Order("submitted_at asc").
+		Find(&submissions)
+
+	c.JSON(http.StatusOK, submissions)
 }
