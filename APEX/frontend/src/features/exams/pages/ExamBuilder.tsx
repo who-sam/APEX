@@ -126,6 +126,8 @@ export default function ExamBuilder() {
   const [deleteIdx, setDeleteIdx] = useState<number | null>(null);
   const [startDate, setStartDate] = useState<Date>();
   const [startTime, setStartTime] = useState("09:00");
+  const [closesDate, setClosesDate] = useState<Date>();
+  const [closesTime, setClosesTime] = useState("23:59");
   const [assignedCourse, setAssignedCourse] = useState("");
   const [bankDialogOpen, setBankDialogOpen] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
@@ -148,6 +150,13 @@ export default function ExamBuilder() {
       const hh = String(d.getHours()).padStart(2, "0");
       const mm = String(d.getMinutes()).padStart(2, "0");
       setStartTime(`${hh}:${mm}`);
+    }
+    if (examData.end_time) {
+      const d = new Date(examData.end_time);
+      setClosesDate(d);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      setClosesTime(`${hh}:${mm}`);
     }
     const ecs = examData.exam_classes || examData.ExamClasses || [];
     if (ecs.length > 0) {
@@ -205,8 +214,15 @@ export default function ExamBuilder() {
         const start = new Date(startDate);
         start.setHours(h, m, 0, 0);
         startTimeISO = start.toISOString();
-        const end = new Date(start.getTime() + duration * 60 * 1000);
-        endTimeISO = end.toISOString();
+        if (closesDate) {
+          const [ch, cm] = closesTime.split(":").map(Number);
+          const end = new Date(closesDate);
+          end.setHours(ch, cm, 0, 0);
+          endTimeISO = end.toISOString();
+        } else {
+          const end = new Date(start.getTime() + duration * 60 * 1000);
+          endTimeISO = end.toISOString();
+        }
       }
 
       // 1. Create or update exam
@@ -411,6 +427,24 @@ export default function ExamBuilder() {
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-1 block">Start Time</label>
           <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Closes Date</label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !closesDate && "text-muted-foreground")}>
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {closesDate ? format(closesDate, "PPP") : "Pick a date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={closesDate} onSelect={setClosesDate} initialFocus className={cn("p-3 pointer-events-auto")} />
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Closes Time</label>
+          <Input type="time" value={closesTime} onChange={(e) => setClosesTime(e.target.value)} />
         </div>
         <div className="flex flex-col gap-2 justify-center">
           <div className="flex items-center gap-2">
