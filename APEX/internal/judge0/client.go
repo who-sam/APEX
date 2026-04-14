@@ -13,10 +13,16 @@ import (
 var BaseURL = "https://ce.judge0.com"
 
 var LanguageMap = map[string]int{
+	"python":     100,
 	"python3":    100,
 	"javascript": 102,
+	"js":         102,
+	"typescript": 101,
+	"ts":         101,
+	"java":       91,
 	"c":          103,
 	"cpp":        105,
+	"c++":        105,
 }
 
 type request struct {
@@ -50,7 +56,7 @@ type CodeResult struct {
 func RunCode(code, language, stdin string) CodeResult {
 	langID, ok := LanguageMap[language]
 	if !ok {
-		return CodeResult{StatusID: -1, Stderr: "unsupported language"}
+		return CodeResult{StatusID: -1, Stderr: "unsupported language: " + language}
 	}
 
 	reqBody := request{
