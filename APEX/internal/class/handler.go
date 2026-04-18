@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"math/big"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -153,16 +154,35 @@ func GetClass(c *gin.Context) {
 		}
 	}
 
-	// Load exams assigned to this class
+	// Load exams assigned to this class with computed status
+	type examWithStatus struct {
+		models.Exam
+		Status string `json:"status"`
+	}
 	var classExams []models.Exam
 	if len(examIDs) > 0 {
 		database.DB.Where("id IN ?", examIDs).Order("created_at asc").Find(&classExams)
+	}
+	now := time.Now()
+	examsOut := make([]examWithStatus, len(classExams))
+	for i, e := range classExams {
+		status := "upcoming"
+		if e.IsDraft {
+			status = "draft"
+		} else if e.StartTime != nil {
+			if e.EndTime != nil && now.After(*e.EndTime) {
+				status = "completed"
+			} else if now.After(*e.StartTime) {
+				status = "active"
+			}
+		}
+		examsOut[i] = examWithStatus{Exam: e, Status: status}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"class":   class,
 		"members": enriched,
-		"exams":   classExams,
+		"exams":   examsOut,
 	})
 }
 
