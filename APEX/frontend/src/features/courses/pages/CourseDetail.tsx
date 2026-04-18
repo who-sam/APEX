@@ -135,8 +135,8 @@ function StudentCourseDetail({ classData }: { classData: any }) {
                 key={exam.id}
                 className="border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => {
-                  if (exam.status === "upcoming") navigate(`/dashboard/exam/${exam.id}/take`);
-                  else navigate(`/dashboard/exam/${exam.id}/review`);
+                  if (exam.status === "completed") navigate(`/dashboard/exam/${exam.id}/review`);
+                  else navigate(`/dashboard/exam/${exam.id}/take`);
                 }}
               >
                 <CardContent className="flex items-center justify-between p-4">
