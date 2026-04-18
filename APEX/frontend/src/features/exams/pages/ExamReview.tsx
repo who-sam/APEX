@@ -126,7 +126,7 @@ export default function ExamReview() {
                           {isSelected && !isCorrect && <XCircle className="h-4 w-4 text-destructive shrink-0" />}
                           {!isSelected && isCorrect && <CheckCircle className="h-4 w-4 text-green-500/50 shrink-0" />}
                           {!isSelected && !isCorrect && <div className="h-4 w-4 shrink-0" />}
-                          <span className="text-sm text-foreground">{opt.text}</span>
+                          <span className="text-sm text-foreground">{typeof opt === "string" ? opt : String(opt.text ?? "")}</span>
                         </div>
                       );
                     })}

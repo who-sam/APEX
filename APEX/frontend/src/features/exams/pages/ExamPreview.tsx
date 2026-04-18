@@ -148,15 +148,15 @@ export default function ExamPreview() {
               <CardContent>
                 {p.type === "mcq" && (
                   <div className="space-y-2">
-                    {options.map((opt: any) => (
+                    {options.map((opt: any, oi: number) => (
                       <div
-                        key={opt.id}
+                        key={opt.id || oi}
                         className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 p-3 text-sm text-foreground"
                       >
                         <div className="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground shrink-0">
-                          {opt.id.toUpperCase()}
+                          {String.fromCharCode(65 + oi)}
                         </div>
-                        <span>{opt.text}</span>
+                        <span>{typeof opt === "string" ? opt : String(opt.text ?? "")}</span>
                       </div>
                     ))}
                   </div>
