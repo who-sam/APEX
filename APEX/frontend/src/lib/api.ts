@@ -163,6 +163,10 @@ export function deleteProblem(id: number) {
   return apiFetch<any>(`/problems/${id}`, { method: "DELETE" });
 }
 
+export function saveProblemToBank(data: any) {
+  return apiFetch<any>("/problems/bank", { method: "POST", body: JSON.stringify(data) });
+}
+
 // ── Test Cases ────────────────────────────────────────
 export function addTestCase(problemId: number, data: { input: string; expected_output: string; is_sample: boolean; order_index?: number }) {
   return apiFetch<any>(`/problems/${problemId}/test-cases`, { method: "POST", body: JSON.stringify(data) });

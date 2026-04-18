@@ -5,6 +5,8 @@ import "time"
 type Problem struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
 	ExamID        uint      `gorm:"not null;index" json:"exam_id"`
+	IsBank        bool      `gorm:"not null;default:false;index" json:"is_bank"`
+	TeacherID     uint      `gorm:"index" json:"teacher_id"`
 	Title         string    `gorm:"size:255;not null" json:"title"`
 	Description   string    `gorm:"type:text;not null" json:"description"`
 	Type          string    `gorm:"size:20;not null;default:coding" json:"type"`

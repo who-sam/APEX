@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useClasses } from "@/hooks/useClasses";
 import { useCreateExam, useAssignExam, useExam, useUpdateExam } from "@/hooks/useExams";
 import { useAllProblems, useAddProblem } from "@/hooks/useProblems";
-import { addTestCase, deleteProblem } from "@/lib/api";
+import { addTestCase, deleteProblem, saveProblemToBank } from "@/lib/api";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import type { Question, QuestionType, MCQQuestion, WrittenQuestion, CodingQuestion } from "@/features/exams/types/exam";
@@ -353,8 +353,41 @@ export default function ExamBuilder() {
     toast({ title: "Imported", description: `${newQuestions.length} question(s) imported from the bank.` });
   };
 
-  const handleSaveToBank = () => {
-    toast({ title: "Info", description: "Questions are saved to the bank when you save the exam." });
+  const handleSaveToBank = async () => {
+    const q = questions[selectedIdx];
+    if (!q) return;
+    const data: any = {
+      title: q.text || "Untitled",
+      description: q.text || "",
+      type: q.type,
+      points: q.points,
+      difficulty: q.difficulty,
+    };
+    if (q.type === "mcq") {
+      const mcq = q as MCQQuestion;
+      data.options = JSON.stringify(mcq.options);
+      data.correct_option_ids = JSON.stringify(mcq.correctOptionIds);
+      data.multiple_correct = mcq.multipleCorrect;
+      data.explanation = mcq.explanation;
+    } else if (q.type === "written") {
+      const w = q as WrittenQuestion;
+      data.max_word_count = w.maxWordCount;
+      data.rubric = w.rubric;
+      data.require_manual_grading = w.requireManualGrading;
+    } else {
+      const c = q as CodingQuestion;
+      data.description = c.description || q.text;
+      data.starter_code = c.starterCode?.python || c.starterCode?.javascript || "";
+      data.hints = c.hints;
+      data.time_limit_ms = c.timeLimitMs;
+      data.memory_limit_kb = c.memoryLimitKb;
+    }
+    try {
+      await saveProblemToBank(data);
+      toast({ title: "Saved to bank", description: `"${data.title}" added to your question bank.` });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message || "Could not save to bank.", variant: "destructive" });
+    }
   };
 
   if (classesLoading) return <PageSkeleton rows={3} cards={4} />;

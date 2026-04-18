@@ -104,21 +104,79 @@ func AddProblem(c *gin.Context) {
 func GetAllProblems(c *gin.Context) {
 	teacherID := c.GetUint("user_id")
 
-	var examIDs []uint
-	database.DB.Model(&models.Exam{}).Where("teacher_id = ?", teacherID).Pluck("id", &examIDs)
-
-	if len(examIDs) == 0 {
-		c.JSON(http.StatusOK, []any{})
-		return
-	}
-
 	var problems []models.Problem
-	database.DB.Where("exam_id IN ?", examIDs).
+	database.DB.Where("is_bank = ? AND teacher_id = ?", true, teacherID).
 		Preload("TestCases").
 		Order("created_at desc").
 		Find(&problems)
 
 	c.JSON(http.StatusOK, problems)
+}
+
+func AddBankProblem(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+
+	var req createProblemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title and description are required"})
+		return
+	}
+
+	options := req.Options
+	if options == "" {
+		options = "null"
+	}
+	correctOptionIDs := req.CorrectOptionIDs
+	if correctOptionIDs == "" {
+		correctOptionIDs = "null"
+	}
+
+	problem := models.Problem{
+		IsBank:               true,
+		TeacherID:            teacherID,
+		Title:                req.Title,
+		Description:          req.Description,
+		Type:                 req.Type,
+		Points:               req.Points,
+		Difficulty:           req.Difficulty,
+		StarterCode:          req.StarterCode,
+		Hints:                req.Hints,
+		TimeLimitMs:          req.TimeLimitMs,
+		MemoryLimitKb:        req.MemoryLimitKb,
+		OrderIndex:           req.OrderIndex,
+		Options:              options,
+		CorrectOptionIDs:     correctOptionIDs,
+		MultipleCorrect:      req.MultipleCorrect,
+		Explanation:          req.Explanation,
+		MaxWordCount:         req.MaxWordCount,
+		Rubric:               req.Rubric,
+		RequireManualGrading: req.RequireManualGrading,
+	}
+	if problem.Type == "" {
+		problem.Type = "coding"
+	}
+	if problem.Points == 0 {
+		problem.Points = 10
+	}
+	if problem.Difficulty == "" {
+		problem.Difficulty = "medium"
+	}
+	if problem.TimeLimitMs == 0 {
+		problem.TimeLimitMs = 2000
+	}
+	if problem.MemoryLimitKb == 0 {
+		problem.MemoryLimitKb = 262144
+	}
+	if problem.MaxWordCount == 0 {
+		problem.MaxWordCount = 500
+	}
+
+	if err := database.DB.Create(&problem).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save to bank"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, problem)
 }
 
 func GetProblem(c *gin.Context) {

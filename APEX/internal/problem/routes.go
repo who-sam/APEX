@@ -19,6 +19,7 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 	problems.Use(middleware.RequireRole("teacher"))
 	{
 		problems.GET("", GetAllProblems)
+		problems.POST("/bank", AddBankProblem)
 		problems.GET("/:id", GetProblem)
 		problems.PUT("/:id", UpdateProblem)
 		problems.DELETE("/:id", DeleteProblem)
