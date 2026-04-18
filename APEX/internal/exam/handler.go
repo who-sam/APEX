@@ -101,9 +101,15 @@ func GetExams(c *gin.Context) {
 
 		var submissionCount int64
 		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ? AND status = ?", e.ID, "submitted").Count(&submissionCount)
+		if submissionCount == 0 {
+			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&submissionCount)
+		}
 
 		var studentCount int64
 		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
+		if studentCount == 0 {
+			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
+		}
 
 		result[i] = ExamWithMeta{
 			Exam:            e,
