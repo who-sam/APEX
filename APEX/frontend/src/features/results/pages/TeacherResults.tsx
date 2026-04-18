@@ -115,7 +115,7 @@ export default function TeacherResults() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {courseList.map((c: any) => {
-              const examCount = examList.filter((e: any) => e.class_id === c.id || (e.classes || []).some((cl: any) => cl.id === c.id)).length;
+              const examCount = examList.filter((e: any) => e.class_id === c.id || (e.classes || []).some((cl: any) => cl.id === c.id) || (e.exam_classes || []).some((ec: any) => ec.class_id === c.id)).length;
               return (
                 <Card
                   key={c.id}
