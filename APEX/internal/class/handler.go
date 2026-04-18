@@ -66,6 +66,7 @@ func GetClasses(c *gin.Context) {
 	type ClassWithCount struct {
 		models.Class
 		MemberCount int64 `json:"member_count"`
+		ExamCount   int64 `json:"exam_count"`
 	}
 
 	var classes []models.Class
@@ -73,9 +74,11 @@ func GetClasses(c *gin.Context) {
 
 	result := make([]ClassWithCount, len(classes))
 	for i, cls := range classes {
-		var count int64
-		database.DB.Model(&models.ClassMember{}).Where("class_id = ?", cls.ID).Count(&count)
-		result[i] = ClassWithCount{Class: cls, MemberCount: count}
+		var memberCount int64
+		database.DB.Model(&models.ClassMember{}).Where("class_id = ?", cls.ID).Count(&memberCount)
+		var examCount int64
+		database.DB.Model(&models.ExamClass{}).Where("class_id = ?", cls.ID).Count(&examCount)
+		result[i] = ClassWithCount{Class: cls, MemberCount: memberCount, ExamCount: examCount}
 	}
 
 	c.JSON(http.StatusOK, result)
