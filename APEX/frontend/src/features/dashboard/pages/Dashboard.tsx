@@ -54,6 +54,9 @@ export default function Dashboard() {
   const enrolledClasses = classes || [];
 
   const hasActiveExam = !!activeExam;
+  const hasStartedAttempt = hasActiveExam && (attempts || []).some(
+    (a: any) => Number(a.exam_id) === Number(activeExam.id) && a.status !== "submitted"
+  );
 
   return (
     <div className="space-y-6">
@@ -74,7 +77,7 @@ export default function Dashboard() {
             onClick={() => navigate(`/dashboard/exam/${activeExam.id}`)}
           >
             <Play className="h-5 w-5" />
-            Continue Exam
+            {hasStartedAttempt ? "Continue Exam" : "Start Exam"}
           </Button>
         )}
       </div>
@@ -105,7 +108,7 @@ export default function Dashboard() {
                   onClick={() => navigate(`/dashboard/exam/${activeExam.id}`)}
                   className="gap-1.5"
                 >
-                  Continue <ChevronRight className="h-4 w-4" />
+                  {hasStartedAttempt ? "Continue" : "Start"} <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
