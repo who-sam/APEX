@@ -296,7 +296,7 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
     },
   });
 
-  const examsForClass = (allExams || []).filter((e: any) =>
+  const examsForClass = classData.exams || (allExams || []).filter((e: any) =>
     (e.exam_classes || []).some((ec: any) => ec.class_id === classData.id)
   );
 

@@ -68,7 +68,7 @@ export function getClasses() {
 
 export async function getClass(id: number) {
   const res = await apiFetch<any>(`/classes/${id}`);
-  return { ...res.class, members: res.members };
+  return { ...res.class, members: res.members, exams: res.exams };
 }
 
 export function getStudentClass(id: number) {

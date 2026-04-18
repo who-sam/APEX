@@ -150,9 +150,16 @@ func GetClass(c *gin.Context) {
 		}
 	}
 
+	// Load exams assigned to this class
+	var classExams []models.Exam
+	if len(examIDs) > 0 {
+		database.DB.Where("id IN ?", examIDs).Order("created_at asc").Find(&classExams)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"class":   class,
 		"members": enriched,
+		"exams":   classExams,
 	})
 }
 
