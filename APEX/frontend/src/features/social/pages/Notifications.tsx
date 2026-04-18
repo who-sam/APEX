@@ -11,8 +11,11 @@ const typeConfig: Record<string, { icon: React.ElementType; color: string }> = {
   result: { icon: CheckCircle, color: "text-green-500 bg-green-500/10" },
   class: { icon: UserPlus, color: "text-purple-500 bg-purple-500/10" },
   submission: { icon: Send, color: "text-green-600 bg-green-600/10" },
+  announcement: { icon: Megaphone, color: "text-blue-500 bg-blue-500/10" },
   system: { icon: Megaphone, color: "text-blue-500 bg-blue-500/10" },
 };
+
+const defaultConfig = { icon: Bell, color: "text-muted-foreground bg-muted" };
 
 export default function Notifications() {
   const navigate = useNavigate();
@@ -40,6 +43,7 @@ export default function Notifications() {
           <TabsTrigger value="class">Classes</TabsTrigger>
           <TabsTrigger value="result">Results</TabsTrigger>
           <TabsTrigger value="submission">Submissions</TabsTrigger>
+          <TabsTrigger value="announcement">Announcements</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
 
@@ -55,7 +59,7 @@ export default function Notifications() {
           ) : (
             <div className="space-y-2">
               {filtered.map((n) => {
-                const config = typeConfig[n.type];
+                const config = typeConfig[n.type] || defaultConfig;
                 const Icon = config.icon;
                 return (
                   <Card
