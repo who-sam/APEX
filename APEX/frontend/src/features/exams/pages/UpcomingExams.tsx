@@ -198,7 +198,7 @@ export default function UpcomingExamsPage() {
                         )}
                         {exam.derivedStatus === "upcoming" && (
                           <Button size="sm" variant="ghost" className="gap-1 text-primary" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/exam/${exam.id}`); }}>
-                            Prepare <ArrowRight className="h-3 w-3" />
+                            Start Exam <ArrowRight className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
