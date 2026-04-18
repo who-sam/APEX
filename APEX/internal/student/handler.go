@@ -110,7 +110,7 @@ func GetClass(c *gin.Context) {
 	exams := []ExamWithStatus{}
 	if len(examIDs) > 0 {
 		var rawExams []models.Exam
-		database.DB.Where("id IN ?", examIDs).Order("start_time asc").Find(&rawExams)
+		database.DB.Where("id IN ? AND is_draft = ?", examIDs, false).Order("start_time asc").Find(&rawExams)
 		now := time.Now()
 		for _, exam := range rawExams {
 			status := "upcoming"
@@ -159,7 +159,7 @@ func GetExams(c *gin.Context) {
 	}
 
 	var exams []models.Exam
-	database.DB.Where("id IN ?", examIDs).
+	database.DB.Where("id IN ? AND is_draft = ?", examIDs, false).
 		Preload("ExamClasses.Class").
 		Order("start_time asc").
 		Find(&exams)

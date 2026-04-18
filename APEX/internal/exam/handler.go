@@ -23,6 +23,7 @@ type createExamRequest struct {
 	ShowResultsAfter bool   `json:"show_results_after"`
 	PassingScore     int    `json:"passing_score"`
 	IsPractice       bool   `json:"is_practice"`
+	IsDraft          *bool  `json:"is_draft"`
 }
 
 func CreateExam(c *gin.Context) {
@@ -43,6 +44,10 @@ func CreateExam(c *gin.Context) {
 		ShowResultsAfter: req.ShowResultsAfter,
 		PassingScore:     req.PassingScore,
 		IsPractice:       req.IsPractice,
+		IsDraft:          true,
+	}
+	if req.IsDraft != nil {
+		exam.IsDraft = *req.IsDraft
 	}
 	if exam.DurationMinutes == 0 {
 		exam.DurationMinutes = 60
@@ -145,6 +150,9 @@ func UpdateExam(c *gin.Context) {
 		"shuffle_questions":  req.ShuffleQuestions,
 		"show_results_after": req.ShowResultsAfter,
 		"is_practice":        req.IsPractice,
+	}
+	if req.IsDraft != nil {
+		updates["is_draft"] = *req.IsDraft
 	}
 	if req.DurationMinutes > 0 {
 		updates["duration_minutes"] = req.DurationMinutes

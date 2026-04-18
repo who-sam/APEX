@@ -134,6 +134,7 @@ export default function ExamBuilder() {
   const [bankTypeFilter, setBankTypeFilter] = useState<string>("all");
   const [selectedBankIds, setSelectedBankIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [isDraft, setIsDraft] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -144,6 +145,7 @@ export default function ExamBuilder() {
     setPassingScore(examData.passing_score ?? 50);
     setShuffle(!!examData.shuffle_questions);
     setShowResults(examData.show_results_after !== false);
+    setIsDraft(examData.is_draft !== false);
     if (examData.start_time) {
       const d = new Date(examData.start_time);
       setStartDate(d);
@@ -239,6 +241,7 @@ export default function ExamBuilder() {
             shuffle_questions: shuffle,
             show_results_after: showResults,
             passing_score: passingScore,
+            is_draft: isDraft,
           },
         });
         exam.id = editId;
@@ -257,6 +260,7 @@ export default function ExamBuilder() {
           shuffle_questions: shuffle,
           show_results_after: showResults,
           passing_score: passingScore,
+          is_draft: isDraft,
         });
       }
 
@@ -487,6 +491,10 @@ export default function ExamBuilder() {
           <div className="flex items-center gap-2">
             <Switch checked={showResults} onCheckedChange={setShowResults} />
             <span className="text-xs text-muted-foreground">Show Results</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={!isDraft} onCheckedChange={(v) => setIsDraft(!v)} />
+            <span className="text-xs text-muted-foreground">Published</span>
           </div>
         </div>
         <div className="col-span-2 md:col-span-4">

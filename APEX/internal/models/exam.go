@@ -17,6 +17,7 @@ type Exam struct {
 	ShowResultsAfter bool `gorm:"default:true" json:"show_results_after"`
 	PassingScore     int  `gorm:"default:50" json:"passing_score"`
 	IsPractice       bool `gorm:"default:false" json:"is_practice"`
+	IsDraft          bool `gorm:"default:true" json:"is_draft"`
 
 	Problems    []Problem   `gorm:"foreignKey:ExamID" json:"problems,omitempty"`
 	ExamClasses []ExamClass `gorm:"foreignKey:ExamID" json:"exam_classes,omitempty"`

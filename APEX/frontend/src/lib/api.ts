@@ -122,6 +122,7 @@ export function createExam(data: {
   show_results_after?: boolean;
   passing_score?: number;
   is_practice?: boolean;
+  is_draft?: boolean;
 }) {
   return apiFetch<any>("/exams", { method: "POST", body: JSON.stringify(data) });
 }
