@@ -317,7 +317,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-destructive/50 bg-card/80 backdrop-blur-md">
+          <Card className="mt-12 border-destructive/50 bg-card/80 backdrop-blur-md">
             <CardHeader>
               <CardTitle className="text-lg text-destructive">Danger Zone</CardTitle>
               <CardDescription>Permanent actions that cannot be undone.</CardDescription>
