@@ -131,18 +131,8 @@ export default function UpcomingExamsPage() {
                     {f.label}
                   </Button>
                 ))}
-                <span className="mx-1 h-4 w-px bg-border" />
-                {difficultyFilters.map((f) => (
-                  <Button
-                    key={f.value}
-                    size="sm"
-                    variant={difficultyFilter === f.value ? "secondary" : "ghost"}
-                    className="h-7 rounded-full text-xs px-3"
-                    onClick={() => setDifficultyFilter(f.value)}
-                  >
-                    {f.label}
-                  </Button>
-                ))}
+
+
               </div>
             </div>
 
@@ -194,9 +184,6 @@ export default function UpcomingExamsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Badge variant="outline" className={difficultyColor(exam.difficulty)}>
-                          {exam.difficulty}
-                        </Badge>
                         {exam.derivedStatus === "completed" && (
                           <Badge variant="outline" className="bg-green-500/15 text-green-500 border-green-500/30 gap-1">
                             <CheckCircle2 className="h-3 w-3" />
@@ -270,9 +257,6 @@ export default function UpcomingExamsPage() {
                   {selectedExam.duration} &middot; {selectedExam.questions} questions
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={difficultyColor(selectedExam.difficulty)}>
-                    {selectedExam.difficulty}
-                  </Badge>
                   {selectedExam.derivedStatus === "completed" && (
                     <Badge className="bg-green-500/15 text-green-500 border-green-500/30" variant="outline">
                       {selectedExam.score != null ? `${Math.round(selectedExam.score)}%` : "Done"}

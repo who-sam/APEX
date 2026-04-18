@@ -140,8 +140,8 @@ export default function Dashboard() {
                     <span>{exam.problem_count || 0} questions</span>
                   </div>
                 </div>
-                <Badge variant="outline" className={difficultyColor(exam.difficulty || "Medium")}>
-                  {exam.difficulty || "Upcoming"}
+                <Badge variant="outline" className="bg-accent/15 text-accent border-accent/30">
+                  Upcoming
                 </Badge>
               </div>
             ))
