@@ -620,7 +620,7 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
                               </td>
                               <td className="px-3 py-3 text-muted-foreground text-xs">{email}</td>
                               {examsForClass.map((e: any) => {
-                                const score = m.exam_scores?.[e.id] ?? null;
+                                const score = m.exam_scores?.[String(e.id)] ?? m.exam_scores?.[e.id] ?? null;
                                 return (
                                   <td key={e.id} className={`px-3 py-3 text-center font-semibold ${score != null ? gradeColor(score) : "text-muted-foreground"}`}>
                                     {score != null ? score : "—"}

@@ -94,9 +94,65 @@ func GetClass(c *gin.Context) {
 	var members []models.ClassMember
 	database.DB.Where("class_id = ?", class.ID).Preload("User").Find(&members)
 
+	// Get exam IDs for this class
+	var examIDs []uint
+	database.DB.Model(&models.ExamClass{}).Where("class_id = ?", class.ID).Pluck("exam_id", &examIDs)
+
+	type memberWithScores struct {
+		models.ClassMember
+		ExamScores map[uint]float64 `json:"exam_scores"`
+		Avg        *float64         `json:"avg"`
+	}
+
+	enriched := make([]memberWithScores, len(members))
+	for i, m := range members {
+		enriched[i].ClassMember = m
+		enriched[i].ExamScores = map[uint]float64{}
+
+		if len(examIDs) == 0 {
+			continue
+		}
+
+		// Get this student's exam attempt scores
+		var attempts []models.ExamAttempt
+		database.DB.Where("user_id = ? AND exam_id IN ? AND status = ?", m.UserID, examIDs, "submitted").
+			Find(&attempts)
+
+		var total float64
+		var count int
+		for _, a := range attempts {
+			enriched[i].ExamScores[a.ExamID] = a.Score
+			total += a.Score
+			count++
+		}
+
+		// Fallback: check submissions if no attempts
+		if count == 0 {
+			var subs []models.Submission
+			database.DB.Where("user_id = ? AND exam_id IN ?", m.UserID, examIDs).Find(&subs)
+			// Group by exam, take latest
+			examBest := map[uint]float64{}
+			for _, s := range subs {
+				if s.Score > examBest[s.ExamID] {
+					examBest[s.ExamID] = s.Score
+				}
+			}
+			for eid, sc := range examBest {
+				enriched[i].ExamScores[eid] = sc
+				total += sc
+				count++
+			}
+		}
+
+		if count > 0 {
+			avg := total / float64(count)
+			enriched[i].Avg = &avg
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"class":   class,
-		"members": members,
+		"members": enriched,
 	})
 }
 
