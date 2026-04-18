@@ -86,9 +86,11 @@ func GetExams(c *gin.Context) {
 
 	type ExamWithMeta struct {
 		models.Exam
-		ProblemCount int64  `json:"problem_count"`
-		ClassCount   int    `json:"class_count"`
-		Status       string `json:"status"`
+		ProblemCount    int64  `json:"problem_count"`
+		ClassCount      int    `json:"class_count"`
+		Status          string `json:"status"`
+		SubmissionCount int64  `json:"submission_count"`
+		StudentCount    int64  `json:"student_count"`
 	}
 
 	now := time.Now()
@@ -96,11 +98,20 @@ func GetExams(c *gin.Context) {
 	for i, e := range exams {
 		var problemCount int64
 		database.DB.Model(&models.Problem{}).Where("exam_id = ?", e.ID).Count(&problemCount)
+
+		var submissionCount int64
+		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ? AND status = ?", e.ID, "submitted").Count(&submissionCount)
+
+		var studentCount int64
+		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
+
 		result[i] = ExamWithMeta{
-			Exam:         e,
-			ProblemCount: problemCount,
-			ClassCount:   len(e.ExamClasses),
-			Status:       computeExamStatus(e, now),
+			Exam:            e,
+			ProblemCount:    problemCount,
+			ClassCount:      len(e.ExamClasses),
+			Status:          computeExamStatus(e, now),
+			SubmissionCount: submissionCount,
+			StudentCount:    studentCount,
 		}
 	}
 
