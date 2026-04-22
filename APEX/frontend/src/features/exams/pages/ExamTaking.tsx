@@ -220,6 +220,17 @@ export default function ExamTaking() {
       if (raw) {
         const sess = JSON.parse(raw);
         const startedAtMs = new Date(sess.startedAt).getTime();
+        const resetAtMs = exam?.reset_at ? new Date(exam.reset_at).getTime() : 0;
+        if (resetAtMs && startedAtMs < resetAtMs) {
+          // Teacher destructively edited the exam after this session started.
+          // Discard stale cache and force a fresh attempt.
+          localStorage.removeItem(sessionKey);
+          setStarted(false);
+          setAnswers(initialAnswers);
+          setTimeLeft(durationSec);
+          setSessionRestored(true);
+          return;
+        }
         const elapsed = Math.floor((Date.now() - startedAtMs) / 1000);
         const remaining = durationSec - elapsed;
 
