@@ -2,6 +2,7 @@ package testcase
 
 import (
 	"apex/internal/database"
+	examsvc "apex/internal/exam"
 	"apex/internal/models"
 	"net/http"
 
@@ -25,10 +26,17 @@ func AddTestCase(c *gin.Context) {
 		return
 	}
 
-	var exam models.Exam
-	if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
-		return
+	if problem.IsBank || problem.ExamID == nil {
+		if problem.TeacherID != teacherID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+	} else {
+		var exam models.Exam
+		if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
 	}
 
 	var req createTestCaseRequest
@@ -50,6 +58,10 @@ func AddTestCase(c *gin.Context) {
 		return
 	}
 
+	if !problem.IsBank && problem.ExamID != nil {
+		_ = examsvc.ResetExamAttempts(*problem.ExamID)
+	}
+
 	c.JSON(http.StatusCreated, tc)
 }
 
@@ -69,10 +81,17 @@ func UpdateTestCase(c *gin.Context) {
 		return
 	}
 
-	var exam models.Exam
-	if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
-		return
+	if problem.IsBank || problem.ExamID == nil {
+		if problem.TeacherID != teacherID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+	} else {
+		var exam models.Exam
+		if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
 	}
 
 	var req createTestCaseRequest
@@ -81,12 +100,17 @@ func UpdateTestCase(c *gin.Context) {
 		return
 	}
 
+	expectedChanged := tc.ExpectedOutput != req.ExpectedOutput || tc.Input != req.Input
 	database.DB.Model(&tc).Updates(map[string]any{
 		"input":           req.Input,
 		"expected_output": req.ExpectedOutput,
 		"is_sample":       req.IsSample,
 		"order_index":     req.OrderIndex,
 	})
+
+	if expectedChanged && !problem.IsBank && problem.ExamID != nil {
+		_ = examsvc.ResetExamAttempts(*problem.ExamID)
+	}
 
 	c.JSON(http.StatusOK, tc)
 }
@@ -107,12 +131,24 @@ func DeleteTestCase(c *gin.Context) {
 		return
 	}
 
-	var exam models.Exam
-	if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
-		return
+	if problem.IsBank || problem.ExamID == nil {
+		if problem.TeacherID != teacherID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+	} else {
+		var exam models.Exam
+		if err := database.DB.Where("id = ? AND teacher_id = ?", problem.ExamID, teacherID).First(&exam).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
 	}
 
 	database.DB.Delete(&tc)
+
+	if !problem.IsBank && problem.ExamID != nil {
+		_ = examsvc.ResetExamAttempts(*problem.ExamID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "test case deleted"})
 }

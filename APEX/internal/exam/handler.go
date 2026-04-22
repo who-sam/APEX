@@ -6,6 +6,7 @@ import (
 	"apex/internal/models"
 	"apex/internal/notification"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -61,6 +62,10 @@ func CreateExam(c *gin.Context) {
 			exam.StartTime = &t
 		}
 	}
+	if exam.StartTime == nil {
+		now := time.Now()
+		exam.StartTime = &now
+	}
 	if req.EndTime != "" {
 		if t, err := parseTime(req.EndTime); err == nil {
 			exam.EndTime = &t
@@ -88,6 +93,7 @@ func GetExams(c *gin.Context) {
 		models.Exam
 		ProblemCount    int64  `json:"problem_count"`
 		ClassCount      int    `json:"class_count"`
+		ClassID         *uint  `json:"class_id"`
 		Status          string `json:"status"`
 		SubmissionCount int64  `json:"submission_count"`
 		StudentCount    int64  `json:"student_count"`
@@ -111,10 +117,15 @@ func GetExams(c *gin.Context) {
 			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
 		}
 
+		var classID *uint
+		if len(e.ExamClasses) > 0 {
+			classID = &e.ExamClasses[0].ClassID
+		}
 		result[i] = ExamWithMeta{
 			Exam:            e,
 			ProblemCount:    problemCount,
 			ClassCount:      len(e.ExamClasses),
+			ClassID:         classID,
 			Status:          computeExamStatus(e, now),
 			SubmissionCount: submissionCount,
 			StudentCount:    studentCount,
@@ -142,7 +153,28 @@ func GetExam(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, exam)
+	var attemptCount int64
+	database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ?", exam.ID).Count(&attemptCount)
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":                 exam.ID,
+		"teacher_id":         exam.TeacherID,
+		"title":              exam.Title,
+		"description":        exam.Description,
+		"duration_minutes":   exam.DurationMinutes,
+		"start_time":         exam.StartTime,
+		"end_time":           exam.EndTime,
+		"reset_at":           exam.ResetAt,
+		"created_at":         exam.CreatedAt,
+		"shuffle_questions":  exam.ShuffleQuestions,
+		"show_results_after": exam.ShowResultsAfter,
+		"passing_score":      exam.PassingScore,
+		"is_practice":        exam.IsPractice,
+		"is_draft":           exam.IsDraft,
+		"problems":           exam.Problems,
+		"exam_classes":       exam.ExamClasses,
+		"attempt_count":      attemptCount,
+	})
 }
 
 func UpdateExam(c *gin.Context) {
@@ -181,6 +213,9 @@ func UpdateExam(c *gin.Context) {
 		if t, err := parseTime(req.StartTime); err == nil {
 			updates["start_time"] = t
 		}
+	}
+	if _, ok := updates["start_time"]; !ok && exam.StartTime == nil {
+		updates["start_time"] = time.Now()
 	}
 	if req.EndTime != "" {
 		if t, err := parseTime(req.EndTime); err == nil {
@@ -289,6 +324,10 @@ func GetExamResults(c *gin.Context) {
 	database.DB.Where("exam_id = ?", exam.ID).
 		Preload("User").
 		Preload("Problem").
+		Preload("TestResults", func(db *gorm.DB) *gorm.DB {
+			return db.Order("id asc")
+		}).
+		Preload("TestResults.TestCase").
 		Order("submitted_at desc").
 		Find(&submissions)
 
@@ -313,13 +352,23 @@ func GetExamResults(c *gin.Context) {
 			studentMap[sub.UserID] = sr
 		}
 		sr.Submissions = append(sr.Submissions, sub)
-		sr.TotalScore += sub.Score
 	}
 
 	results := make([]StudentResult, 0, len(studentMap))
 	for _, sr := range studentMap {
-		if len(sr.Submissions) > 0 {
-			sr.AvgScore = sr.TotalScore / float64(len(sr.Submissions))
+		// Compute weighted score: earned points / total points * 100
+		var earnedPoints, totalPoints float64
+		for _, sub := range sr.Submissions {
+			pts := float64(sub.Problem.Points)
+			if pts <= 0 {
+				pts = 10
+			}
+			totalPoints += pts
+			earnedPoints += sub.Score / 100.0 * pts
+		}
+		sr.TotalScore = math.Round(earnedPoints*10) / 10
+		if totalPoints > 0 {
+			sr.AvgScore = math.Round(earnedPoints/totalPoints*10000) / 100
 		}
 		results = append(results, *sr)
 	}
@@ -336,6 +385,38 @@ func StartAttempt(c *gin.Context) {
 	var exam models.Exam
 	if err := database.DB.First(&exam, examID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+
+	var classIDs []uint
+	database.DB.Model(&models.ClassMember{}).Where("user_id = ?", userID).Pluck("class_id", &classIDs)
+	if len(classIDs) == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not enrolled in any class"})
+		return
+	}
+	var assignedCount int64
+	database.DB.Model(&models.ExamClass{}).Where("exam_id = ? AND class_id IN ?", exam.ID, classIDs).Count(&assignedCount)
+	if assignedCount == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "exam not assigned to your class"})
+		return
+	}
+
+	if exam.IsDraft {
+		c.JSON(http.StatusForbidden, gin.H{"error": "exam is not published"})
+		return
+	}
+
+	now := time.Now()
+	if exam.StartTime == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "exam has no scheduled start time"})
+		return
+	}
+	if now.Before(*exam.StartTime) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "exam has not started yet", "start_time": exam.StartTime})
+		return
+	}
+	if exam.EndTime != nil && now.After(*exam.EndTime) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "exam window closed", "end_time": exam.EndTime})
 		return
 	}
 
@@ -484,12 +565,32 @@ func GetMyAttempts(c *gin.Context) {
 		Order("started_at desc").
 		Find(&attempts)
 
-	c.JSON(http.StatusOK, attempts)
+	// Build response with grades_announced flag per attempt
+	type attemptWithGrades struct {
+		models.ExamAttempt
+		GradesAnnounced bool `json:"grades_announced"`
+	}
+
+	result := make([]attemptWithGrades, len(attempts))
+	for i, a := range attempts {
+		result[i].ExamAttempt = a
+		var count int64
+		database.DB.Model(&models.Class{}).
+			Joins("JOIN exam_classes ON exam_classes.class_id = classes.id").
+			Where("exam_classes.exam_id = ? AND classes.grades_announced = ?", a.ExamID, true).
+			Count(&count)
+		result[i].GradesAnnounced = count > 0
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 func computeExamStatus(e models.Exam, now time.Time) string {
-	if e.StartTime == nil {
+	if e.IsDraft {
 		return "draft"
+	}
+	if e.StartTime == nil {
+		return "upcoming"
 	}
 	if e.EndTime != nil && now.After(*e.EndTime) {
 		return "completed"
