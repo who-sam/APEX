@@ -23,6 +23,10 @@ func ResetExamAttempts(examID uint) error {
 			return err
 		}
 
+		var attemptCount int64
+		tx.Model(&models.ExamAttempt{}).Where("exam_id = ?", examID).Count(&attemptCount)
+		hadAttempts := attemptCount > 0
+
 		var subIDs []uint
 		tx.Model(&models.Submission{}).Where("exam_id = ?", examID).Pluck("id", &subIDs)
 		if len(subIDs) > 0 {
@@ -43,6 +47,12 @@ func ResetExamAttempts(examID uint) error {
 		}
 		exam.ResetAt = &now
 
+		// Only notify if there were actual attempts to reset. Keeps the
+		// replace-all save flow from fanning out one notification per
+		// deleted problem.
+		if !hadAttempts {
+			return nil
+		}
 		var classIDs []uint
 		tx.Model(&models.ExamClass{}).Where("exam_id = ?", examID).Pluck("class_id", &classIDs)
 		if len(classIDs) > 0 {
