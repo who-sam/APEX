@@ -47,14 +47,24 @@ func ResetExamAttempts(examID uint) error {
 		}
 		exam.ResetAt = &now
 
+		// Un-announce grades for the classes this exam belongs to — old
+		// announced scores are now invalid. Class-level flag, so sibling
+		// exams in the same class also get un-announced; teacher must
+		// re-announce when ready.
+		var classIDs []uint
+		tx.Model(&models.ExamClass{}).Where("exam_id = ?", examID).Pluck("class_id", &classIDs)
+		if len(classIDs) > 0 {
+			if err := tx.Model(&models.Class{}).Where("id IN ?", classIDs).Update("grades_announced", false).Error; err != nil {
+				return err
+			}
+		}
+
 		// Only notify if there were actual attempts to reset. Keeps the
 		// replace-all save flow from fanning out one notification per
 		// deleted problem.
 		if !hadAttempts {
 			return nil
 		}
-		var classIDs []uint
-		tx.Model(&models.ExamClass{}).Where("exam_id = ?", examID).Pluck("class_id", &classIDs)
 		if len(classIDs) > 0 {
 			var userIDs []uint
 			tx.Model(&models.ClassMember{}).Where("class_id IN ?", classIDs).Pluck("user_id", &userIDs)
