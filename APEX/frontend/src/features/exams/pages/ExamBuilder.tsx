@@ -23,6 +23,7 @@ import { addTestCase, deleteProblem, saveProblemToBank } from "@/lib/api";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import type { Question, QuestionType, MCQQuestion, WrittenQuestion, CodingQuestion } from "@/features/exams/types/exam";
+import { createQuestion, bankProblemToQuestion } from "@/features/exams/lib/utils";
 import QuestionTypeDialog from "@/features/exams/components/QuestionTypeDialog";
 import QuestionList from "@/features/exams/components/QuestionList";
 import MCQEditor from "@/features/exams/components/MCQEditor";
@@ -35,74 +36,13 @@ const typeIcons: Record<string, React.ElementType> = {
   coding: Code2,
 };
 
-function createQuestion(type: QuestionType): Question {
-  const base = { id: crypto.randomUUID(), points: 10, difficulty: "medium" as const, text: "", imageUrl: "" };
-  switch (type) {
-    case "mcq":
-      return {
-        ...base, type: "mcq",
-        options: [
-          { id: crypto.randomUUID(), text: "" },
-          { id: crypto.randomUUID(), text: "" },
-          { id: crypto.randomUUID(), text: "" },
-          { id: crypto.randomUUID(), text: "" },
-        ],
-        correctOptionIds: [],
-        multipleCorrect: false,
-        explanation: "",
-      } as MCQQuestion;
-    case "written":
-      return { ...base, type: "written", maxWordCount: 500, rubric: "", requireManualGrading: true } as WrittenQuestion;
-    case "coding":
-      return {
-        ...base, type: "coding", description: "",
-        starterCode: { python: "", javascript: "", c: "", cpp: "" },
-        testCases: [], hints: "", timeLimitMs: 2000, memoryLimitKb: 262144,
-      } as CodingQuestion;
-  }
-}
-
-function bankProblemToQuestion(p: any): Question {
-  const base = { id: crypto.randomUUID(), points: p.points || 10, difficulty: (p.difficulty || "medium") as "easy" | "medium" | "hard", text: p.title || p.text || "", imageUrl: "" };
-  const type = p.type || "coding";
-  switch (type) {
-    case "mcq": {
-      const rawOpts = Array.isArray(p.options) ? p.options : (typeof p.options === "string" ? (() => { try { return JSON.parse(p.options || "[]"); } catch { return []; } })() : []);
-      const opts = rawOpts.map((o: any, i: number) => {
-        if (o && typeof o === "object") return { id: String(o.id ?? i), text: String(o.text ?? "") };
-        return { id: String(i), text: String(o ?? "") };
-      });
-      const rawCorrect = Array.isArray(p.correct_option_ids)
-        ? p.correct_option_ids
-        : typeof p.correct_option_ids === "string"
-          ? (() => { try { return JSON.parse(p.correct_option_ids || "[]"); } catch { return []; } })()
-          : [];
-      return {
-        ...base, type: "mcq",
-        options: opts.length > 0 ? opts : [{ id: "a", text: "" }, { id: "b", text: "" }, { id: "c", text: "" }, { id: "d", text: "" }],
-        correctOptionIds: rawCorrect.map(String),
-        multipleCorrect: p.multiple_correct || false,
-        explanation: p.explanation || "",
-      } as MCQQuestion;
-    }
-    case "written":
-      return { ...base, type: "written", maxWordCount: p.max_word_count || 500, rubric: p.rubric || "", requireManualGrading: true } as WrittenQuestion;
-    default:
-      return {
-        ...base, type: "coding", description: p.description || "",
-        starterCode: { python: p.starter_code || "", javascript: p.starter_code || "" },
-        testCases: (p.test_cases || []).map((tc: any) => ({ id: String(tc.id), input: tc.input, expectedOutput: tc.expected_output, isSample: tc.is_sample })),
-        hints: p.hints || "", timeLimitMs: p.time_limit_ms || 2000, memoryLimitKb: p.memory_limit_kb || 262144,
-      } as CodingQuestion;
-  }
-}
-
 export default function ExamBuilder() {
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const editExam = (location.state as any)?.editExam;
   const editId: number = editExam?.id || 0;
+  const focusProblemId: number | undefined = editExam?.focusProblemId;
   const isEditing = !!editId;
 
   // Real API hooks
@@ -134,6 +74,7 @@ export default function ExamBuilder() {
   const [bankTypeFilter, setBankTypeFilter] = useState<string>("all");
   const [selectedBankIds, setSelectedBankIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [isDraft, setIsDraft] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
@@ -166,7 +107,12 @@ export default function ExamBuilder() {
       if (cid) setAssignedCourse(String(cid));
     }
     const problems = examData.problems || examData.Problems || [];
-    setQuestions(problems.map(bankProblemToQuestion));
+    const mapped = problems.map(bankProblemToQuestion);
+    setQuestions(mapped);
+    if (focusProblemId) {
+      const idx = mapped.findIndex((q) => q.serverId === focusProblemId);
+      if (idx >= 0) setSelectedIdx(idx);
+    }
     setHydrated(true);
   }, [examData, isEditing, hydrated]);
 
@@ -174,6 +120,7 @@ export default function ExamBuilder() {
     const q = createQuestion(type);
     setQuestions((prev) => [...prev, q]);
     setSelectedIdx(questions.length);
+    setTypeDialogOpen(false);
   };
 
   const confirmDelete = () => {
@@ -188,7 +135,9 @@ export default function ExamBuilder() {
     setQuestions((prev) => prev.map((old, i) => (i === selectedIdx ? q : old)));
   };
 
-  const handleSave = async () => {
+  const attemptCount: number = (examData as any)?.attempt_count ?? 0;
+
+  const handleSaveClick = () => {
     if (!title.trim()) {
       toast({ title: "Validation error", description: "Please enter an exam title.", variant: "destructive" });
       return;
@@ -205,7 +154,14 @@ export default function ExamBuilder() {
       toast({ title: "Validation error", description: "Add at least one question.", variant: "destructive" });
       return;
     }
+    if (isEditing && attemptCount > 0) {
+      setResetConfirmOpen(true);
+      return;
+    }
+    void handleSave();
+  };
 
+  const handleSave = async () => {
     setIsSaving(true);
     try {
       // Build start/end times
@@ -386,6 +342,9 @@ export default function ExamBuilder() {
       data.time_limit_ms = c.timeLimitMs;
       data.memory_limit_kb = c.memoryLimitKb;
     }
+    if (assignedCourse) {
+      data.class_id = Number(assignedCourse);
+    }
     try {
       await saveProblemToBank(data);
       toast({ title: "Saved to bank", description: `"${data.title}" added to your question bank.` });
@@ -414,7 +373,7 @@ export default function ExamBuilder() {
             {isEditing ? "Edit Exam" : "Exam Builder"}
           </h1>
         </div>
-        <Button className="gap-2 rounded-full" onClick={handleSave} disabled={isSaving}>
+        <Button className="gap-2 rounded-full" onClick={handleSaveClick} disabled={isSaving}>
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {isSaving ? "Saving..." : isEditing ? "Update Exam" : "Save Exam"}
         </Button>
@@ -534,6 +493,29 @@ export default function ExamBuilder() {
       </ResizablePanelGroup>
 
       <QuestionTypeDialog open={typeDialogOpen} onClose={() => setTypeDialogOpen(false)} onSelect={addQuestion} />
+
+      {/* Reset-attempts confirmation */}
+      <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset student attempts?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This exam has {attemptCount} student attempt{attemptCount === 1 ? "" : "s"}.
+              Saving will delete their submissions and let them re-enter the exam.
+              Students will be notified.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { setResetConfirmOpen(false); void handleSave(); }}
+            >
+              Reset and save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete confirmation */}
       <AlertDialog open={deleteIdx !== null} onOpenChange={() => setDeleteIdx(null)}>
