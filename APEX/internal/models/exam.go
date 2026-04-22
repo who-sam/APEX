@@ -11,13 +11,14 @@ type Exam struct {
 	DurationMinutes int        `gorm:"not null;default:60" json:"duration_minutes"`
 	StartTime       *time.Time `json:"start_time"`
 	EndTime         *time.Time `json:"end_time"`
+	ResetAt         *time.Time `gorm:"index" json:"reset_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 
 	ShuffleQuestions bool `gorm:"default:false" json:"shuffle_questions"`
 	ShowResultsAfter bool `gorm:"default:true" json:"show_results_after"`
 	PassingScore     int  `gorm:"default:50" json:"passing_score"`
 	IsPractice       bool `gorm:"default:false" json:"is_practice"`
-	IsDraft          bool `gorm:"default:true" json:"is_draft"`
+	IsDraft          bool `gorm:"default:false" json:"is_draft"`
 
 	Problems    []Problem   `gorm:"foreignKey:ExamID" json:"problems,omitempty"`
 	ExamClasses []ExamClass `gorm:"foreignKey:ExamID" json:"exam_classes,omitempty"`
