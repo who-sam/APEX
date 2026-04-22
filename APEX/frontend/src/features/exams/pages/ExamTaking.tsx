@@ -34,6 +34,9 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
@@ -43,6 +46,8 @@ import { useExecuteCode } from "@/hooks/useExecuteCode";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import type { StudentAnswer } from "@/features/exams/types/exam";
+import { getExamPhase } from "@/features/exams/lib/examStatus";
+import { format } from "date-fns";
 
 /* Map backend problem to frontend Question shape */
 interface MappedQuestion {
@@ -160,7 +165,18 @@ export default function ExamTaking() {
   const { data: examData, isLoading, error, refetch } = useStudentExam(examId);
   const executeMutation = useExecuteCode();
 
-  const [started, setStarted] = useState(false);
+  // Check localStorage synchronously to avoid flashing start screen on resume
+  const [started, setStarted] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`apex-exam-session-${Number(id)}`);
+      if (raw) {
+        const sess = JSON.parse(raw);
+        const elapsed = Math.floor((Date.now() - new Date(sess.startedAt).getTime()) / 1000);
+        return elapsed < 86400; // session exists and not ancient
+      }
+    } catch {}
+    return false;
+  });
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<StudentAnswer[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -469,6 +485,41 @@ export default function ExamTaking() {
     );
   }
 
+  const phase = getExamPhase({
+    start_time: exam?.start_time,
+    end_time: exam?.end_time,
+    has_submitted: allAlreadySubmitted,
+  });
+  if (phase === "upcoming" && !started) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-5.5rem)]">
+        <div className="max-w-lg w-full rounded-2xl border border-border/50 bg-card/80 backdrop-blur-md p-8 space-y-4 text-center">
+          <h1 className="text-2xl font-bold text-foreground">Exam Locked</h1>
+          <p className="text-sm text-muted-foreground">
+            This exam is not yet available.{" "}
+            {exam?.start_time && (
+              <>Starts {format(new Date(exam.start_time), "EEEE, MMM d · h:mm a")}.</>
+            )}
+          </p>
+          <Button onClick={() => navigate("/dashboard/upcoming")}>Back to Exams</Button>
+        </div>
+      </div>
+    );
+  }
+  if (phase === "missed" && !allAlreadySubmitted) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-5.5rem)]">
+        <div className="max-w-lg w-full rounded-2xl border border-border/50 bg-card/80 backdrop-blur-md p-8 space-y-4 text-center">
+          <h1 className="text-2xl font-bold text-foreground">Exam Window Closed</h1>
+          <p className="text-sm text-muted-foreground">
+            The exam window has ended and you cannot take it anymore.
+          </p>
+          <Button onClick={() => navigate("/dashboard/upcoming")}>Back to Exams</Button>
+        </div>
+      </div>
+    );
+  }
+
   const mcqCount = questions.filter((q) => q.type === "mcq").length;
   const writtenCount = questions.filter((q) => q.type === "written").length;
   const codingCount = questions.filter((q) => q.type === "coding").length;
@@ -506,9 +557,11 @@ export default function ExamTaking() {
           <h1 className="text-2xl font-bold text-foreground">
             {exam.title}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {exam.description}
-          </p>
+          {exam.description && (
+            <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{exam.description}</ReactMarkdown>
+            </div>
+          )}
           <div className="flex justify-center gap-4 text-sm">
             <Badge variant="secondary" className="gap-1">
               <CheckSquare className="h-3 w-3" /> {mcqCount} MCQ
@@ -531,13 +584,19 @@ export default function ExamTaking() {
               stable connection.
             </span>
           </div>
-          <Button
-            size="lg"
-            className="w-full text-base font-semibold"
-            onClick={() => setStarted(true)}
-          >
-            Start Exam
-          </Button>
+          {(() => {
+            let hasSession = false;
+            try { hasSession = !!localStorage.getItem(sessionKey); } catch {}
+            return (
+              <Button
+                size="lg"
+                className="w-full text-base font-semibold"
+                onClick={() => setStarted(true)}
+              >
+                {hasSession ? "Continue Exam" : "Start Exam"}
+              </Button>
+            );
+          })()}
         </div>
       </div>
     );
@@ -785,9 +844,9 @@ export default function ExamTaking() {
               {q.type === "coding" && (
                 <div className="space-y-3">
                   {q.description && (
-                    <p className="text-sm text-muted-foreground">
-                      {q.description}
-                    </p>
+                    <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{q.description}</ReactMarkdown>
+                    </div>
                   )}
 
                   {/* Language selector + Run */}

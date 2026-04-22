@@ -9,6 +9,9 @@ import {
 import { useExam } from "@/hooks/useExams";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 function parseJSON(val: any, fallback: any = []) {
   if (!val) return fallback;
@@ -81,7 +84,9 @@ export default function ExamPreview() {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-foreground">{exam.title}</h1>
-              <p className="text-sm text-muted-foreground mt-2">{exam.description}</p>
+              <div className="text-sm text-muted-foreground mt-2 prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{exam.description || ""}</ReactMarkdown>
+              </div>
             </div>
             <div className="flex flex-col items-end gap-2 shrink-0">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -174,7 +179,9 @@ export default function ExamPreview() {
                 {p.type === "coding" && (
                   <div className="space-y-3">
                     {p.description && p.title && (
-                      <p className="text-sm text-muted-foreground">{p.description}</p>
+                      <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{p.description}</ReactMarkdown>
+                      </div>
                     )}
                     {p.starter_code && (
                       <div className="rounded-lg border border-border/50 bg-muted/50 p-4 font-mono text-xs text-muted-foreground whitespace-pre">
