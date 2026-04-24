@@ -79,6 +79,23 @@ func RunMigrations(db *gorm.DB) {
 	// teacher destructively edits exam content.
 	db.Exec("ALTER TABLE exams ADD COLUMN IF NOT EXISTS reset_at TIMESTAMPTZ")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_exams_reset_at ON exams(reset_at)")
+
+	// --- exam_attempts.score backfill ---
+	// Old attempts were aggregated including pending_review submissions
+	// (score=0 placeholder), pulling the total below 100% when every
+	// auto-graded submission passed. Re-aggregate excluding those rows.
+	db.Exec(`
+		UPDATE exam_attempts ea SET score = COALESCE((
+			SELECT CASE WHEN SUM(COALESCE(NULLIF(p.points, 0), 10)) = 0 THEN 0
+				ELSE SUM(s.score / 100.0 * COALESCE(NULLIF(p.points, 0), 10))
+					/ SUM(COALESCE(NULLIF(p.points, 0), 10)) * 100.0 END
+			FROM submissions s
+			JOIN problems p ON p.id = s.problem_id
+			WHERE s.exam_attempt_id = ea.id
+			  AND s.status <> 'pending_review'
+			  AND s.status NOT IN ('pending','running')
+		), 0)
+		WHERE ea.status = 'submitted'`)
 }
 
 // RunPostMigrations runs after AutoMigrate so it can reference tables
