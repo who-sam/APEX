@@ -80,6 +80,9 @@ func RunMigrations(db *gorm.DB) {
 	db.Exec("ALTER TABLE exams ADD COLUMN IF NOT EXISTS reset_at TIMESTAMPTZ")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_exams_reset_at ON exams(reset_at)")
 
+	// --- submissions.teacher_feedback ---
+	db.Exec("ALTER TABLE submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT")
+
 	// --- exam_attempts.score backfill ---
 	// Old attempts were aggregated including pending_review submissions
 	// (score=0 placeholder), pulling the total below 100% when every

@@ -16,6 +16,7 @@ type Submission struct {
 	SelectedOptions string    `gorm:"type:jsonb" json:"selected_options,omitempty"`
 	TextAnswer      string    `gorm:"type:text" json:"text_answer,omitempty"`
 	Status          string    `gorm:"size:30;not null;default:pending" json:"status"`
+	TeacherFeedback string    `gorm:"type:text" json:"teacher_feedback"`
 	PassedCount     int       `gorm:"not null;default:0" json:"passed_count"`
 	TotalCount      int       `gorm:"not null;default:0" json:"total_count"`
 	Score           float64   `gorm:"not null;default:0" json:"score"`
@@ -27,12 +28,13 @@ type Submission struct {
 }
 
 type TestResult struct {
-	ID              uint   `gorm:"primaryKey" json:"id"`
-	SubmissionID    uint   `gorm:"not null;index" json:"submission_id"`
-	TestCaseID      uint   `gorm:"not null;index" json:"test_case_id"`
-	Passed          bool   `gorm:"not null;default:false" json:"passed"`
-	ActualOutput    string `gorm:"type:text" json:"actual_output"`
-	ExecutionTimeMs int    `gorm:"default:0" json:"execution_time_ms"`
-	MemoryKb        int    `gorm:"default:0" json:"memory_kb"`
-	Status          string `gorm:"size:30" json:"status"`
+	ID              uint     `gorm:"primaryKey" json:"id"`
+	SubmissionID    uint     `gorm:"not null;index" json:"submission_id"`
+	TestCaseID      uint     `gorm:"not null;index" json:"test_case_id"`
+	TestCase        TestCase `gorm:"foreignKey:TestCaseID" json:"test_case,omitempty"`
+	Passed          bool     `gorm:"not null;default:false" json:"passed"`
+	ActualOutput    string   `gorm:"type:text" json:"actual_output"`
+	ExecutionTimeMs int      `gorm:"default:0" json:"execution_time_ms"`
+	MemoryKb        int      `gorm:"default:0" json:"memory_kb"`
+	Status          string   `gorm:"size:30" json:"status"`
 }

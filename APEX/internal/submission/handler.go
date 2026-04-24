@@ -141,8 +141,9 @@ func RunSolution(c *gin.Context) {
 }
 
 type gradeRequest struct {
-	Score  float64 `json:"score" binding:"required"`
-	Status string  `json:"status" binding:"required"`
+	Score           float64 `json:"score" binding:"required"`
+	Status          string  `json:"status" binding:"required"`
+	TeacherFeedback *string `json:"teacher_feedback"`
 }
 
 func GradeSubmission(c *gin.Context) {
@@ -164,6 +165,9 @@ func GradeSubmission(c *gin.Context) {
 	sub.Status = req.Status
 	sub.PassedCount = int(req.Score)
 	sub.TotalCount = 100
+	if req.TeacherFeedback != nil {
+		sub.TeacherFeedback = *req.TeacherFeedback
+	}
 
 	if err := database.DB.Save(&sub).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update submission"})
