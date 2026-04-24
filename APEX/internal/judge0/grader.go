@@ -233,6 +233,13 @@ func GradeWritten(submissionID uint) {
 	maybeFinalizeAttempt(submission.ExamAttemptID)
 }
 
+// FinalizeAttempt re-aggregates attempt score. Callers outside the
+// grader (e.g. manual grading of written answers) should invoke this
+// after updating a submission's score.
+func FinalizeAttempt(attemptID uint) {
+	maybeFinalizeAttempt(&attemptID)
+}
+
 // maybeFinalizeAttempt aggregates score across all submissions once none
 // remain in pending/running state. Safe to call multiple times.
 func maybeFinalizeAttempt(attemptID *uint) {
@@ -248,20 +255,35 @@ func maybeFinalizeAttempt(attemptID *uint) {
 	}
 
 	var subs []models.Submission
-	database.DB.Where("exam_attempt_id = ?", *attemptID).Find(&subs)
+	database.DB.Where("exam_attempt_id = ?", *attemptID).Preload("Problem").Find(&subs)
 	if len(subs) == 0 {
 		return
 	}
 
-	var total float64
+	// Pending-review submissions (written answers awaiting manual grading)
+	// must not pull the aggregate down — they have score=0 as a placeholder.
+	// Exclude them from the denominator until a teacher grades them.
+	var earnedPoints float64
+	var totalPoints float64
 	for _, s := range subs {
-		total += s.Score
+		if s.Status == "pending_review" {
+			continue
+		}
+		pts := float64(s.Problem.Points)
+		if pts <= 0 {
+			pts = 10
+		}
+		totalPoints += pts
+		earnedPoints += s.Score / 100.0 * pts
 	}
-	avg := total / float64(len(subs))
+	pct := 0.0
+	if totalPoints > 0 {
+		pct = earnedPoints / totalPoints * 100.0
+	}
 
 	database.DB.Model(&models.ExamAttempt{}).
 		Where("id = ?", *attemptID).
-		Update("score", avg)
+		Update("score", pct)
 }
 
 type TestCaseResult struct {

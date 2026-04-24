@@ -170,6 +170,10 @@ func GradeSubmission(c *gin.Context) {
 		return
 	}
 
+	if sub.ExamAttemptID != nil {
+		judge0.FinalizeAttempt(*sub.ExamAttemptID)
+	}
+
 	notification.Create(sub.UserID, "result",
 		"Submission Graded",
 		"Your written submission has been graded.",
