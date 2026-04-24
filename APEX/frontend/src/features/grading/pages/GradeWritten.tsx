@@ -68,6 +68,22 @@ export default function GradeWritten() {
   const currentSub = filteredSubs.find((s: any) => s.id === selectedStudentId) || filteredSubs[0];
   const localGrade = currentSub ? localGrades[currentSub.id] : undefined;
 
+  // Seed local grade draft from persisted submission so teachers can see
+  // and edit prior feedback/score when overriding.
+  useEffect(() => {
+    if (!currentSub) return;
+    setLocalGrades((prev) => {
+      if (prev[currentSub.id]) return prev;
+      return {
+        ...prev,
+        [currentSub.id]: {
+          score: currentSub.status !== "pending_review" ? currentSub.score ?? null : null,
+          feedback: currentSub.teacher_feedback ?? "",
+        },
+      };
+    });
+  }, [currentSub?.id]);
+
   // Auto-select first student when entering grading
   useEffect(() => {
     if (step === "grading" && filteredSubs.length > 0 && !filteredSubs.find((s: any) => s.id === selectedStudentId)) {
@@ -95,7 +111,7 @@ export default function GradeWritten() {
     try {
       await gradeSubmissionMutation.mutateAsync({
         id: currentSub.id,
-        data: { score: grade.score, status: "accepted" },
+        data: { score: grade.score, status: "accepted", teacher_feedback: grade.feedback ?? "" },
       });
       toast({ title: "Grade saved", description: `${currentSub.studentName}'s submission has been graded.` });
       // Move to next pending
@@ -136,7 +152,7 @@ export default function GradeWritten() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {courseList.map((c: any) => {
               const courseExamCount = examList.filter((e: any) =>
-                e.class_id === c.id || (e.classes || []).some((cl: any) => cl.id === c.id)
+                e.class_id === c.id || (e.classes || []).some((cl: any) => cl.id === c.id) || (e.exam_classes || []).some((ec: any) => ec.class_id === c.id)
               ).length;
               return (
                 <Card key={c.id} className="bg-card/80 backdrop-blur-md border-border/50 cursor-pointer hover:border-primary/50 transition-all" onClick={() => { setSelectedCourseId(c.id); setStep("exam"); }}>
@@ -398,10 +414,10 @@ export default function GradeWritten() {
                   className="gap-2"
                   size="sm"
                   onClick={submitGrade}
-                  disabled={currentSub.status !== "pending_review" || gradeSubmissionMutation.isPending}
+                  disabled={gradeSubmissionMutation.isPending}
                 >
                   <Save className="h-3.5 w-3.5" />
-                  {gradeSubmissionMutation.isPending ? "Saving..." : currentSub.status !== "pending_review" ? "Already Graded" : "Submit Grade"}
+                  {gradeSubmissionMutation.isPending ? "Saving..." : currentSub.status !== "pending_review" ? "Update Grade" : "Submit Grade"}
                 </Button>
               </div>
             </div>

@@ -75,7 +75,7 @@ export function getStudentClass(id: number) {
   return apiFetch<any>(`/student/classes/${id}`);
 }
 
-export function updateClass(id: number, data: { name?: string; section?: string; cover_image?: string }) {
+export function updateClass(id: number, data: { name?: string; section?: string; cover_image?: string; grades_announced?: boolean; passing_threshold?: number }) {
   return apiFetch<any>(`/classes/${id}`, { method: "PUT", body: JSON.stringify(data) });
 }
 
@@ -105,6 +105,10 @@ export function getMyAttempts() {
 
 export function joinClass(inviteCode: string) {
   return apiFetch<any>("/student/classes/join", { method: "POST", body: JSON.stringify({ invite_code: inviteCode }) });
+}
+
+export function leaveClass(classId: number) {
+  return apiFetch<any>(`/student/classes/${classId}`, { method: "DELETE" });
 }
 
 export function getStudentClasses() {
@@ -324,7 +328,7 @@ export function getClassStats(id: number) {
 }
 
 // ── Grade Written ────────────────────────────────────
-export function gradeSubmission(id: number, data: { score: number; status: string }) {
+export function gradeSubmission(id: number, data: { score: number; status: string; teacher_feedback?: string }) {
   return apiFetch<any>(`/submissions/${id}/grade`, { method: "PUT", body: JSON.stringify(data) });
 }
 
@@ -349,4 +353,21 @@ export function createAnnouncement(classId: number, data: { title: string; body?
 
 export function deleteAnnouncement(id: number) {
   return apiFetch<any>(`/announcements/${id}`, { method: "DELETE" });
+}
+
+// ── Folders ───────────────────────────────────────────
+export function createFolder(data: { name: string }) {
+  return apiFetch<any>("/folders", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function getFolders() {
+  return apiFetch<any[]>("/folders");
+}
+
+export function updateFolder(id: number, data: { name?: string }) {
+  return apiFetch<any>(`/folders/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function deleteFolder(id: number) {
+  return apiFetch<any>(`/folders/${id}`, { method: "DELETE" });
 }
