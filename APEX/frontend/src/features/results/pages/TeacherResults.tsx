@@ -14,7 +14,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
-  Users, Download, BarChart3, CheckCircle, XCircle, FileText, Eye, ArrowLeft, ChevronRight,
+  Users, Download, BarChart3, CheckCircle, XCircle, FileText, Eye, ArrowLeft, ChevronRight, Check, X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useClasses } from "@/hooks/useClasses";
@@ -23,23 +23,54 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 
-// Mock data for charts (matches blueprint pattern — real API may not provide per-question analytics yet)
-const questionPerformance = [
-  { name: "Q1 (Written)", avgScore: 68 },
-  { name: "Q2 (MCQ)", avgScore: 85 },
-  { name: "Q3 (Code)", avgScore: 61 },
-  { name: "Q4 (MCQ)", avgScore: 90 },
-  { name: "Q5 (Written)", avgScore: 72 },
-  { name: "Q6 (Code)", avgScore: 55 },
-];
+function computeChartData(results: any[]) {
+  // Build per-problem stats from all students' submissions
+  const problemMap = new Map<number, { title: string; type: string; scores: number[]; index: number }>();
+  const tcPassMap = new Map<number, { passed: number; total: number }>();
+  let problemIdx = 0;
 
-const testCaseResults = [
-  { name: "TC 1", passRate: 95 },
-  { name: "TC 2", passRate: 82 },
-  { name: "TC 3", passRate: 68 },
-  { name: "TC 4", passRate: 45 },
-  { name: "TC 5", passRate: 38 },
-];
+  for (const student of results) {
+    for (const sub of student.submissions || []) {
+      const pid = sub.problem_id;
+      if (!problemMap.has(pid)) {
+        problemMap.set(pid, {
+          title: sub.problem?.title || `Problem ${pid}`,
+          type: sub.type || sub.problem?.type || "coding",
+          scores: [],
+          index: problemIdx++,
+        });
+      }
+      problemMap.get(pid)!.scores.push(sub.score || 0);
+
+      // Aggregate test case results for coding questions
+      if ((sub.type === "coding" || sub.problem?.type === "coding") && sub.test_results) {
+        for (let j = 0; j < sub.test_results.length; j++) {
+          const tr = sub.test_results[j];
+          if (!tcPassMap.has(j)) tcPassMap.set(j, { passed: 0, total: 0 });
+          const entry = tcPassMap.get(j)!;
+          entry.total++;
+          if (tr.passed) entry.passed++;
+        }
+      }
+    }
+  }
+
+  const questionPerformance = Array.from(problemMap.entries())
+    .sort((a, b) => a[1].index - b[1].index)
+    .map(([, p], i) => ({
+      name: `Q${i + 1} (${p.type.charAt(0).toUpperCase() + p.type.slice(1)})`,
+      avgScore: p.scores.length > 0 ? Math.round(p.scores.reduce((a, b) => a + b, 0) / p.scores.length) : 0,
+    }));
+
+  const testCaseResults = Array.from(tcPassMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([idx, tc]) => ({
+      name: `TC ${idx + 1}`,
+      passRate: tc.total > 0 ? Math.round((tc.passed / tc.total) * 100) : 0,
+    }));
+
+  return { questionPerformance, testCaseResults };
+}
 
 export default function TeacherResults() {
   const { toast } = useToast();
@@ -79,11 +110,12 @@ export default function TeacherResults() {
 
   const selectedExam = examList.find((e: any) => e.id === selectedExamId);
   const results: any[] = examResults || [];
+  const { questionPerformance, testCaseResults } = computeChartData(results);
 
   const passed = results.filter((s: any) => s.avg_score >= 60).length;
   const failed = results.filter((s: any) => s.avg_score < 60).length;
   const classAvg = results.length > 0
-    ? Math.round(results.reduce((a: number, s: any) => a + (s.avg_score || 0), 0) / results.length)
+    ? Math.round(results.reduce((a: number, s: any) => a + (s.avg_score || 0), 0) / results.length * 100) / 100
     : 0;
 
   const handleExport = () => {
@@ -264,15 +296,16 @@ export default function TeacherResults() {
           <CardContent>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={questionPerformance}>
+                <BarChart data={questionPerformance} barCategoryGap="30%">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} className="fill-muted-foreground" />
                   <Tooltip
+                    cursor={{ fill: "hsl(var(--muted) / 0.3)" }}
                     contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
                     labelStyle={{ color: "hsl(var(--foreground))" }}
                   />
-                  <Bar dataKey="avgScore" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="avgScore" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={64} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -287,17 +320,21 @@ export default function TeacherResults() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {testCaseResults.map((tc) => (
-                <div key={tc.name} className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground w-12">{tc.name}</span>
-                  <Progress value={tc.passRate} className="h-3 flex-1" />
-                  <span className={`text-sm font-medium w-12 text-right ${tc.passRate >= 70 ? "text-green-500" : "text-destructive"}`}>
-                    {tc.passRate}%
-                  </span>
-                </div>
-              ))}
-            </div>
+            {testCaseResults.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No coding submissions yet</p>
+            ) : (
+              <div className="space-y-3">
+                {testCaseResults.map((tc) => (
+                  <div key={tc.name} className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-12">{tc.name}</span>
+                    <Progress value={tc.passRate} className="h-3 flex-1" />
+                    <span className={`text-sm font-medium w-12 text-right ${tc.passRate >= 70 ? "text-green-500" : "text-destructive"}`}>
+                      {tc.passRate}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -327,16 +364,21 @@ export default function TeacherResults() {
               </TableHeader>
               <TableBody>
                 {results.map((s: any) => {
-                  const score = s.avg_score != null ? Math.round(s.avg_score) : 0;
+                  const score = s.avg_score != null ? Math.round(s.avg_score * 100) / 100 : 0;
                   const status = score >= 60 ? "passed" : "failed";
-                  const time = s.duration_minutes ? `${s.duration_minutes} min` : "—";
+                  const secs = s.duration_seconds ?? (s.duration_minutes ? s.duration_minutes * 60 : 0);
+                  const time = secs > 0
+                    ? secs >= 60
+                      ? `${Math.floor(secs / 60)} min ${secs % 60}s`
+                      : `${secs}s`
+                    : "—";
                   return (
                     <TableRow key={s.user_id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{s.user_id}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">{score}/{s.total_score ? Math.round(s.total_score) : 100}</span>
+                          <span className="font-semibold">{score}%</span>
                           <Progress value={score} className="h-1.5 w-16" />
                         </div>
                       </TableCell>
@@ -367,7 +409,7 @@ export default function TeacherResults() {
             <DialogTitle className="flex items-center justify-between">
               <span>{viewingStudent?.name}'s Answers</span>
               <Badge variant={viewingStudent?.avg_score >= 60 ? "default" : "destructive"} className="ml-2">
-                {viewingStudent?.avg_score?.toFixed(0) || 0}/{viewingStudent?.total_score ? Math.round(viewingStudent.total_score) : 100}
+                {(Math.round((viewingStudent?.avg_score || 0) * 100) / 100).toFixed(2)}%
               </Badge>
             </DialogTitle>
           </DialogHeader>
@@ -380,29 +422,93 @@ export default function TeacherResults() {
                       <Badge variant="secondary" className="text-[10px]">{sub.type || sub.problem?.type || "—"}</Badge>
                       <span className="text-sm font-medium text-foreground">Q{i + 1}: {sub.problem?.title || sub.question || `Problem #${sub.problem_id}`}</span>
                     </div>
-                    <span className={`text-sm font-bold ${sub.score >= 80 ? "text-green-500" : sub.score < 50 ? "text-destructive" : "text-foreground"}`}>
-                      {sub.score?.toFixed(0) || 0}/{sub.max_score || sub.maxPoints || 100}
-                    </span>
+                    {(() => {
+                      const maxPts = sub.problem?.points || sub.max_score || sub.maxPoints || 10;
+                      const earnedPts = Math.round((sub.score || 0) / 100 * maxPts * 10) / 10;
+                      return (
+                        <span className={`text-sm font-bold ${sub.score >= 80 ? "text-green-500" : sub.score < 50 ? "text-destructive" : "text-foreground"}`}>
+                          {sub.status === "pending_review" ? "Pending" : `${earnedPts}/${maxPts}`}
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-2">
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-1">Student's Answer</p>
-                      {(sub.type === "Coding" || sub.language) ? (
-                        <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground">{sub.code || sub.text_answer || sub.studentAnswer || "—"}</pre>
-                      ) : (
-                        <p className={`text-sm rounded-md p-2 ${sub.status === "accepted" || sub.is_correct ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-foreground"}`}>
-                          {sub.text_answer || sub.studentAnswer || sub.selected_option || "—"}
+                      {(sub.type === "coding" || sub.type === "Coding" || sub.language) ? (
+                        <div className="space-y-3">
+                          <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground">{sub.code || sub.text_answer || "—"}</pre>
+                          {sub.test_results && sub.test_results.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Test Cases</p>
+                              {sub.test_results.map((t: any, j: number) => (
+                                <div
+                                  key={t.id || j}
+                                  className={`rounded-md border p-2.5 space-y-1.5 ${t.passed ? "border-green-500/30 bg-green-500/5" : "border-destructive/30 bg-destructive/5"}`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                                      {t.passed ? <Check className="h-3.5 w-3.5 text-green-500" /> : <X className="h-3.5 w-3.5 text-destructive" />}
+                                      Test #{j + 1}
+                                    </span>
+                                    <span className={`text-[10px] font-medium ${t.passed ? "text-green-500" : "text-destructive"}`}>
+                                      {t.passed ? "Passed" : "Failed"}
+                                    </span>
+                                  </div>
+                                  {t.test_case?.input && (
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Input</p>
+                                      <pre className="text-[11px] bg-muted/50 rounded p-1.5 font-mono text-foreground overflow-x-auto">{t.test_case.input}</pre>
+                                    </div>
+                                  )}
+                                  {t.test_case?.expected_output && (
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Expected</p>
+                                      <pre className="text-[11px] bg-muted/50 rounded p-1.5 font-mono text-foreground overflow-x-auto">{t.test_case.expected_output}</pre>
+                                    </div>
+                                  )}
+                                  {t.actual_output && (
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Actual</p>
+                                      <pre className={`text-[11px] rounded p-1.5 font-mono overflow-x-auto ${t.passed ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive"}`}>{t.actual_output}</pre>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : sub.type === "mcq" ? (() => {
+                        const options: {id: string; text: string}[] = (() => { try { return typeof sub.problem?.options === "string" ? JSON.parse(sub.problem.options) : (sub.problem?.options || []); } catch { return []; } })();
+                        const selectedIds: string[] = (() => { try { return typeof sub.selected_options === "string" ? JSON.parse(sub.selected_options) : (sub.selected_options || []); } catch { return []; } })();
+                        const correctIds: string[] = (() => { try { return typeof sub.problem?.correct_option_ids === "string" ? JSON.parse(sub.problem.correct_option_ids) : (sub.problem?.correct_option_ids || []); } catch { return []; } })();
+                        return (
+                          <div className="space-y-1.5">
+                            {options.map((opt) => {
+                              const isSelected = selectedIds.includes(opt.id);
+                              const isCorrect = correctIds.includes(opt.id);
+                              let style = "border-border/50 bg-muted/30 text-muted-foreground";
+                              if (isCorrect) style = "border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400";
+                              if (isSelected && !isCorrect) style = "border-destructive/50 bg-destructive/10 text-foreground";
+                              return (
+                                <div key={opt.id} className={`flex items-center gap-2 rounded-md border p-2 text-sm ${style}`}>
+                                  {isSelected && isCorrect && <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />}
+                                  {isSelected && !isCorrect && <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                                  {!isSelected && isCorrect && <CheckCircle className="h-3.5 w-3.5 text-green-500/50 shrink-0" />}
+                                  {!isSelected && !isCorrect && <div className="h-3.5 w-3.5 shrink-0" />}
+                                  <span>{typeof opt === "string" ? opt : (opt.text ?? "")}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })() : (
+                        <p className={`text-sm rounded-md p-2 ${sub.status === "pending_review" ? "bg-accent/10 text-accent" : sub.status === "accepted" || sub.is_correct ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-foreground"}`}>
+                          {sub.text_answer || "—"}
                         </p>
                       )}
                     </div>
-
-                    {sub.correct_answer && sub.type !== "Coding" && !sub.language && (
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Correct Answer</p>
-                        <p className="text-sm bg-green-500/10 rounded-md p-2 text-green-700 dark:text-green-400">{sub.correct_answer}</p>
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>

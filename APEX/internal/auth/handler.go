@@ -3,7 +3,13 @@ package auth
 import (
 	"apex/internal/config"
 	"apex/internal/database"
+	"apex/internal/email"
 	"apex/internal/models"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"regexp"
 	"time"
@@ -11,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/api/idtoken"
 )
 
 var cfg config.Config
@@ -102,6 +109,10 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	if user.PasswordHash == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
@@ -147,6 +158,11 @@ func DeleteAccount(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete team memberships"})
 		return
 	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.PasswordResetToken{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete reset tokens"})
+		return
+	}
 
 	if role == "teacher" {
 		// Collect class IDs taught by this teacher, then clear class-scoped children
@@ -171,6 +187,16 @@ func DeleteAccount(c *gin.Context) {
 			var problemIDs []uint
 			tx.Model(&models.Problem{}).Where("exam_id IN ?", examIDs).Pluck("id", &problemIDs)
 			if len(problemIDs) > 0 {
+				// Delete test_results that reference submissions on these problems
+				var submissionIDs []uint
+				tx.Model(&models.Submission{}).Where("problem_id IN ?", problemIDs).Pluck("id", &submissionIDs)
+				if len(submissionIDs) > 0 {
+					if err := tx.Where("submission_id IN ?", submissionIDs).Delete(&models.TestResult{}).Error; err != nil {
+						tx.Rollback()
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete test results"})
+						return
+					}
+				}
 				if err := tx.Where("problem_id IN ?", problemIDs).Delete(&models.Submission{}).Error; err != nil {
 					tx.Rollback()
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete submissions"})
@@ -181,6 +207,11 @@ func DeleteAccount(c *gin.Context) {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete test cases"})
 					return
 				}
+			}
+			if err := tx.Where("exam_id IN ?", examIDs).Delete(&models.ExamAttempt{}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam attempts"})
+				return
 			}
 			if err := tx.Where("exam_id IN ?", examIDs).Delete(&models.Problem{}).Error; err != nil {
 				tx.Rollback()
@@ -215,9 +246,24 @@ func DeleteAccount(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to leave classes"})
 			return
 		}
+		// Delete test_results referencing student's submissions
+		var studentSubIDs []uint
+		tx.Model(&models.Submission{}).Where("user_id = ?", userID).Pluck("id", &studentSubIDs)
+		if len(studentSubIDs) > 0 {
+			if err := tx.Where("submission_id IN ?", studentSubIDs).Delete(&models.TestResult{}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete test results"})
+				return
+			}
+		}
 		if err := tx.Where("user_id = ?", userID).Delete(&models.Submission{}).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete submissions"})
+			return
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&models.ExamAttempt{}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam attempts"})
 			return
 		}
 	}
@@ -234,6 +280,206 @@ func DeleteAccount(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "account deleted"})
+}
+
+type forgotRequest struct {
+	Email string `json:"email" binding:"required"`
+}
+
+type resetRequest struct {
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required"`
+}
+
+func hashToken(t string) string {
+	h := sha256.Sum256([]byte(t))
+	return hex.EncodeToString(h[:])
+}
+
+func ForgotPassword(c *gin.Context) {
+	var req forgotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email is required"})
+		return
+	}
+
+	// Always respond success to avoid leaking which emails exist.
+	respond := func() {
+		c.JSON(http.StatusOK, gin.H{"message": "If an account exists for that email, a reset link has been sent."})
+	}
+
+	var user models.User
+	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		respond()
+		return
+	}
+
+	// Generate raw token (32 bytes hex = 64 chars)
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+	token := hex.EncodeToString(raw)
+
+	prt := models.PasswordResetToken{
+		UserID:    user.ID,
+		TokenHash: hashToken(token),
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	// Invalidate any prior unused tokens for this user.
+	database.DB.Model(&models.PasswordResetToken{}).
+		Where("user_id = ? AND used_at IS NULL", user.ID).
+		Update("used_at", time.Now())
+
+	if err := database.DB.Create(&prt).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store token"})
+		return
+	}
+
+	link := fmt.Sprintf("%s/auth/reset?token=%s", cfg.AppURL, token)
+	subject := "Reset your APEX password"
+	text := fmt.Sprintf("Hi %s,\n\nWe received a request to reset your APEX password. Click the link below to choose a new one. This link expires in 1 hour.\n\n%s\n\nIf you didn't request this, you can safely ignore this email.\n", user.Name, link)
+	html := fmt.Sprintf(`<p>Hi %s,</p><p>We received a request to reset your APEX password. Click the link below to choose a new one. This link expires in 1 hour.</p><p><a href="%s">Reset your password</a></p><p>If you didn't request this, you can safely ignore this email.</p>`, user.Name, link)
+
+	if err := email.Send(user.Email, subject, html, text); err != nil {
+		// Log but still respond success.
+		fmt.Printf("[forgot-password] send failed: %v\n", err)
+	}
+	respond()
+}
+
+func ResetPassword(c *gin.Context) {
+	var req resetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token and new_password are required"})
+		return
+	}
+	if len(req.NewPassword) < 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 6 characters"})
+		return
+	}
+
+	var prt models.PasswordResetToken
+	if err := database.DB.Where("token_hash = ?", hashToken(req.Token)).First(&prt).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired token"})
+		return
+	}
+	if prt.UsedAt != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token already used"})
+		return
+	}
+	if time.Now().After(prt.ExpiresAt) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token expired"})
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
+		return
+	}
+
+	if err := database.DB.Model(&models.User{}).Where("id = ?", prt.UserID).Update("password_hash", string(hash)).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update password"})
+		return
+	}
+
+	now := time.Now()
+	database.DB.Model(&prt).Update("used_at", now)
+
+	c.JSON(http.StatusOK, gin.H{"message": "password updated"})
+}
+
+type googleAuthRequest struct {
+	IDToken string `json:"id_token" binding:"required"`
+	Role    string `json:"role"`
+}
+
+func GoogleAuth(c *gin.Context) {
+	if cfg.GoogleClientID == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Google sign-in is not configured"})
+		return
+	}
+
+	var req googleAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id_token is required"})
+		return
+	}
+
+	payload, err := idtoken.Validate(context.Background(), req.IDToken, cfg.GoogleClientID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid Google token"})
+		return
+	}
+
+	emailStr, _ := payload.Claims["email"].(string)
+	verified, _ := payload.Claims["email_verified"].(bool)
+	name, _ := payload.Claims["name"].(string)
+	picture, _ := payload.Claims["picture"].(string)
+	sub := payload.Subject
+
+	if emailStr == "" || !verified || sub == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Google account email not verified"})
+		return
+	}
+
+	issueToken := func(user models.User) {
+		token, err := generateToken(user)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"token": token, "user": user})
+	}
+
+	// 1) Match by google_id.
+	var user models.User
+	if err := database.DB.Where("google_id = ?", sub).First(&user).Error; err == nil {
+		issueToken(user)
+		return
+	}
+
+	// 2) Match by email — link existing account.
+	if err := database.DB.Where("email = ?", emailStr).First(&user).Error; err == nil {
+		database.DB.Model(&user).Update("google_id", sub)
+		user.GoogleID = sub
+		issueToken(user)
+		return
+	}
+
+	// 3) New account — need role from caller.
+	if req.Role != "teacher" && req.Role != "student" {
+		c.JSON(http.StatusOK, gin.H{"needs_role": true, "email": emailStr, "name": name})
+		return
+	}
+
+	if name == "" {
+		name = emailStr
+	}
+	newUser := models.User{
+		Email:        emailStr,
+		PasswordHash: "",
+		Role:         req.Role,
+		Name:         name,
+		GoogleID:     sub,
+	}
+	if err := database.DB.Create(&newUser).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "failed to create account"})
+		return
+	}
+
+	profile := models.UserProfile{
+		UserID:              newUser.ID,
+		AvatarURL:           picture,
+		NotifyEmail:         true,
+		NotifyPush:          true,
+		NotifyExamReminders: true,
+	}
+	database.DB.Create(&profile)
+
+	issueToken(newUser)
 }
 
 func generateToken(user models.User) (string, error) {

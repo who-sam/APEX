@@ -4,6 +4,7 @@ import (
 	"apex/internal/config"
 	"apex/internal/models"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -17,6 +18,18 @@ func Connect(cfg config.Config) {
 	if err != nil {
 		log.Fatal("Failed to connect to database: ", err)
 	}
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Fatal("Failed to access sql.DB: ", err)
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+
+	// Explicit SQL migrations BEFORE AutoMigrate — see /ORM_RULES.md
+	RunMigrations(DB)
 
 	if err := DB.AutoMigrate(
 		&models.User{},
@@ -35,9 +48,13 @@ func Connect(cfg config.Config) {
 		&models.Team{},
 		&models.TeamMember{},
 		&models.Announcement{},
+		&models.Folder{},
+		&models.PasswordResetToken{},
 	); err != nil {
 		log.Fatal("Failed to migrate database: ", err)
 	}
+
+	RunPostMigrations(DB)
 
 	log.Println("Database connected and migrated")
 }

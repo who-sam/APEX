@@ -46,6 +46,7 @@ type createProblemRequest struct {
 	Rubric               string `json:"rubric"`
 	RequireManualGrading bool   `json:"require_manual_grading"`
 	Tags                 string `json:"tags"`
+	ImageURL             string `json:"image_url"`
 	ExamID               *uint  `json:"exam_id,omitempty"`
 	ClassID              *uint  `json:"class_id,omitempty"`
 	FolderID             *uint  `json:"folder_id,omitempty"`
@@ -98,6 +99,7 @@ func AddProblem(c *gin.Context) {
 		Rubric:               req.Rubric,
 		RequireManualGrading: req.RequireManualGrading,
 		Tags:                 req.Tags,
+		ImageURL:             req.ImageURL,
 	}
 	if problem.Tags == "" {
 		problem.Tags = "[]"
@@ -188,6 +190,7 @@ func AddBankProblem(c *gin.Context) {
 		Rubric:               req.Rubric,
 		RequireManualGrading: req.RequireManualGrading,
 		Tags:                 req.Tags,
+		ImageURL:             req.ImageURL,
 	}
 	if problem.Tags == "" {
 		problem.Tags = "[]"
@@ -314,6 +317,7 @@ func UpdateProblem(c *gin.Context) {
 		"rubric":                 req.Rubric,
 		"require_manual_grading": req.RequireManualGrading,
 		"tags":                   tags,
+		"image_url":              req.ImageURL,
 		"class_id":               req.ClassID,
 		"folder_id":              req.FolderID,
 	}

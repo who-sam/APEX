@@ -1,8 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
+import { useRole } from "@/contexts/AuthContext";
 
 export function useExams() {
-  return useQuery({ queryKey: ["exams"], queryFn: api.getExams });
+  const { role } = useRole();
+  return useQuery({ queryKey: ["exams"], queryFn: api.getExams, enabled: role === "teacher" });
 }
 
 export function useExam(id: number) {
@@ -30,12 +32,35 @@ export function useDeleteExam() {
   return useMutation({ mutationFn: api.deleteExam, onSuccess: () => qc.invalidateQueries({ queryKey: ["exams"] }) });
 }
 
+export function useCloseExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.closeExam,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      qc.invalidateQueries({ queryKey: ["student-exams"] });
+    },
+  });
+}
+
+export function useReopenExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, minutes }: { id: number; minutes: number }) => api.reopenExam(id, minutes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      qc.invalidateQueries({ queryKey: ["student-exams"] });
+    },
+  });
+}
+
 export function useAssignExam() {
   return useMutation({ mutationFn: ({ id, classIds }: { id: number; classIds: number[] }) => api.assignExam(id, classIds) });
 }
 
 export function useStudentExams() {
-  return useQuery({ queryKey: ["student-exams"], queryFn: api.getStudentExams });
+  const { role } = useRole();
+  return useQuery({ queryKey: ["student-exams"], queryFn: api.getStudentExams, enabled: role === "student" });
 }
 
 export function useStudentExam(id: number) {

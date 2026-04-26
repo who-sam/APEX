@@ -12,6 +12,9 @@ type Exam struct {
 	StartTime       *time.Time `json:"start_time"`
 	EndTime         *time.Time `json:"end_time"`
 	ResetAt         *time.Time `gorm:"index" json:"reset_at"`
+	ReminderSentAt  *time.Time `json:"reminder_sent_at,omitempty"`
+	EmailReminder1hSentAt    *time.Time `gorm:"column:email_reminder1h_sent_at" json:"-"`
+	EmailReminderStartSentAt *time.Time `gorm:"column:email_reminder_start_sent_at" json:"-"`
 	CreatedAt       time.Time  `json:"created_at"`
 
 	ShuffleQuestions bool `gorm:"default:false" json:"shuffle_questions"`

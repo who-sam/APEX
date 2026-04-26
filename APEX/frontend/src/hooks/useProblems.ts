@@ -28,3 +28,11 @@ export function useDeleteProblem() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["problems"] }),
   });
 }
+
+export function useSaveBankProblem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api.saveProblemToBank(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["problems"] }),
+  });
+}

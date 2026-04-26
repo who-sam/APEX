@@ -60,15 +60,30 @@ export default function StudentResults() {
   if (isLoading) return <PageSkeleton cards={3} rows={5} />;
   if (error) return <ErrorState message="Failed to load results" onRetry={refetch} />;
 
-  const results: any[] = (attempts || []).map((a: any) => ({
-    id: a.id,
-    exam_id: a.exam_id,
-    exam: a.exam,
-    score: a.score,
-    submitted_at: a.submitted_at || a.started_at,
-    status: a.status,
-    submissions: a.submissions || [],
-  }));
+  const results: any[] = (attempts || []).map((a: any) => {
+    const subs = a.submissions || [];
+    const problems = (a.exam?.problems || []) as any[];
+    // Compute score from submissions: each sub.score is 0-100%, convert to earned points
+    let earned = 0;
+    let totalPoints = 0;
+    for (const sub of subs) {
+      const prob = sub.problem || problems.find((p: any) => p.id === sub.problem_id);
+      const pts = prob?.points || 10;
+      totalPoints += pts;
+      earned += (sub.score || 0) / 100 * pts;
+    }
+    const computedScore = totalPoints > 0 ? Math.round((earned / totalPoints) * 10000) / 100 : (a.score ?? 0);
+    return {
+      id: a.id,
+      exam_id: a.exam_id,
+      exam: a.exam,
+      score: subs.length > 0 ? computedScore : (a.score ?? 0),
+      submitted_at: a.submitted_at || a.started_at,
+      status: a.status,
+      submissions: subs,
+      grades_announced: a.grades_announced ?? true,
+    };
+  });
 
   if (results.length === 0) {
     return (
@@ -82,10 +97,11 @@ export default function StudentResults() {
     );
   }
 
-  const scores = results.filter((r: any) => r.score != null).map((r: any) => r.score);
-  const avg = scores.length > 0 ? Math.round(scores.reduce((a: number, s: number) => a + s, 0) / scores.length) : 0;
+  const announcedResults = results.filter((r: any) => r.grades_announced);
+  const scores = announcedResults.filter((r: any) => r.score != null).map((r: any) => r.score);
+  const avg = scores.length > 0 ? Math.round(scores.reduce((a: number, s: number) => a + s, 0) / scores.length * 100) / 100 : 0;
   const best = scores.length > 0 ? Math.max(...scores) : 0;
-  const bestResult = results.find((r: any) => r.score === best);
+  const bestResult = announcedResults.find((r: any) => r.score === best);
 
   return (
     <div className="space-y-6">
@@ -142,9 +158,10 @@ export default function StudentResults() {
             </TableHeader>
             <TableBody>
               {results.map((r: any, idx: number) => {
-                const score = r.score != null ? Math.round(r.score) : null;
+                const announced = r.grades_announced;
+                const score = announced && r.score != null ? Math.round(r.score * 100) / 100 : null;
                 const grade = score != null ? scoreToGrade(score) : "—";
-                const trend = computeTrend(results, idx);
+                const trend = announced ? computeTrend(results, idx) : "same";
                 const time = r.duration_minutes ? `${r.duration_minutes} min` : r.submitted_at ? formatDistanceToNow(new Date(r.submitted_at), { addSuffix: true }) : "—";
                 return (
                   <TableRow key={r.id} className="cursor-pointer hover:bg-secondary/40" onClick={() => setSelected(r)}>
@@ -153,10 +170,14 @@ export default function StudentResults() {
                       {r.submitted_at ? new Date(r.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">{score != null ? `${score}%` : "—"}</span>
-                        {score != null && <Progress value={score} className="h-1.5 w-16" />}
-                      </div>
+                      {announced ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{score != null ? `${score}%` : "—"}</span>
+                          {score != null && <Progress value={score} className="h-1.5 w-16" />}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not released</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={gradeColor(grade)}>{grade}</Badge>
@@ -183,20 +204,32 @@ export default function StudentResults() {
           </DialogHeader>
           {selected && (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="rounded-xl bg-green-500/10 p-3">
-                  <p className="text-2xl font-bold text-green-500">{selected.correct_count ?? (selected.score != null ? Math.round(selected.score) : "—")}</p>
-                  <p className="text-xs text-muted-foreground">Correct</p>
+              {selected.grades_announced ? (() => {
+                const subs = selected.submissions || [];
+                const correct = subs.filter((s: any) => s.status === "accepted").length;
+                const pending = subs.filter((s: any) => s.status === "pending_review").length;
+                const wrong = subs.length - correct - pending;
+                return (
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="rounded-xl bg-green-500/10 p-3">
+                      <p className="text-2xl font-bold text-green-500">{correct}</p>
+                      <p className="text-xs text-muted-foreground">Correct</p>
+                    </div>
+                    <div className="rounded-xl bg-destructive/10 p-3">
+                      <p className="text-2xl font-bold text-destructive">{wrong}</p>
+                      <p className="text-xs text-muted-foreground">Wrong</p>
+                    </div>
+                    <div className="rounded-xl bg-secondary p-3">
+                      <p className="text-2xl font-bold text-muted-foreground">{pending}</p>
+                      <p className="text-xs text-muted-foreground">Pending</p>
+                    </div>
+                  </div>
+                );
+              })() : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">Grades have not been released for this exam yet.</p>
                 </div>
-                <div className="rounded-xl bg-destructive/10 p-3">
-                  <p className="text-2xl font-bold text-destructive">{selected.wrong_count ?? "—"}</p>
-                  <p className="text-xs text-muted-foreground">Wrong</p>
-                </div>
-                <div className="rounded-xl bg-secondary p-3">
-                  <p className="text-2xl font-bold text-muted-foreground">{selected.skipped_count ?? "—"}</p>
-                  <p className="text-xs text-muted-foreground">Skipped</p>
-                </div>
-              </div>
+              )}
               {selected.topics && Object.keys(selected.topics).length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-foreground">Topic Breakdown</p>

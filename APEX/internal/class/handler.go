@@ -3,7 +3,10 @@ package class
 import (
 	"apex/internal/database"
 	"apex/internal/models"
+	"apex/internal/notification"
 	"crypto/rand"
+	"fmt"
+	"math"
 	"math/big"
 	"net/http"
 	"time"
@@ -46,11 +49,19 @@ func CreateClass(c *gin.Context) {
 		}
 	}
 
+	// Seed passing threshold from teacher's profile preference if set.
+	threshold := 60
+	var prof models.UserProfile
+	if err := database.DB.Where("user_id = ?", teacherID).First(&prof).Error; err == nil && prof.DefaultPassingThreshold > 0 {
+		threshold = prof.DefaultPassingThreshold
+	}
+
 	class := models.Class{
-		TeacherID:  teacherID,
-		Name:       req.Name,
-		Section:    req.Section,
-		InviteCode: inviteCode,
+		TeacherID:        teacherID,
+		Name:             req.Name,
+		Section:          req.Section,
+		InviteCode:       inviteCode,
+		PassingThreshold: threshold,
 	}
 
 	if err := database.DB.Create(&class).Error; err != nil {
@@ -117,39 +128,53 @@ func GetClass(c *gin.Context) {
 			continue
 		}
 
-		// Get this student's exam attempt scores
-		var attempts []models.ExamAttempt
-		database.DB.Where("user_id = ? AND exam_id IN ? AND status = ?", m.UserID, examIDs, "submitted").
-			Find(&attempts)
+		// Compute weighted score per exam from submissions
+		var subs []models.Submission
+		database.DB.Where("user_id = ? AND exam_id IN ?", m.UserID, examIDs).Find(&subs)
+
+		// Group subs by exam
+		subsByExam := map[uint][]models.Submission{}
+		for _, s := range subs {
+			subsByExam[s.ExamID] = append(subsByExam[s.ExamID], s)
+		}
 
 		var total float64
 		var count int
-		for _, a := range attempts {
-			enriched[i].ExamScores[a.ExamID] = a.Score
-			total += a.Score
-			count++
-		}
+		for eid, examSubs := range subsByExam {
+			// Load problems for this exam
+			var probs []models.Problem
+			database.DB.Where("exam_id = ?", eid).Find(&probs)
+			if len(probs) == 0 {
+				continue
+			}
 
-		// Fallback: check submissions if no attempts
-		if count == 0 {
-			var subs []models.Submission
-			database.DB.Where("user_id = ? AND exam_id IN ?", m.UserID, examIDs).Find(&subs)
-			// Group by exam, take latest
-			examBest := map[uint]float64{}
-			for _, s := range subs {
-				if s.Score > examBest[s.ExamID] {
-					examBest[s.ExamID] = s.Score
+			subByProblem := map[uint]models.Submission{}
+			for _, s := range examSubs {
+				subByProblem[s.ProblemID] = s
+			}
+
+			var earnedPts, totalPts float64
+			for _, p := range probs {
+				pts := float64(p.Points)
+				if pts <= 0 {
+					pts = 10
+				}
+				totalPts += pts
+				if s, ok := subByProblem[p.ID]; ok {
+					earnedPts += s.Score / 100.0 * pts
 				}
 			}
-			for eid, sc := range examBest {
-				enriched[i].ExamScores[eid] = sc
-				total += sc
+
+			if totalPts > 0 {
+				pct := earnedPts / totalPts * 100
+				enriched[i].ExamScores[eid] = math.Round(pct*100) / 100
+				total += pct
 				count++
 			}
 		}
 
 		if count > 0 {
-			avg := total / float64(count)
+			avg := math.Round(total/float64(count)*100) / 100
 			enriched[i].Avg = &avg
 		}
 	}
@@ -187,9 +212,12 @@ func GetClass(c *gin.Context) {
 }
 
 type updateClassRequest struct {
-	Name       *string `json:"name"`
-	Section    *string `json:"section"`
-	CoverImage *string `json:"cover_image"`
+	Name             *string `json:"name"`
+	Section          *string `json:"section"`
+	CoverImage       *string `json:"cover_image"`
+	GradesAnnounced  *bool   `json:"grades_announced"`
+	PassingThreshold *int    `json:"passing_threshold"`
+	BlockAnnounceWithPending *bool `json:"block_announce_with_pending"`
 }
 
 func UpdateClass(c *gin.Context) {
@@ -218,9 +246,60 @@ func UpdateClass(c *gin.Context) {
 	if req.CoverImage != nil {
 		updates["cover_image"] = *req.CoverImage
 	}
+	if req.BlockAnnounceWithPending != nil {
+		updates["block_announce_with_pending"] = *req.BlockAnnounceWithPending
+	}
+	if req.GradesAnnounced != nil {
+		// Read teacher's global preference instead of per-class.
+		var prof models.UserProfile
+		blockAnnounce := true
+		if err := database.DB.Where("user_id = ?", teacherID).First(&prof).Error; err == nil {
+			blockAnnounce = prof.BlockAnnounceWithPending
+		}
+		if *req.GradesAnnounced && blockAnnounce {
+			// Guard: block announcing if any submission in this class is still
+			// awaiting manual grading (pending_review / pending / running).
+			var examIDs []uint
+			database.DB.Model(&models.ExamClass{}).Where("class_id = ?", class.ID).Pluck("exam_id", &examIDs)
+			if len(examIDs) > 0 {
+				var pendingCount int64
+				database.DB.Model(&models.Submission{}).
+					Where("exam_id IN ? AND status IN ?", examIDs, []string{"pending_review", "pending", "running"}).
+					Count(&pendingCount)
+				if pendingCount > 0 {
+					c.JSON(http.StatusBadRequest, gin.H{
+						"error":         fmt.Sprintf("Cannot announce: %d submission(s) still need grading. Grade all written answers first.", pendingCount),
+						"pending_count": pendingCount,
+					})
+					return
+				}
+			}
+		}
+		updates["grades_announced"] = *req.GradesAnnounced
+	}
+	if req.PassingThreshold != nil {
+		updates["passing_threshold"] = *req.PassingThreshold
+	}
 
 	if len(updates) > 0 {
 		database.DB.Model(&class).Updates(updates)
+	}
+
+	// Result alerts: notify students opted-in to result alerts when grades flip true.
+	if req.GradesAnnounced != nil && *req.GradesAnnounced && !class.GradesAnnounced {
+		var memberIDs []uint
+		database.DB.Model(&models.ClassMember{}).Where("class_id = ?", class.ID).Pluck("user_id", &memberIDs)
+		if len(memberIDs) > 0 {
+			var optedIn []uint
+			database.DB.Model(&models.UserProfile{}).
+				Where("user_id IN ? AND notify_results = ?", memberIDs, true).
+				Pluck("user_id", &optedIn)
+			link := fmt.Sprintf("/dashboard/courses/%d", class.ID)
+			body := fmt.Sprintf("Grades for %s are now available.", class.Name)
+			for _, uid := range optedIn {
+				notification.Create(uid, "result", "Grades announced", body, link)
+			}
+		}
 	}
 
 	database.DB.First(&class, class.ID)
@@ -246,6 +325,11 @@ func DeleteClass(c *gin.Context) {
 	if err := tx.Where("class_id = ?", classID).Delete(&models.ExamClass{}).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete exam-class links"})
+		return
+	}
+	if err := tx.Where("class_id = ?", classID).Delete(&models.Announcement{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete announcements"})
 		return
 	}
 	if err := tx.Delete(&class).Error; err != nil {

@@ -150,7 +150,10 @@ export default function ExamPreview() {
                 </div>
                 <CardTitle className="text-base mt-3">{p.title || p.description}</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                {p.image_url && (
+                  <img src={p.image_url} alt="Question" className="max-h-80 rounded-lg border border-border/50" />
+                )}
                 {p.type === "mcq" && (
                   <div className="space-y-2">
                     {options.map((opt: any, oi: number) => (

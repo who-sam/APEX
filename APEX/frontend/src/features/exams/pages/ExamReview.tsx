@@ -131,7 +131,10 @@ export default function ExamReview() {
                   </Badge>
                 )}
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                {p.image_url && (
+                  <img src={p.image_url} alt="Question" className="max-h-80 rounded-lg border border-border/50" />
+                )}
                 {p.type === "mcq" && (
                   <div className="space-y-2">
                     {options.map((opt: any) => {

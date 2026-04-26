@@ -176,13 +176,14 @@ func GradeSubmission(c *gin.Context) {
 
 	if sub.ExamAttemptID != nil {
 		judge0.FinalizeAttempt(*sub.ExamAttemptID)
+	} else {
+		// Standalone (non-exam) submissions still get per-submission notification.
+		notification.Create(sub.UserID, "result",
+			"Submission Graded",
+			"Your written submission has been graded.",
+			"/dashboard/results",
+		)
 	}
-
-	notification.Create(sub.UserID, "result",
-		"Submission Graded",
-		"Your written submission has been graded.",
-		"/dashboard/results",
-	)
 
 	c.JSON(http.StatusOK, sub)
 }

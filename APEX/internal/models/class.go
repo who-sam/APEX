@@ -9,8 +9,11 @@ type Class struct {
 	Name       string    `gorm:"size:255;not null" json:"name"`
 	Section    string    `gorm:"size:100" json:"section"`
 	InviteCode string    `gorm:"size:8;uniqueIndex;not null" json:"invite_code"`
-	CoverImage string    `gorm:"type:text" json:"cover_image,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	CoverImage       string    `gorm:"type:text" json:"cover_image,omitempty"`
+	GradesAnnounced  bool      `gorm:"not null;default:false" json:"grades_announced"`
+	PassingThreshold int       `gorm:"not null;default:60" json:"passing_threshold"`
+	BlockAnnounceWithPending bool `gorm:"not null;default:true" json:"block_announce_with_pending"`
+	CreatedAt        time.Time `json:"created_at"`
 
 	Members []ClassMember `gorm:"foreignKey:ClassID" json:"members,omitempty"`
 }

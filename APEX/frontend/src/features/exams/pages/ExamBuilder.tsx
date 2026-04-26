@@ -29,6 +29,7 @@ import QuestionList from "@/features/exams/components/QuestionList";
 import MCQEditor from "@/features/exams/components/MCQEditor";
 import WrittenEditor from "@/features/exams/components/WrittenEditor";
 import CodingEditorComponent from "@/features/exams/components/CodingEditor";
+import { useProfile } from "@/hooks/useProfile";
 
 const typeIcons: Record<string, React.ElementType> = {
   mcq: CheckSquare,
@@ -75,8 +76,16 @@ export default function ExamBuilder() {
   const [selectedBankIds, setSelectedBankIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const [isDraft, setIsDraft] = useState(true);
+  const { data: profileData } = useProfile();
+  const [isDraft, setIsDraft] = useState(profileData?.profile?.default_exam_draft ?? true);
   const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (isEditing || hydrated) return;
+    if (profileData?.profile?.default_exam_draft !== undefined) {
+      setIsDraft(profileData.profile.default_exam_draft);
+    }
+  }, [profileData, isEditing, hydrated]);
 
   useEffect(() => {
     if (!isEditing || hydrated || !examData) return;
@@ -154,6 +163,17 @@ export default function ExamBuilder() {
       toast({ title: "Validation error", description: "Add at least one question.", variant: "destructive" });
       return;
     }
+    const badMcq = questions.findIndex((q) =>
+      q.type === "mcq" && (!(q as MCQQuestion).correctOptionIds || (q as MCQQuestion).correctOptionIds.length === 0)
+    );
+    if (badMcq >= 0) {
+      toast({
+        title: "Missing correct answer",
+        description: `Question ${badMcq + 1} (MCQ) has no correct answer selected.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (isEditing && attemptCount > 0) {
       setResetConfirmOpen(true);
       return;
@@ -228,6 +248,7 @@ export default function ExamBuilder() {
           type: q.type,
           points: q.points,
           difficulty: q.difficulty,
+          image_url: q.imageUrl || "",
         };
 
         if (q.type === "mcq") {
@@ -264,6 +285,7 @@ export default function ExamBuilder() {
               input: tc.input,
               expected_output: tc.expectedOutput,
               is_sample: tc.isSample,
+              points: tc.points || 0,
               order_index: i,
             });
           }
@@ -316,12 +338,17 @@ export default function ExamBuilder() {
   const handleSaveToBank = async () => {
     const q = questions[selectedIdx];
     if (!q) return;
+    if (q.type === "mcq" && (!(q as MCQQuestion).correctOptionIds || (q as MCQQuestion).correctOptionIds.length === 0)) {
+      toast({ title: "Missing correct answer", description: "Select at least one correct option before saving.", variant: "destructive" });
+      return;
+    }
     const data: any = {
       title: q.text || "Untitled",
       description: q.text || "",
       type: q.type,
       points: q.points,
       difficulty: q.difficulty,
+      image_url: q.imageUrl || "",
     };
     if (q.type === "mcq") {
       const mcq = q as MCQQuestion;

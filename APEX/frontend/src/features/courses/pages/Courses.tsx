@@ -6,11 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useRole } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useStudentClasses, useJoinClass } from "@/hooks/useClasses";
+import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useStudentClasses, useJoinClass, useLeaveClass } from "@/hooks/useClasses";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import {
-  BookOpen, Plus, Users, Upload, Copy, Check, Search, LogIn,
+  BookOpen, Plus, Users, Upload, Copy, Check, Search, LogIn, LogOut,
   MoreHorizontal, Eye, Pencil, Trash2, ImagePlus, X,
 } from "lucide-react";
 import {
@@ -396,10 +396,20 @@ function StudentCourses() {
   const { toast } = useToast();
   const { data: classes, isLoading, error, refetch } = useStudentClasses();
   const joinClassMutation = useJoinClass();
+  const leaveClassMutation = useLeaveClass();
 
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [courseIdInput, setCourseIdInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const handleLeave = async (id: number, name: string) => {
+    try {
+      await leaveClassMutation.mutateAsync(id);
+      toast({ title: "Left course", description: `You have left ${name}.` });
+    } catch (err: any) {
+      toast({ title: "Failed to leave", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleEnroll = async () => {
     const code = courseIdInput.trim();
@@ -476,11 +486,27 @@ function StudentCourses() {
                   loading="lazy"
                 />
               </div>
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <BookOpen className="h-5 w-5 text-primary" />
                   {course.name}
                 </CardTitle>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="gap-2 text-destructive focus:text-destructive"
+                      onSelect={(e) => { e.preventDefault(); handleLeave(course.id, course.name); }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <LogOut className="h-4 w-4" /> Leave
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </CardHeader>
               <CardContent className="space-y-2">
                 {course.invite_code && (

@@ -4,9 +4,12 @@ import "time"
 
 type Problem struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
-	ExamID        uint      `gorm:"not null;index" json:"exam_id"`
+	ExamID        *uint     `gorm:"index" json:"exam_id"`
 	IsBank        bool      `gorm:"not null;default:false;index" json:"is_bank"`
 	TeacherID     uint      `gorm:"index" json:"teacher_id"`
+	ClassID       *uint     `gorm:"index" json:"class_id"`
+	FolderID      *uint     `gorm:"index;constraint:OnDelete:SET NULL" json:"folder_id"`
+	Folder        *Folder   `gorm:"foreignKey:FolderID;references:ID;constraint:OnDelete:SET NULL" json:"-"`
 	Title         string    `gorm:"size:255;not null" json:"title"`
 	Description   string    `gorm:"type:text;not null" json:"description"`
 	Type          string    `gorm:"size:20;not null;default:coding" json:"type"`
@@ -30,6 +33,12 @@ type Problem struct {
 	Rubric               string `gorm:"type:text" json:"rubric,omitempty"`
 	RequireManualGrading bool   `gorm:"default:false" json:"require_manual_grading"`
 
+	// Media
+	ImageURL string `gorm:"type:text" json:"image_url,omitempty"`
+
+	// Organization
+	Tags string `gorm:"type:jsonb;default:'[]'" json:"tags"`
+
 	TestCases []TestCase `gorm:"foreignKey:ProblemID" json:"test_cases,omitempty"`
 }
 
@@ -39,5 +48,6 @@ type TestCase struct {
 	Input          string `gorm:"type:text;not null" json:"input"`
 	ExpectedOutput string `gorm:"type:text;not null" json:"expected_output"`
 	IsSample       bool   `gorm:"not null;default:false" json:"is_sample"`
+	Points         int    `gorm:"not null;default:0" json:"points"`
 	OrderIndex     int    `gorm:"not null;default:0" json:"order_index"`
 }

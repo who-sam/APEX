@@ -68,7 +68,7 @@ func ResetExamAttempts(examID uint) error {
 		if len(classIDs) > 0 {
 			var userIDs []uint
 			tx.Model(&models.ClassMember{}).Where("class_id IN ?", classIDs).Pluck("user_id", &userIDs)
-			link := fmt.Sprintf("/dashboard/exam/%d/take", examID)
+			link := fmt.Sprintf("/dashboard/exam/%d", examID)
 			desc := fmt.Sprintf("Exam '%s' was updated by your teacher. Your attempt has been reset — you can re-enter.", exam.Title)
 			for _, uid := range userIDs {
 				notification.Create(uid, "exam_reset", "Exam updated", desc, link)

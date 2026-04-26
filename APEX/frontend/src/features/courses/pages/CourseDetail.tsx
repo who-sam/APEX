@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useRole } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useClass, useStudentClass } from "@/hooks/useClasses";
@@ -16,18 +20,21 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { useExams, useExamResults } from "@/hooks/useExams";
-import { useStudentSubmissions } from "@/hooks/useSubmissions";
-import { useAnnouncements, useCreateAnnouncement } from "@/hooks/useAnnouncements";
+import { getExamPhase } from "@/features/exams/lib/examStatus";
+import { format } from "date-fns";
+
+import { useAnnouncements, useCreateAnnouncement, useUpdateAnnouncement, useDeleteAnnouncement } from "@/hooks/useAnnouncements";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { removeClassMember } from "@/lib/api";
+import { removeClassMember, updateClass } from "@/lib/api";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import {
   BookOpen, ArrowLeft, Clock, FileText, Megaphone, Trophy,
   Users, Copy, Check, Upload, Plus, Search, MoreHorizontal,
-  Trash2, Eye, Download, Send, BarChart3, Pencil, Lock, AlertCircle,
+  Trash2, Eye, Download, Send, BarChart3, Pencil, Lock, AlertCircle, Paperclip, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import {
@@ -64,23 +71,41 @@ function ConfettiBurst({ fire, firedRef }: { fire: boolean; firedRef: React.Muta
    ================================================================ */
 function StudentCourseDetail({ classData }: { classData: any }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") || "exams";
   const confettiFired = useRef(false);
-  const { data: submissions } = useStudentSubmissions();
   const { data: announcementsList } = useAnnouncements(classData.id);
 
-  // Filter submissions related to this class's exams
-  const classSubmissions = (submissions || []).filter((s: any) => s.class_id === classData.id);
-  const scores = classSubmissions.filter((s: any) => s.score != null).map((s: any) => s.score);
+  // Build exams list from class data
+  const classExams: any[] = classData.exams || [];
+  const rawSubmissions: any[] = classData.submissions || [];
+
+  // Aggregate submissions by exam: sum earned scores, compute percentage against exam total
+  const examGrades = classExams.map((exam: any) => {
+    const subs = rawSubmissions.filter((s: any) => s.exam_id === exam.id);
+    const problems: any[] = exam.problems || [];
+    // sub.score is 0-100 percentage; convert to earned points
+    const earned = subs.reduce((sum: number, s: any) => {
+      const prob = problems.find((p: any) => p.id === s.problem_id);
+      const maxPts = prob?.points || 0;
+      return sum + (s.score || 0) / 100 * maxPts;
+    }, 0);
+    const totalPoints = problems.reduce((sum: number, p: any) => sum + (p.points || 0), 0) || 100;
+    const pct = totalPoints > 0 ? Math.round((earned / totalPoints) * 10000) / 100 : 0;
+    const latestDate = subs.length > 0
+      ? subs.reduce((latest: string, s: any) => (s.submitted_at && s.submitted_at > latest ? s.submitted_at : latest), subs[0]?.submitted_at || "")
+      : null;
+    return { exam, earned, totalPoints, pct, date: latestDate, hasSubmission: subs.length > 0 };
+  }).filter((g) => g.hasSubmission);
+
+  const scores = examGrades.map((g) => g.pct);
   const overallAvg = scores.length > 0
-    ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length)
+    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 100) / 100
     : 0;
 
-  const hasFullMark = scores.some((s: number) => s >= 100);
-  const gradesAnnounced = classData.grades_announced !== false; // default to true if not set
+  const hasFullMark = scores.some((s) => s >= 100);
+  const gradesAnnounced = classData.grades_announced === true;
   const passingThreshold = classData.passing_threshold ?? 60;
-
-  // Build exams list from class data or submissions
-  const classExams: any[] = classData.exams || [];
 
   return (
     <div className="space-y-6">
@@ -105,14 +130,16 @@ function StudentCourseDetail({ classData }: { classData: any }) {
             {classData.invite_code && <>Course ID: <span className="font-mono">{classData.invite_code}</span></>}
           </p>
         </div>
-        <div className="text-right hidden sm:block">
-          <p className="text-sm text-muted-foreground">Overall Average</p>
-          <p className={`text-2xl font-bold ${gradeColor(overallAvg)}`}>{overallAvg}%</p>
-        </div>
+        {gradesAnnounced && (
+          <div className="text-right hidden sm:block">
+            <p className="text-sm text-muted-foreground">Overall Average</p>
+            <p className={`text-2xl font-bold ${gradeColor(overallAvg)}`}>{overallAvg}%</p>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="exams" className="space-y-4">
+      <Tabs value={tab} onValueChange={(v) => setSearchParams({ tab: v })} className="space-y-4">
         <TabsList>
           <TabsTrigger value="exams" className="gap-1.5">
             <FileText className="h-4 w-4" /> Exams
@@ -130,20 +157,27 @@ function StudentCourseDetail({ classData }: { classData: any }) {
           {classExams.length === 0 ? (
             <EmptyState icon={FileText} title="No exams" description="No exams have been assigned to this course yet." />
           ) : (
-            classExams.map((exam: any) => (
+            classExams.map((exam: any) => {
+              const phase = getExamPhase(exam);
+              const locked = phase === "upcoming";
+              const clickable = phase === "active" || phase === "completed";
+              return (
               <Card
                 key={exam.id}
-                className="border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-shadow cursor-pointer"
+                className={`border-border/50 bg-card/80 backdrop-blur-sm transition-shadow ${clickable ? "hover:shadow-md cursor-pointer" : "cursor-not-allowed opacity-70"}`}
                 onClick={() => {
-                  if (exam.status === "completed") navigate(`/dashboard/exam/${exam.id}/review`);
-                  else navigate(`/dashboard/exam/${exam.id}/take`);
+                  if (phase === "completed") navigate(`/dashboard/exam/${exam.id}/review`);
+                  else if (phase === "active") navigate(`/dashboard/exam/${exam.id}/take`);
                 }}
               >
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="space-y-1">
                     <p className="font-medium text-foreground">{exam.title || exam.name}</p>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{exam.scheduled_at ? new Date(exam.scheduled_at).toLocaleDateString() : "TBD"}</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {exam.start_time ? format(new Date(exam.start_time), "MMM d, yyyy · h:mm a") : "TBD"}
+                      </span>
                       <span>&bull;</span>
                       <span>{exam.duration_minutes || 60} min</span>
                     </div>
@@ -152,13 +186,18 @@ function StudentCourseDetail({ classData }: { classData: any }) {
                     {exam.score != null && (
                       <span className={`text-lg font-bold ${gradeColor(exam.score)}`}>{exam.score}%</span>
                     )}
-                    <Badge variant="outline" className={statusColor(exam.status || "upcoming")}>
-                      {exam.status || "upcoming"}
-                    </Badge>
+                    {locked ? (
+                      <Badge variant="outline" className={`${statusColor("upcoming")} gap-1`}>
+                        <Lock className="h-3 w-3" /> Upcoming
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className={statusColor(phase)}>{phase}</Badge>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-            ))
+              );
+            })
           )}
         </TabsContent>
 
@@ -176,11 +215,10 @@ function StudentCourseDetail({ classData }: { classData: any }) {
                 </p>
               </CardContent>
             </Card>
-          ) : scores.length === 0 ? (
+          ) : examGrades.length === 0 ? (
             <EmptyState icon={Trophy} title="No grades yet" description="You don't have any graded submissions for this course." />
           ) : (
             <>
-              {/* Confetti trigger for full marks */}
               <ConfettiBurst fire={hasFullMark} firedRef={confettiFired} />
 
               {overallAvg < passingThreshold && (
@@ -198,24 +236,21 @@ function StudentCourseDetail({ classData }: { classData: any }) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border/50 text-muted-foreground">
-                        <th className="px-5 py-3 text-left font-medium">Assessment</th>
+                        <th className="px-5 py-3 text-left font-medium">Exam</th>
                         <th className="px-3 py-3 text-left font-medium">Date</th>
                         <th className="px-3 py-3 text-right font-medium">Score</th>
                         <th className="px-3 py-3 text-right font-medium">Grade</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {classSubmissions.filter((s: any) => s.score != null).map((s: any, i: number) => {
-                        const pct = Math.round(s.score);
-                        return (
-                          <tr key={s.id || i} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
-                            <td className="px-5 py-3 font-medium text-foreground">{s.problem?.title || s.exam_title || `Assessment #${i + 1}`}</td>
-                            <td className="px-3 py-3 text-muted-foreground">{s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : "—"}</td>
-                            <td className="px-3 py-3 text-right text-foreground">{Math.round(s.score)}/{s.total || 100}</td>
-                            <td className={`px-3 py-3 text-right font-bold ${gradeColor(pct)}`}>{pct}%</td>
-                          </tr>
-                        );
-                      })}
+                      {examGrades.map((g, i) => (
+                        <tr key={g.exam.id || i} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                          <td className="px-5 py-3 font-medium text-foreground">{g.exam.title || `Exam #${i + 1}`}</td>
+                          <td className="px-3 py-3 text-muted-foreground">{g.date ? new Date(g.date).toLocaleDateString() : "—"}</td>
+                          <td className="px-3 py-3 text-right text-foreground">{Math.round(g.earned)}/{g.totalPoints}</td>
+                          <td className={`px-3 py-3 text-right font-bold ${gradeColor(g.pct)}`}>{g.pct}%</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </CardContent>
@@ -224,8 +259,8 @@ function StudentCourseDetail({ classData }: { classData: any }) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Card className="border-border/50 bg-card/80">
                   <CardContent className="p-4 text-center">
-                    <p className="text-sm text-muted-foreground">Assessments</p>
-                    <p className="text-2xl font-bold text-foreground">{scores.length}</p>
+                    <p className="text-sm text-muted-foreground">Exams</p>
+                    <p className="text-2xl font-bold text-foreground">{examGrades.length}</p>
                   </CardContent>
                 </Card>
                 <Card className="border-border/50 bg-card/80">
@@ -238,7 +273,7 @@ function StudentCourseDetail({ classData }: { classData: any }) {
                   <CardContent className="p-4 text-center">
                     <p className="text-sm text-muted-foreground">Highest</p>
                     <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      {Math.max(...scores.map((s: number) => Math.round(s)))}%
+                      {Math.max(...scores.map((s) => s))}%
                     </p>
                   </CardContent>
                 </Card>
@@ -260,6 +295,7 @@ function StudentCourseDetail({ classData }: { classData: any }) {
                     <span className="text-xs text-muted-foreground shrink-0 ml-4">{a.created_at ? new Date(a.created_at).toLocaleDateString() : ""}</span>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">{a.body}</p>
+                  <AnnouncementAttachments raw={a.attachments} />
                 </CardContent>
               </Card>
             ))
@@ -275,6 +311,8 @@ function StudentCourseDetail({ classData }: { classData: any }) {
    ================================================================ */
 function TeacherCourseDetail({ classData }: { classData: any }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") || "students";
   const { toast } = useToast();
   const { data: allExams } = useExams();
   const [copiedId, setCopiedId] = useState(false);
@@ -283,9 +321,15 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceTitle, setAnnounceTitle] = useState("");
   const [announceBody, setAnnounceBody] = useState("");
+  const [announceAttachments, setAnnounceAttachments] = useState<{ name: string; type: string; data: string }[]>([]);
   const { data: announcements = [] } = useAnnouncements(classData.id);
   const createAnnouncementMutation = useCreateAnnouncement(classData.id);
+  const updateAnnouncementMutation = useUpdateAnnouncement(classData.id);
+  const deleteAnnouncementMutation = useDeleteAnnouncement(classData.id);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<any | null>(null);
+  const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<number | null>(null);
   const [gradesAnnounced, setGradesAnnounced] = useState(classData.grades_announced || false);
+  const [blockMessage, setBlockMessage] = useState<string | null>(null);
   const [passingThreshold, setPassingThreshold] = useState(classData.passing_threshold ?? 60);
   const qc = useQueryClient();
   const removeMemberMutation = useMutation({
@@ -325,20 +369,75 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
     }
   };
 
+  const openEditAnnouncement = (a: any) => {
+    setEditingAnnouncement(a);
+    setAnnounceTitle(a.title || "");
+    setAnnounceBody(a.body || "");
+    setAnnounceAttachments(parseAttachments(a.attachments));
+    setAnnounceOpen(true);
+  };
+
+  const closeAnnounceDialog = () => {
+    setAnnounceOpen(false);
+    setEditingAnnouncement(null);
+    setAnnounceTitle("");
+    setAnnounceBody("");
+    setAnnounceAttachments([]);
+  };
+
   const postAnnouncement = async () => {
     if (!announceTitle.trim()) return;
     try {
-      await createAnnouncementMutation.mutateAsync({
-        title: announceTitle.trim(),
-        body: announceBody.trim(),
-      });
-      setAnnounceTitle("");
-      setAnnounceBody("");
-      setAnnounceOpen(false);
-      toast({ title: "Announcement posted" });
+      if (editingAnnouncement) {
+        await updateAnnouncementMutation.mutateAsync({
+          id: editingAnnouncement.id,
+          data: {
+            title: announceTitle.trim(),
+            body: announceBody.trim(),
+            attachments: JSON.stringify(announceAttachments),
+          },
+        });
+        toast({ title: "Announcement updated" });
+      } else {
+        await createAnnouncementMutation.mutateAsync({
+          title: announceTitle.trim(),
+          body: announceBody.trim(),
+          attachments: JSON.stringify(announceAttachments),
+        });
+        toast({ title: "Announcement posted" });
+      }
+      closeAnnounceDialog();
     } catch (err: any) {
-      toast({ title: "Failed to post", description: err.message || "Please try again.", variant: "destructive" });
+      toast({ title: "Failed", description: err.message || "Please try again.", variant: "destructive" });
     }
+  };
+
+  const confirmDeleteAnnouncement = async () => {
+    if (!deletingAnnouncementId) return;
+    try {
+      await deleteAnnouncementMutation.mutateAsync(deletingAnnouncementId);
+      toast({ title: "Announcement deleted" });
+    } catch (err: any) {
+      toast({ title: "Failed to delete", description: err.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setDeletingAnnouncementId(null);
+    }
+  };
+
+  const handleAnnounceAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((f) => {
+      if (f.size > 5 * 1024 * 1024) {
+        toast({ title: "File too large", description: `${f.name} exceeds 5 MB.`, variant: "destructive" });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAnnounceAttachments((prev) => [...prev, { name: f.name, type: f.type, data: String(reader.result) }]);
+      };
+      reader.readAsDataURL(f);
+    });
+    e.target.value = "";
   };
 
   const exportGradesCSV = () => {
@@ -364,14 +463,27 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
 
   const announceGrades = async () => {
     try {
+      await updateClass(classData.id, { grades_announced: true });
       await createAnnouncementMutation.mutateAsync({
         title: "Grades Published",
         body: "All current grades have been published and are now visible to students.",
       });
       setGradesAnnounced(true);
+      qc.invalidateQueries({ queryKey: ["class", classData.id] });
       toast({ title: "Grades announced!", description: "Students can now view their grades." });
     } catch (err: any) {
-      toast({ title: "Failed to announce", description: err?.message || "Please try again.", variant: "destructive" });
+      setBlockMessage(err?.message || "Grade all written submissions first.");
+    }
+  };
+
+  const unannounceGrades = async () => {
+    try {
+      await updateClass(classData.id, { grades_announced: false });
+      setGradesAnnounced(false);
+      qc.invalidateQueries({ queryKey: ["class", classData.id] });
+      toast({ title: "Grades hidden", description: "Students can no longer view their grades." });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err?.message || "Please try again.", variant: "destructive" });
     }
   };
 
@@ -410,7 +522,7 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="students" className="space-y-4">
+      <Tabs value={tab} onValueChange={(v) => setSearchParams({ tab: v })} className="space-y-4">
         <TabsList>
           <TabsTrigger value="students" className="gap-1.5">
             <Users className="h-4 w-4" /> Students
@@ -479,9 +591,12 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem className="gap-2" onSelect={() => setTimeout(() => setViewStudent(s))}>
-                                <Eye className="h-4 w-4" /> View Submission
+                                <Users className="h-4 w-4" /> View Profile
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => removeStudent(s.id || s.user_id)}>
+                              <DropdownMenuItem className="gap-2" onSelect={() => navigate("/dashboard/results")}>
+                                <BarChart3 className="h-4 w-4" /> View Submission
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => removeStudent(s.user_id)}>
                                 <Trash2 className="h-4 w-4" /> Remove
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -574,15 +689,15 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
               <Button variant="outline" size="sm" className="gap-1.5" onClick={exportGradesCSV}>
                 <Download className="h-4 w-4" /> Export CSV
               </Button>
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={announceGrades}
-                disabled={gradesAnnounced}
-              >
-                <Send className="h-4 w-4" />
-                {gradesAnnounced ? "Announced" : "Announce Grades"}
-              </Button>
+              {gradesAnnounced ? (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={unannounceGrades}>
+                  <Send className="h-4 w-4" /> Unannounce
+                </Button>
+              ) : (
+                <Button size="sm" className="gap-1.5" onClick={announceGrades}>
+                  <Send className="h-4 w-4" /> Announce Grades
+                </Button>
+              )}
             </div>
           </div>
 
@@ -672,16 +787,40 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
             announcements.map((a: any) => (
               <Card key={a.id} className="border-border/50 bg-card/80 backdrop-blur-sm">
                 <CardContent className="p-4 space-y-2">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <p className="font-medium text-foreground">{a.title}</p>
-                    <span className="text-xs text-muted-foreground shrink-0 ml-4">{a.created_at ? new Date(a.created_at).toLocaleDateString() : a.date || ""}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-muted-foreground">{a.created_at ? new Date(a.created_at).toLocaleDateString() : a.date || ""}</span>
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onSelect={(e) => { e.preventDefault(); setTimeout(() => openEditAnnouncement(a), 0); }}
+                          >
+                            <Pencil className="h-4 w-4 mr-2" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={(e) => { e.preventDefault(); setTimeout(() => setDeletingAnnouncementId(a.id), 0); }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">{a.body}</p>
+                  <AnnouncementAttachments raw={a.attachments} />
                 </CardContent>
               </Card>
             ))
           )}
         </TabsContent>
+
       </Tabs>
 
       {/* View Student Dialog */}
@@ -715,11 +854,11 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
         </DialogContent>
       </Dialog>
 
-      {/* Post Announcement Dialog */}
-      <Dialog open={announceOpen} onOpenChange={setAnnounceOpen}>
+      {/* Post / Edit Announcement Dialog */}
+      <Dialog open={announceOpen} onOpenChange={(o) => { if (!o) closeAnnounceDialog(); else setAnnounceOpen(true); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Post Announcement</DialogTitle>
+            <DialogTitle>{editingAnnouncement ? "Edit Announcement" : "Post Announcement"}</DialogTitle>
             <DialogDescription>This will be visible to all enrolled students.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -731,13 +870,68 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
               <Label htmlFor="a-body">Message</Label>
               <Textarea id="a-body" placeholder="Write your announcement..." rows={4} value={announceBody} onChange={(e) => setAnnounceBody(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <Label>Attachments (optional)</Label>
+                <input id="a-attach" type="file" multiple className="hidden" onChange={handleAnnounceAttach} />
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => document.getElementById("a-attach")?.click()}>
+                  <Upload className="h-3.5 w-3.5" /> Add files / images
+                </Button>
+              </div>
+              {announceAttachments.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  {announceAttachments.map((att, i) => (
+                    <div key={i} className="flex items-center gap-2 rounded-md border border-border/50 px-2 py-1.5 text-xs">
+                      {att.type.startsWith("image/") ? (
+                        <img src={att.data} alt={att.name} className="h-8 w-8 rounded object-cover" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="flex-1 truncate">{att.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setAnnounceAttachments((prev) => prev.filter((_, j) => j !== i))}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAnnounceOpen(false)}>Cancel</Button>
-            <Button onClick={postAnnouncement} disabled={!announceTitle.trim()}>Post</Button>
+            <Button variant="outline" onClick={closeAnnounceDialog}>Cancel</Button>
+            <Button onClick={postAnnouncement} disabled={!announceTitle.trim()}>{editingAnnouncement ? "Save" : "Post"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deletingAnnouncementId !== null} onOpenChange={(o) => !o && setDeletingAnnouncementId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete announcement?</AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone. Students will no longer see this announcement.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteAnnouncement} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!blockMessage} onOpenChange={(o) => !o && setBlockMessage(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cannot announce grades</AlertDialogTitle>
+            <AlertDialogDescription>{blockMessage}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setBlockMessage(null)}>Got it</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -771,4 +965,114 @@ export default function CourseDetail() {
   }
 
   return role === "teacher" ? <TeacherCourseDetail classData={classData} /> : <StudentCourseDetail classData={classData} />;
+}
+
+function parseAttachments(raw: any): { name: string; type: string; data: string }[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; } catch { /* ignore */ }
+  }
+  return [];
+}
+
+function AnnouncementAttachments({ raw }: { raw: any }) {
+  const list = parseAttachments(raw);
+  const images = list.filter((a) => a.type?.startsWith("image/"));
+  const files = list.filter((a) => !a.type?.startsWith("image/"));
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" && lightboxIdx > 0) setLightboxIdx(lightboxIdx - 1);
+      else if (e.key === "ArrowRight" && lightboxIdx < images.length - 1) setLightboxIdx(lightboxIdx + 1);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [lightboxIdx, images.length]);
+
+  if (list.length === 0) return null;
+
+  const visibleImages = images.slice(0, 4);
+  const hiddenCount = Math.max(0, images.length - 4);
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 px-2 py-0.5 text-xs text-muted-foreground">
+        <Paperclip className="h-3 w-3" /> {list.length} attachment{list.length === 1 ? "" : "s"}
+      </div>
+
+      {images.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {visibleImages.map((img, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setLightboxIdx(i)}
+              className="relative h-16 w-16 rounded overflow-hidden border border-border/50 hover:border-primary/50 transition"
+            >
+              <img src={img.data} alt={img.name} className="h-full w-full object-cover" />
+              {i === 3 && hiddenCount > 0 && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-xs font-semibold text-white">
+                  +{hiddenCount}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {files.map((f, i) => (
+            <a
+              key={i}
+              href={f.data}
+              download={f.name}
+              className="inline-flex items-center gap-2 rounded-md border border-border/50 px-3 py-1.5 text-xs hover:bg-muted/40"
+            >
+              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="truncate max-w-[200px]">{f.name}</span>
+              <Download className="h-3 w-3 text-muted-foreground" />
+            </a>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={lightboxIdx !== null} onOpenChange={(o) => !o && setLightboxIdx(null)}>
+        <DialogContent className="max-w-4xl p-0 bg-transparent border-0 shadow-none">
+          {lightboxIdx !== null && images[lightboxIdx] && (
+            <div className="relative">
+              <img
+                src={images[lightboxIdx].data}
+                alt={images[lightboxIdx].name}
+                className="w-full max-h-[85vh] object-contain rounded-lg"
+              />
+              <div className="absolute top-3 right-3 text-xs px-2 py-1 rounded bg-black/60 text-white">
+                {lightboxIdx + 1} / {images.length}
+              </div>
+              {lightboxIdx > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLightboxIdx(lightboxIdx - 1)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+              )}
+              {lightboxIdx < images.length - 1 && (
+                <button
+                  type="button"
+                  onClick={() => setLightboxIdx(lightboxIdx + 1)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

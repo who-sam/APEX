@@ -53,6 +53,30 @@ export function login(email: string, password: string) {
   });
 }
 
+export function googleAuth(idToken: string, role?: string) {
+  return apiFetch<{ token?: string; user?: any; needs_role?: boolean; email?: string; name?: string }>(
+    "/auth/google",
+    {
+      method: "POST",
+      body: JSON.stringify({ id_token: idToken, role }),
+    }
+  );
+}
+
+export function forgotPassword(email: string) {
+  return apiFetch<{ message: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPassword(token: string, newPassword: string) {
+  return apiFetch<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
 export function deleteAccount() {
   return apiFetch<{ message: string }>("/auth/account", { method: "DELETE" });
 }
@@ -75,7 +99,7 @@ export function getStudentClass(id: number) {
   return apiFetch<any>(`/student/classes/${id}`);
 }
 
-export function updateClass(id: number, data: { name?: string; section?: string; cover_image?: string; grades_announced?: boolean; passing_threshold?: number }) {
+export function updateClass(id: number, data: { name?: string; section?: string; cover_image?: string; grades_announced?: boolean; passing_threshold?: number; block_announce_with_pending?: boolean }) {
   return apiFetch<any>(`/classes/${id}`, { method: "PUT", body: JSON.stringify(data) });
 }
 
@@ -151,6 +175,14 @@ export function assignExam(id: number, classIds: number[]) {
   return apiFetch<any>(`/exams/${id}/assign`, { method: "POST", body: JSON.stringify({ class_ids: classIds }) });
 }
 
+export function closeExam(id: number) {
+  return apiFetch<any>(`/exams/${id}/close`, { method: "POST" });
+}
+
+export function reopenExam(id: number, minutes: number) {
+  return apiFetch<any>(`/exams/${id}/reopen`, { method: "POST", body: JSON.stringify({ minutes }) });
+}
+
 // ── Problems ──────────────────────────────────────────
 export function addProblem(examId: number, data: any) {
   return apiFetch<any>(`/exams/${examId}/problems`, { method: "POST", body: JSON.stringify(data) });
@@ -173,7 +205,7 @@ export function saveProblemToBank(data: any) {
 }
 
 // ── Test Cases ────────────────────────────────────────
-export function addTestCase(problemId: number, data: { input: string; expected_output: string; is_sample: boolean; order_index?: number }) {
+export function addTestCase(problemId: number, data: { input: string; expected_output: string; is_sample: boolean; points?: number; order_index?: number }) {
   return apiFetch<any>(`/problems/${problemId}/test-cases`, { method: "POST", body: JSON.stringify(data) });
 }
 
@@ -236,7 +268,7 @@ export function getProfile() {
   return apiFetch<any>("/profile");
 }
 
-export function updateProfile(data: { name?: string; bio?: string; avatar_url?: string; notify_email?: boolean; notify_push?: boolean; notify_exam_reminders?: boolean; notify_results?: boolean }) {
+export function updateProfile(data: { name?: string; bio?: string; avatar_url?: string; notify_email?: boolean; notify_push?: boolean; notify_exam_reminders?: boolean; notify_results?: boolean; notify_exam_email?: boolean; block_announce_with_pending?: boolean; default_exam_draft?: boolean; default_passing_threshold?: number }) {
   return apiFetch<any>("/profile", { method: "PUT", body: JSON.stringify(data) });
 }
 
@@ -327,7 +359,7 @@ export function getClassStats(id: number) {
   return apiFetch<any>(`/classes/${id}/stats`);
 }
 
-// ── Grade Written ────────────────────────────────────
+// ── Manual Grading ───────────────────────────────────
 export function gradeSubmission(id: number, data: { score: number; status: string; teacher_feedback?: string }) {
   return apiFetch<any>(`/submissions/${id}/grade`, { method: "PUT", body: JSON.stringify(data) });
 }
@@ -347,8 +379,12 @@ export function getAnnouncements(classId: number) {
   return apiFetch<any[]>(`/classes/${classId}/announcements`);
 }
 
-export function createAnnouncement(classId: number, data: { title: string; body?: string }) {
+export function createAnnouncement(classId: number, data: { title: string; body?: string; attachments?: string }) {
   return apiFetch<any>(`/classes/${classId}/announcements`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateAnnouncement(id: number, data: { title?: string; body?: string; attachments?: string }) {
+  return apiFetch<any>(`/announcements/${id}`, { method: "PUT", body: JSON.stringify(data) });
 }
 
 export function deleteAnnouncement(id: number) {

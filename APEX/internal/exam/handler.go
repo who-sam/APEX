@@ -227,6 +227,62 @@ func UpdateExam(c *gin.Context) {
 	c.JSON(http.StatusOK, exam)
 }
 
+func CloseExam(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+	examID := c.Param("id")
+
+	var exam models.Exam
+	if err := database.DB.Where("id = ? AND teacher_id = ?", examID, teacherID).First(&exam).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+
+	now := time.Now()
+	if err := database.DB.Model(&exam).Update("end_time", now).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to close exam"})
+		return
+	}
+	exam.EndTime = &now
+	c.JSON(http.StatusOK, exam)
+}
+
+type reopenRequest struct {
+	Minutes int `json:"minutes" binding:"required"`
+}
+
+func ReopenExam(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
+	examID := c.Param("id")
+
+	var req reopenRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Minutes <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "minutes must be > 0"})
+		return
+	}
+
+	var exam models.Exam
+	if err := database.DB.Where("id = ? AND teacher_id = ?", examID, teacherID).First(&exam).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+
+	now := time.Now()
+	end := now.Add(time.Duration(req.Minutes) * time.Minute)
+	updates := map[string]any{"end_time": end}
+	if exam.StartTime == nil || exam.StartTime.After(now) {
+		updates["start_time"] = now
+	}
+	if err := database.DB.Model(&exam).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reopen exam"})
+		return
+	}
+	exam.EndTime = &end
+	if st, ok := updates["start_time"].(time.Time); ok {
+		exam.StartTime = &st
+	}
+	c.JSON(http.StatusOK, exam)
+}
+
 func DeleteExam(c *gin.Context) {
 	teacherID := c.GetUint("user_id")
 	examID := c.Param("id")
@@ -332,12 +388,21 @@ func GetExamResults(c *gin.Context) {
 		Find(&submissions)
 
 	type StudentResult struct {
-		UserID      uint                `json:"user_id"`
-		Name        string              `json:"name"`
-		Email       string              `json:"email"`
-		Submissions []models.Submission `json:"submissions"`
-		TotalScore  float64             `json:"total_score"`
-		AvgScore    float64             `json:"avg_score"`
+		UserID         uint                `json:"user_id"`
+		Name           string              `json:"name"`
+		Email          string              `json:"email"`
+		Submissions    []models.Submission `json:"submissions"`
+		TotalScore     float64             `json:"total_score"`
+		AvgScore       float64             `json:"avg_score"`
+		DurationSecs   int                 `json:"duration_seconds"`
+	}
+
+	// Load attempts for timing
+	var attempts []models.ExamAttempt
+	database.DB.Where("exam_id = ?", exam.ID).Find(&attempts)
+	attemptByUser := map[uint]models.ExamAttempt{}
+	for _, a := range attempts {
+		attemptByUser[a.UserID] = a
 	}
 
 	studentMap := make(map[uint]*StudentResult)
@@ -369,6 +434,9 @@ func GetExamResults(c *gin.Context) {
 		sr.TotalScore = math.Round(earnedPoints*10) / 10
 		if totalPoints > 0 {
 			sr.AvgScore = math.Round(earnedPoints/totalPoints*10000) / 100
+		}
+		if a, ok := attemptByUser[sr.UserID]; ok && a.SubmittedAt != nil {
+			sr.DurationSecs = int(a.SubmittedAt.Sub(a.StartedAt).Seconds())
 		}
 		results = append(results, *sr)
 	}
@@ -542,7 +610,7 @@ func SubmitAttempt(c *gin.Context) {
 	notification.Create(userID, "submission",
 		"Exam Submitted",
 		fmt.Sprintf("Your submission for \"%s\" has been received and is being graded.", exam.Title),
-		"/dashboard/results",
+		fmt.Sprintf("/dashboard/exam/%d/review", exam.ID),
 	)
 
 	c.JSON(http.StatusCreated, gin.H{

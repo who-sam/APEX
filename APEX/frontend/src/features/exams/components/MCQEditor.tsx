@@ -22,8 +22,13 @@ export default function MCQEditor({ question, onChange, onSaveToBank }: Props) {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    update({ imageUrl: url });
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: "Image too large", description: "Max 2 MB.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => update({ imageUrl: String(reader.result) });
+    reader.readAsDataURL(file);
   };
 
   const addOption = () => {
@@ -86,6 +91,17 @@ export default function MCQEditor({ question, onChange, onSaveToBank }: Props) {
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-1 block">Points</label>
           <Input type="number" value={question.points} onChange={(e) => update({ points: Number(e.target.value) })} min={1} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Difficulty</label>
+          <Select value={question.difficulty} onValueChange={(v) => update({ difficulty: v as Difficulty })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="easy">Easy</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="hard">Hard</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

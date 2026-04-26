@@ -284,6 +284,31 @@ func maybeFinalizeAttempt(attemptID *uint) {
 	database.DB.Model(&models.ExamAttempt{}).
 		Where("id = ?", *attemptID).
 		Update("score", pct)
+
+	// Fire a single "Exam Graded" notification once all submissions for the
+	// attempt are fully graded (no pending_review remaining). Idempotent via
+	// exam_attempts.graded_notified.
+	var anyPendingReview int64
+	database.DB.Model(&models.Submission{}).
+		Where("exam_attempt_id = ? AND status = ?", *attemptID, "pending_review").
+		Count(&anyPendingReview)
+	if anyPendingReview > 0 {
+		return
+	}
+
+	var attempt models.ExamAttempt
+	if err := database.DB.Preload("Exam").First(&attempt, *attemptID).Error; err != nil {
+		return
+	}
+	if attempt.Status != "submitted" || attempt.GradedNotified {
+		return
+	}
+	database.DB.Model(&attempt).Update("graded_notified", true)
+	notification.Create(attempt.UserID, "result",
+		"Exam Graded",
+		fmt.Sprintf("Your submission for \"%s\" has been graded. Score: %.0f%%", attempt.Exam.Title, pct),
+		fmt.Sprintf("/dashboard/exam/%d/review", attempt.ExamID),
+	)
 }
 
 type TestCaseResult struct {

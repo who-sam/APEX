@@ -40,7 +40,7 @@ export default function Dashboard() {
   const activeExam = allExams.find(
     (e: any) => e.status === "active" && !submittedExamIds.has(Number(e.id))
   );
-  const upcomingExams = allExams.filter((e: any) => e.status === "upcoming").slice(0, 4);
+  const upcomingExams = allExams.filter((e: any) => (e.status === "upcoming" || e.status === "active") && !e.has_submitted && !submittedExamIds.has(Number(e.id))).slice(0, 4);
   const recentSubmissions = (attempts || [])
     .filter((a: any) => a.status === "submitted")
     .slice(0, 5)
@@ -51,7 +51,19 @@ export default function Dashboard() {
       submitted_at: a.submitted_at || a.started_at,
       exam_title: a.exam?.title,
     }));
-  const enrolledClasses = classes || [];
+  const submittedAttemptExamIds = new Set(
+    (attempts || []).filter((a: any) => a.status === "submitted").map((a: any) => Number(a.exam_id))
+  );
+  const examBelongsToClass = (e: any, classId: number) =>
+    Number(e.class_id) === classId ||
+    (e.classes || []).some((c: any) => Number(c.id) === classId) ||
+    (e.exam_classes || []).some((ec: any) => Number(ec.class_id) === classId);
+  const enrolledClasses = (classes || []).map((c: any) => {
+    const assigned = allExams.filter((e: any) => examBelongsToClass(e, Number(c.id)) && !e.is_draft);
+    const done = assigned.filter((e: any) => submittedAttemptExamIds.has(Number(e.id))).length;
+    const progress = assigned.length > 0 ? Math.round((done / assigned.length) * 100) : 0;
+    return { ...c, progress, _done: done, _total: assigned.length };
+  });
 
   const hasActiveExam = !!activeExam;
   const hasStartedAttempt = hasActiveExam && (attempts || []).some(
@@ -209,7 +221,9 @@ export default function Dashboard() {
                 >
                   <div className="space-y-1">
                     <p className="font-medium text-foreground">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">{c.section || ""}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {c._total > 0 ? `${c._done}/${c._total} exams completed` : c.section || "No exams yet"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="w-24 h-2 rounded-full bg-secondary overflow-hidden">

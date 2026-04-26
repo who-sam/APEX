@@ -16,6 +16,8 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 		exams.PUT("/:id", UpdateExam)
 		exams.DELETE("/:id", DeleteExam)
 		exams.POST("/:id/assign", AssignExam)
+		exams.POST("/:id/close", CloseExam)
+		exams.POST("/:id/reopen", ReopenExam)
 		exams.GET("/:id/results", GetExamResults)
 	}
 }

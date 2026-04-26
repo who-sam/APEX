@@ -12,6 +12,7 @@ type ExamAttempt struct {
 	SubmittedAt *time.Time `json:"submitted_at,omitempty"`
 	Score       float64    `gorm:"not null;default:0" json:"score"`
 	Status      string     `gorm:"size:30;not null;default:in_progress" json:"status"`
+	GradedNotified bool    `gorm:"not null;default:false" json:"graded_notified"`
 
 	Submissions []Submission `gorm:"foreignKey:ExamAttemptID" json:"submissions,omitempty"`
 }

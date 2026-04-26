@@ -12,7 +12,18 @@ export function useAnnouncements(classId: number) {
 export function useCreateAnnouncement(classId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { title: string; body?: string }) => api.createAnnouncement(classId, data),
+    mutationFn: (data: { title: string; body?: string; attachments?: string }) => api.createAnnouncement(classId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["announcements", classId] });
+    },
+  });
+}
+
+export function useUpdateAnnouncement(classId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: { title?: string; body?: string; attachments?: string } }) =>
+      api.updateAnnouncement(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["announcements", classId] });
     },

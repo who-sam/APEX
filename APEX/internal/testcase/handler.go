@@ -13,6 +13,7 @@ type createTestCaseRequest struct {
 	Input          string `json:"input" binding:"required"`
 	ExpectedOutput string `json:"expected_output" binding:"required"`
 	IsSample       bool   `json:"is_sample"`
+	Points         int    `json:"points"`
 	OrderIndex     int    `json:"order_index"`
 }
 
@@ -50,6 +51,7 @@ func AddTestCase(c *gin.Context) {
 		Input:          req.Input,
 		ExpectedOutput: req.ExpectedOutput,
 		IsSample:       req.IsSample,
+		Points:         req.Points,
 		OrderIndex:     req.OrderIndex,
 	}
 
@@ -105,6 +107,7 @@ func UpdateTestCase(c *gin.Context) {
 		"input":           req.Input,
 		"expected_output": req.ExpectedOutput,
 		"is_sample":       req.IsSample,
+		"points":          req.Points,
 		"order_index":     req.OrderIndex,
 	})
 

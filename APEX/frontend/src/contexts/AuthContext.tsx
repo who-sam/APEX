@@ -18,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string, role: string) => Promise<void>;
+  loginWithGoogle: (idToken: string, role?: string) => Promise<{ needsRole: boolean; email?: string }>;
   logout: () => void;
 }
 
@@ -25,9 +26,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function parseJWT(token: string): { user_id: number; email: string; name: string; role: UserRole; exp: number } | null {
   try {
-    const payload = token.split(".")[1];
-    const decoded = JSON.parse(atob(payload));
-    return decoded;
+    const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = part + "===".slice((part.length + 3) % 4);
+    const binary = atob(padded);
+    const json = decodeURIComponent(
+      binary.split("").map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
+    );
+    return JSON.parse(json);
   } catch {
     return null;
   }
@@ -98,6 +103,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loginWithGoogle = useCallback(async (idToken: string, role?: string) => {
+    const data = await api.googleAuth(idToken, role);
+    if (data.needs_role) {
+      return { needsRole: true, email: data.email };
+    }
+    if (!data.token) throw new Error("Google sign-in failed");
+    const newToken = data.token;
+    localStorage.setItem("kernel-token", newToken);
+    const decoded = parseJWT(newToken);
+    if (decoded) {
+      const newUser: AuthUser = {
+        id: decoded.user_id,
+        email: decoded.email,
+        name: decoded.name,
+        role: decoded.role,
+      };
+      setUser(newUser);
+      setToken(newToken);
+      localStorage.setItem("kernel-role", decoded.role);
+    }
+    return { needsRole: false, email: data.user?.email };
+  }, []);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -116,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         signup,
+        loginWithGoogle,
         logout,
       }}
     >

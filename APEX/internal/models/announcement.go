@@ -8,5 +8,6 @@ type Announcement struct {
 	TeacherID uint      `gorm:"not null;index" json:"teacher_id"`
 	Title     string    `gorm:"size:255;not null" json:"title"`
 	Body      string    `gorm:"type:text" json:"body"`
+	Attachments string  `gorm:"type:jsonb" json:"attachments"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }

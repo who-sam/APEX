@@ -12,6 +12,7 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 	s.Use(middleware.RequireRole("student"))
 	{
 		s.POST("/classes/join", JoinClass)
+		s.DELETE("/classes/:id", LeaveClass)
 		s.GET("/classes", GetClasses)
 		s.GET("/classes/:id", GetClass)
 		s.GET("/exams", GetExams)

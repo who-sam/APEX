@@ -11,11 +11,17 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   BookOpen, Clock, Search, Plus, Filter, MoreHorizontal,
-  Pencil, Eye, Trash2, Users, FileText, CheckCircle2,
+  Pencil, Eye, Trash2, Users, FileText, CheckCircle2, Lock, Unlock,
 } from "lucide-react";
 import { format } from "date-fns";
-import { useExams, useDeleteExam } from "@/hooks/useExams";
+import { useExams, useDeleteExam, useCloseExam, useReopenExam } from "@/hooks/useExams";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 type ExamStatus = "upcoming" | "active" | "completed" | "draft";
@@ -49,8 +55,13 @@ export default function TeacherExams() {
   const { toast } = useToast();
   const { data: examsData, isLoading, error, refetch } = useExams();
   const deleteExamMutation = useDeleteExam();
+  const closeExamMutation = useCloseExam();
+  const reopenExamMutation = useReopenExam();
   const [statusFilter, setStatusFilter] = useState<ExamStatus | "all">("all");
   const [search, setSearch] = useState("");
+  const [closeTarget, setCloseTarget] = useState<{ id: number; title: string } | null>(null);
+  const [reopenTarget, setReopenTarget] = useState<{ id: number; title: string } | null>(null);
+  const [reopenMinutes, setReopenMinutes] = useState(30);
 
   if (isLoading) return <PageSkeleton cards={4} rows={6} />;
   if (error) return <ErrorState message="Failed to load exams" onRetry={refetch} />;
@@ -75,6 +86,30 @@ export default function TeacherExams() {
       .filter((e: any) => !search || (e.title || "").toLowerCase().includes(search.toLowerCase()) || (e.class_name || "").toLowerCase().includes(search.toLowerCase()))
       .sort((a: any, b: any) => b.examDate.getTime() - a.examDate.getTime());
   }, [exams, statusFilter, search]);
+
+  const confirmReopen = async () => {
+    if (!reopenTarget || reopenMinutes <= 0) return;
+    const { id, title } = reopenTarget;
+    setReopenTarget(null);
+    try {
+      await reopenExamMutation.mutateAsync({ id, minutes: reopenMinutes });
+      toast({ title: "Exam reopened", description: `${title} open for ${reopenMinutes} min.` });
+    } catch (err: any) {
+      toast({ title: "Reopen failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const confirmClose = async () => {
+    if (!closeTarget) return;
+    const { id, title } = closeTarget;
+    setCloseTarget(null);
+    try {
+      await closeExamMutation.mutateAsync(id);
+      toast({ title: "Exam closed", description: `${title} is now closed.` });
+    } catch (err: any) {
+      toast({ title: "Close failed", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleDelete = async (id: number, title: string) => {
     try {
@@ -210,7 +245,7 @@ export default function TeacherExams() {
                       <Badge variant="outline" className={cfg.className}>
                         {cfg.label}
                       </Badge>
-                      <DropdownMenu>
+                      <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
                             <MoreHorizontal className="h-4 w-4" />
@@ -223,10 +258,32 @@ export default function TeacherExams() {
                           <DropdownMenuItem className="gap-2" onClick={() => navigate(`/dashboard/exam-preview/${exam.id}`)}>
                             <Eye className="h-4 w-4" /> Preview
                           </DropdownMenuItem>
-                          {exam.derivedStatus === "completed" && (
-                            <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/results", { state: { courseId: exam.class_id, examId: exam.id } })}>
-                              <FileText className="h-4 w-4" /> View Results
+                          {exam.derivedStatus === "active" && (
+                            <DropdownMenuItem
+                              className="gap-2"
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                setTimeout(() => setCloseTarget({ id: exam.id, title: exam.title }), 0);
+                              }}
+                            >
+                              <Lock className="h-4 w-4" /> Close now
                             </DropdownMenuItem>
+                          )}
+                          {exam.derivedStatus === "completed" && (
+                            <>
+                              <DropdownMenuItem
+                                className="gap-2"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setTimeout(() => { setReopenMinutes(30); setReopenTarget({ id: exam.id, title: exam.title }); }, 0);
+                                }}
+                              >
+                                <Unlock className="h-4 w-4" /> Reopen
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/results", { state: { courseId: exam.class_id, examId: exam.id } })}>
+                                <FileText className="h-4 w-4" /> View Results
+                              </DropdownMenuItem>
+                            </>
                           )}
                           <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => handleDelete(exam.id, exam.title)}>
                             <Trash2 className="h-4 w-4" /> Delete
@@ -241,6 +298,55 @@ export default function TeacherExams() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!reopenTarget} onOpenChange={(o) => !o && setReopenTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reopen "{reopenTarget?.title}"</DialogTitle>
+            <DialogDescription>
+              Students can submit until the new end time. Start time is reset to now if it was in the future.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reopen-minutes">Open for (minutes)</Label>
+            <Input
+              id="reopen-minutes"
+              type="number"
+              min={1}
+              value={reopenMinutes}
+              onChange={(e) => setReopenMinutes(parseInt(e.target.value || "0", 10))}
+            />
+            <div className="flex gap-1.5 flex-wrap pt-1">
+              {[15, 30, 60, 120].map((m) => (
+                <Button key={m} type="button" variant="outline" size="sm" className="text-xs h-7" onClick={() => setReopenMinutes(m)}>
+                  {m} min
+                </Button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReopenTarget(null)}>Cancel</Button>
+            <Button onClick={confirmReopen} disabled={reopenMinutes <= 0 || reopenExamMutation.isPending}>
+              {reopenExamMutation.isPending ? "Reopening..." : "Reopen exam"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!closeTarget} onOpenChange={(o) => !o && setCloseTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close "{closeTarget?.title}" now?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Students will no longer be able to submit. This sets the exam's end time to now and cannot be undone from here.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmClose}>Close exam</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

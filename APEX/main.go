@@ -6,14 +6,17 @@ import (
 	"apex/internal/class"
 	"apex/internal/config"
 	"apex/internal/database"
+	"apex/internal/email"
 	"apex/internal/exam"
 	"apex/internal/execute"
+	"apex/internal/folder"
 	"apex/internal/leaderboard"
 	"apex/internal/message"
 	"apex/internal/middleware"
 	"apex/internal/notification"
 	"apex/internal/problem"
 	"apex/internal/profile"
+	"apex/internal/reminder"
 	"apex/internal/student"
 	"apex/internal/submission"
 	"apex/internal/teacher"
@@ -27,6 +30,8 @@ func main() {
 	cfg := config.Load()
 	database.Connect(cfg)
 	auth.Init(cfg)
+	email.Init(cfg)
+	reminder.Start()
 
 	r := gin.Default()
 	r.Use(middleware.CORS())
@@ -50,6 +55,7 @@ func main() {
 	team.RegisterRoutes(public, protected)
 	teacher.RegisterRoutes(public, protected)
 	announcement.RegisterRoutes(public, protected)
+	folder.RegisterRoutes(public, protected)
 
 	r.Run(":8080")
 }

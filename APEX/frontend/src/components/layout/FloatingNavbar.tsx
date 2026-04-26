@@ -27,6 +27,7 @@ const teacherNavTabs = [
   { label: "Courses", url: "/dashboard/courses" },
   { label: "Exams", url: "/dashboard/exams" },
   { label: "Question Bank", url: "/dashboard/question-bank" },
+  { label: "Playground", url: "/dashboard/playground" },
   { label: "Results", url: "/dashboard/results" },
 ];
 
@@ -104,11 +105,9 @@ export function FloatingNavbar() {
     ...(role === "teacher" ? [
       { label: "Exam Builder", url: "/dashboard/exam-builder", icon: FileText, category: "Pages" },
       { label: "Question Bank", url: "/dashboard/question-bank", icon: BookOpen, category: "Pages" },
-      { label: "Grade Written", url: "/dashboard/grade-written", icon: FileText, category: "Pages" },
+      { label: "Manual Grading", url: "/dashboard/grading", icon: FileText, category: "Pages" },
     ] : []),
-    ...(role === "student" ? [
-      { label: "Playground", url: "/dashboard/playground", icon: Code, category: "Pages" },
-    ] : []),
+    { label: "Playground", url: "/dashboard/playground", icon: Code, category: "Pages" },
     // Dynamic courses from API
     ...classes.map((c: any) => ({
       label: c.name + (c.section ? ` — ${c.section}` : ""),

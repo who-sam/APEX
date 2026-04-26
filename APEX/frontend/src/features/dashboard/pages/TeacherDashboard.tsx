@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Users, FileText, GraduationCap, TrendingUp, TrendingDown,
+  Users, FileText, GraduationCap,
   Plus, BarChart3, BookOpen, Clock, MoreHorizontal, Eye, Pencil, Trash2,
   ClipboardCheck,
 } from "lucide-react";
@@ -52,9 +52,9 @@ export default function TeacherDashboard() {
   const d = dashboard || {};
   const courses = classesList || [];
   const statsData = [
-    { label: "Total Students", value: String(d.total_students || 0), icon: Users, trend: "+12%", up: true },
-    { label: "Active Exams", value: String(d.active_exams || 0), icon: FileText, trend: "+2", up: true },
-    { label: "Classes", value: String(d.total_classes || 0), icon: GraduationCap, trend: "0", up: true },
+    { label: "Total Students", value: String(d.total_students || 0), icon: Users },
+    { label: "Active Exams", value: String(d.active_exams || 0), icon: FileText },
+    { label: "Classes", value: String(d.total_classes || 0), icon: GraduationCap },
   ];
 
   const pendingGrading = d.pending_grading || [];
@@ -62,7 +62,7 @@ export default function TeacherDashboard() {
   const recentActivity = d.recent_activity || [];
   const classPerformance = d.class_performance || [];
   const classAvg = classPerformance.length > 0
-    ? Math.round(classPerformance.reduce((s: number, c: any) => s + (c.average_score || 0), 0) / classPerformance.length)
+    ? Math.round(classPerformance.reduce((s: number, c: any) => s + (c.average_score || 0), 0) / classPerformance.length * 100) / 100
     : 0;
 
   const handleDeleteExam = async (examId: number, examName: string) => {
@@ -93,13 +93,7 @@ export default function TeacherDashboard() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-muted-foreground">{s.label}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl font-bold text-foreground">{s.value}</span>
-                  <span className={`flex items-center text-xs font-medium ${s.up ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                    {s.up ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
-                    {s.trend}
-                  </span>
-                </div>
+                <span className="text-2xl font-bold text-foreground">{s.value}</span>
               </div>
             </CardContent>
           </Card>
@@ -164,7 +158,10 @@ export default function TeacherDashboard() {
         </Card>
 
         {/* Pending Grading */}
-        <Card className="lg:col-span-2 bg-card/80 backdrop-blur-md border-border/50">
+        <Card
+          className="lg:col-span-2 bg-card/80 backdrop-blur-md border-border/50 cursor-pointer hover:border-primary/50 transition-colors"
+          onClick={() => navigate("/dashboard/grading")}
+        >
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <ClipboardCheck className="h-4 w-4 text-primary" />
@@ -173,13 +170,13 @@ export default function TeacherDashboard() {
           </CardHeader>
           <CardContent className="space-y-3">
             {pendingGrading.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No pending grading</p>
+              <p className="text-sm text-muted-foreground text-center py-4">No pending grading — tap to review submissions</p>
             ) : (
               pendingGrading.slice(0, 5).map((g: any, i: number) => (
                 <div
                   key={i}
                   className="flex items-start gap-3 rounded-lg border border-border/30 p-3 hover:bg-muted/30 transition-colors cursor-pointer"
-                  onClick={() => navigate("/dashboard/grade-written")}
+                  onClick={() => navigate("/dashboard/grading")}
                 >
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive/15 text-destructive">
                     <ClipboardCheck className="h-4 w-4" />

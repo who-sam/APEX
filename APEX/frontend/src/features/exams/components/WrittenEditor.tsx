@@ -20,7 +20,10 @@ export default function WrittenEditor({ question, onChange, onSaveToBank }: Prop
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    update({ imageUrl: URL.createObjectURL(file) });
+    if (file.size > 2 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = () => update({ imageUrl: String(reader.result) });
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -63,6 +66,17 @@ export default function WrittenEditor({ question, onChange, onSaveToBank }: Prop
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-1 block">Max Word Count</label>
           <Input type="number" value={question.maxWordCount} onChange={(e) => update({ maxWordCount: Number(e.target.value) })} min={10} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Difficulty</label>
+          <Select value={question.difficulty} onValueChange={(v) => update({ difficulty: v as Difficulty })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="easy">Easy</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="hard">Hard</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

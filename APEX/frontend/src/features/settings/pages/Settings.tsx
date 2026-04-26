@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { Settings, User, Bell, Palette, Shield, Camera, Trash2 } from "lucide-react";
+import { Settings, User, Bell, Palette, Shield, Camera, Trash2, GraduationCap } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +35,13 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profilePhoto = profileData?.profile?.avatar_url || null;
   const [profile, setProfile] = useState({ firstName, middleName, lastName, email, bio: "" });
-  const [notifications, setNotifications] = useState({ email: true, push: true, examReminders: true, results: false });
+  const [notifications, setNotifications] = useState({ email: true, push: true, examReminders: true, results: false, examEmail: false });
+  const [blockAnnounce, setBlockAnnounce] = useState(true);
+  const [originalBlockAnnounce, setOriginalBlockAnnounce] = useState(true);
+  const [defaultExamDraft, setDefaultExamDraft] = useState(true);
+  const [originalDefaultExamDraft, setOriginalDefaultExamDraft] = useState(true);
+  const [defaultPassingThreshold, setDefaultPassingThreshold] = useState(60);
+  const [originalDefaultPassingThreshold, setOriginalDefaultPassingThreshold] = useState(60);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -53,11 +60,41 @@ export default function SettingsPage() {
       push: prof.notify_push ?? true,
       examReminders: prof.notify_exam_reminders ?? true,
       results: prof.notify_results ?? false,
+      examEmail: prof.notify_exam_email ?? false,
     };
     setNotifications(loadedNotifications);
     setOriginalNotifications(loadedNotifications);
+    const ba = prof.block_announce_with_pending ?? true;
+    setBlockAnnounce(ba);
+    setOriginalBlockAnnounce(ba);
+    const ded = prof.default_exam_draft ?? true;
+    setDefaultExamDraft(ded);
+    setOriginalDefaultExamDraft(ded);
+    const dpt = prof.default_passing_threshold ?? 60;
+    setDefaultPassingThreshold(dpt);
+    setOriginalDefaultPassingThreshold(dpt);
     setProfileLoaded(true);
   }
+
+  const isTeachingDirty = blockAnnounce !== originalBlockAnnounce
+    || defaultExamDraft !== originalDefaultExamDraft
+    || defaultPassingThreshold !== originalDefaultPassingThreshold;
+
+  const handleSaveTeaching = async () => {
+    try {
+      await updateProfileMutation.mutateAsync({
+        block_announce_with_pending: blockAnnounce,
+        default_exam_draft: defaultExamDraft,
+        default_passing_threshold: defaultPassingThreshold,
+      });
+      setOriginalBlockAnnounce(blockAnnounce);
+      setOriginalDefaultExamDraft(defaultExamDraft);
+      setOriginalDefaultPassingThreshold(defaultPassingThreshold);
+      toast({ title: "Teaching preferences saved" });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
+  };
 
   const isProfileDirty = JSON.stringify(profile) !== JSON.stringify(originalProfile);
   const isNotificationsDirty = JSON.stringify(notifications) !== JSON.stringify(originalNotifications);
@@ -81,6 +118,7 @@ export default function SettingsPage() {
         notify_push: notifications.push,
         notify_exam_reminders: notifications.examReminders,
         notify_results: notifications.results,
+        notify_exam_email: notifications.examEmail,
       });
       setOriginalNotifications(notifications);
       toast({ title: "Preferences saved", description: "Your notification preferences have been updated." });
@@ -136,6 +174,9 @@ export default function SettingsPage() {
         <TabsList className="bg-secondary/50">
           <TabsTrigger value="profile" className="gap-2"><User className="h-4 w-4" /> Profile</TabsTrigger>
           <TabsTrigger value="notifications" className="gap-2"><Bell className="h-4 w-4" /> Notifications</TabsTrigger>
+          {role === "teacher" && (
+            <TabsTrigger value="teaching" className="gap-2"><GraduationCap className="h-4 w-4" /> Teaching</TabsTrigger>
+          )}
           <TabsTrigger value="appearance" className="gap-2"><Palette className="h-4 w-4" /> Appearance</TabsTrigger>
           <TabsTrigger value="security" className="gap-2"><Shield className="h-4 w-4" /> Security</TabsTrigger>
         </TabsList>
@@ -251,8 +292,14 @@ export default function SettingsPage() {
               {[
                 { key: "email" as const, label: "Email Notifications", desc: "Receive updates via email" },
                 { key: "push" as const, label: "Push Notifications", desc: "Browser push notifications" },
-                { key: "examReminders" as const, label: "Exam Reminders", desc: "Get reminded before upcoming exams" },
-                { key: "results" as const, label: "Result Alerts", desc: "Notify when results are published" },
+                ...(role === "student" ? [
+                  { key: "examReminders" as const, label: "Exam Reminders", desc: "Get reminded before upcoming exams" },
+                  { key: "results" as const, label: "Result Alerts", desc: "Notify when results are published" },
+                  { key: "examEmail" as const, label: "Exam Email Alerts", desc: "Email me 1 hour before and at the start of every exam" },
+                ] : [
+                  { key: "examReminders" as const, label: "Submission Alerts", desc: "Notify when students submit exams" },
+                  { key: "results" as const, label: "Pending Grading", desc: "Notify when written submissions need grading" },
+                ]),
               ].map((item) => (
                 <div key={item.key} className="flex items-center justify-between">
                   <div>
@@ -270,6 +317,65 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {role === "teacher" && (
+          <TabsContent value="teaching">
+            <Card className="border-border/50 bg-card/80 backdrop-blur-md">
+              <CardHeader>
+                <CardTitle className="text-lg">Teaching Preferences</CardTitle>
+                <CardDescription>Defaults applied across your courses and exams.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-foreground">Block announce if ungraded</p>
+                    <p className="text-sm text-muted-foreground">
+                      Prevent announcing grades while submissions are still pending or awaiting manual grading.
+                    </p>
+                  </div>
+                  <Switch checked={blockAnnounce} onCheckedChange={setBlockAnnounce} />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-foreground">Publish new exams by default</p>
+                    <p className="text-sm text-muted-foreground">
+                      When off, new exams start as drafts. When on, they are published immediately.
+                    </p>
+                  </div>
+                  <Switch checked={!defaultExamDraft} onCheckedChange={(v) => setDefaultExamDraft(!v)} />
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-foreground">Default passing threshold</p>
+                      <p className="text-sm text-muted-foreground">
+                        Initial passing grade applied to new courses you create.
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-foreground">{defaultPassingThreshold}%</span>
+                  </div>
+                  <Slider
+                    value={[defaultPassingThreshold]}
+                    onValueChange={(v) => setDefaultPassingThreshold(v[0])}
+                    min={40}
+                    max={100}
+                    step={5}
+                    className="w-full"
+                  />
+                </div>
+
+                <Separator />
+                <Button onClick={handleSaveTeaching} disabled={!isTeachingDirty}>Save Preferences</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         <TabsContent value="appearance">
           <Card className="border-border/50 bg-card/80 backdrop-blur-md">

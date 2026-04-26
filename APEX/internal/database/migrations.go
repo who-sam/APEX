@@ -48,6 +48,8 @@ func RunMigrations(db *gorm.DB) {
 	db.Exec("ALTER TABLE classes ADD COLUMN IF NOT EXISTS grades_announced BOOLEAN NOT NULL DEFAULT false")
 	// --- classes.passing_threshold ---
 	db.Exec("ALTER TABLE classes ADD COLUMN IF NOT EXISTS passing_threshold INTEGER NOT NULL DEFAULT 60")
+	// --- classes.block_announce_with_pending ---
+	db.Exec("ALTER TABLE classes ADD COLUMN IF NOT EXISTS block_announce_with_pending BOOLEAN NOT NULL DEFAULT true")
 
 	// --- problems.exam_id nullable for bank problems ---
 	db.Exec("ALTER TABLE problems ALTER COLUMN exam_id DROP NOT NULL")
@@ -79,6 +81,41 @@ func RunMigrations(db *gorm.DB) {
 	// teacher destructively edits exam content.
 	db.Exec("ALTER TABLE exams ADD COLUMN IF NOT EXISTS reset_at TIMESTAMPTZ")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_exams_reset_at ON exams(reset_at)")
+
+	// --- exams.reminder_sent_at for upcoming-exam reminder dedup ---
+	db.Exec("ALTER TABLE exams ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ")
+
+	// --- exams.email_reminder_1h_sent_at / email_reminder_start_sent_at ---
+	db.Exec("ALTER TABLE exams ADD COLUMN IF NOT EXISTS email_reminder1h_sent_at TIMESTAMPTZ")
+	db.Exec("ALTER TABLE exams ADD COLUMN IF NOT EXISTS email_reminder_start_sent_at TIMESTAMPTZ")
+
+	// --- user_profiles.notify_exam_email ---
+	db.Exec("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS notify_exam_email BOOLEAN NOT NULL DEFAULT false")
+
+	// --- exam_attempts.graded_notified ---
+	db.Exec("ALTER TABLE exam_attempts ADD COLUMN IF NOT EXISTS graded_notified BOOLEAN NOT NULL DEFAULT false")
+
+	// --- test_cases.points ---
+	db.Exec("ALTER TABLE test_cases ADD COLUMN IF NOT EXISTS points INTEGER NOT NULL DEFAULT 0")
+
+	// --- user_profiles.block_announce_with_pending ---
+	db.Exec("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS block_announce_with_pending BOOLEAN NOT NULL DEFAULT true")
+	db.Exec("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS default_exam_draft BOOLEAN NOT NULL DEFAULT true")
+	db.Exec("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS default_passing_threshold INTEGER NOT NULL DEFAULT 60")
+
+	// --- announcements.attachments ---
+	db.Exec("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'")
+	db.Exec("UPDATE announcements SET attachments = '[]' WHERE attachments IS NULL")
+
+	// --- problems.image_url ---
+	db.Exec("ALTER TABLE problems ADD COLUMN IF NOT EXISTS image_url TEXT")
+
+	// --- users.google_id for Google OAuth account linking ---
+	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(64)")
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL AND google_id <> ''")
+
+	// --- user_profiles.avatar_url widen to TEXT for base64 dataURLs ---
+	db.Exec("ALTER TABLE user_profiles ALTER COLUMN avatar_url TYPE TEXT")
 
 	// --- submissions.teacher_feedback ---
 	db.Exec("ALTER TABLE submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT")

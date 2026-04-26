@@ -57,6 +57,23 @@ func JoinClass(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "joined class successfully", "class": class})
 }
 
+func LeaveClass(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	classID := c.Param("id")
+
+	result := database.DB.Where("class_id = ? AND user_id = ?", classID, userID).Delete(&models.ClassMember{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to leave class"})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not a member of this class"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "left class successfully"})
+}
+
 func GetClasses(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
@@ -66,13 +83,19 @@ func GetClasses(c *gin.Context) {
 	type ClassInfo struct {
 		models.Class
 		MemberCount int64 `json:"member_count"`
+		ExamCount   int64 `json:"exam_count"`
 	}
 
 	result := make([]ClassInfo, len(memberships))
 	for i, m := range memberships {
 		var count int64
 		database.DB.Model(&models.ClassMember{}).Where("class_id = ?", m.ClassID).Count(&count)
-		result[i] = ClassInfo{Class: m.Class, MemberCount: count}
+		var examCount int64
+		database.DB.Model(&models.ExamClass{}).
+			Joins("JOIN exams ON exams.id = exam_classes.exam_id").
+			Where("exam_classes.class_id = ? AND exams.is_draft = false", m.ClassID).
+			Count(&examCount)
+		result[i] = ClassInfo{Class: m.Class, MemberCount: count, ExamCount: examCount}
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -110,7 +133,7 @@ func GetClass(c *gin.Context) {
 	exams := []ExamWithStatus{}
 	if len(examIDs) > 0 {
 		var rawExams []models.Exam
-		database.DB.Where("id IN ? AND is_draft = ?", examIDs, false).Order("start_time asc").Find(&rawExams)
+		database.DB.Where("id IN ? AND is_draft = ?", examIDs, false).Preload("Problems").Order("start_time asc").Find(&rawExams)
 		now := time.Now()
 		for _, exam := range rawExams {
 			status := "upcoming"
@@ -127,15 +150,26 @@ func GetClass(c *gin.Context) {
 		}
 	}
 
+	// Load student's submissions for these exams (for grades tab)
+	var submissions []models.Submission
+	if len(examIDs) > 0 {
+		database.DB.Where("user_id = ? AND exam_id IN ?", userID, examIDs).
+			Preload("Problem").
+			Find(&submissions)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"id":           class.ID,
-		"name":         class.Name,
-		"section":      class.Section,
-		"invite_code":  class.InviteCode,
-		"cover_image":  class.CoverImage,
-		"member_count": count,
-		"created_at":   class.CreatedAt,
-		"exams":        exams,
+		"id":                class.ID,
+		"name":              class.Name,
+		"section":           class.Section,
+		"invite_code":       class.InviteCode,
+		"cover_image":       class.CoverImage,
+		"member_count":      count,
+		"grades_announced":  class.GradesAnnounced,
+		"passing_threshold": class.PassingThreshold,
+		"created_at":        class.CreatedAt,
+		"exams":             exams,
+		"submissions":       submissions,
 	})
 }
 
@@ -168,15 +202,17 @@ func GetExams(c *gin.Context) {
 
 	type ExamWithStatus struct {
 		models.Exam
-		Status       string `json:"status"`
-		ProblemCount int64  `json:"problem_count"`
+		Status          string `json:"status"`
+		ProblemCount    int64  `json:"problem_count"`
+		SubmissionCount int64  `json:"submission_count"`
+		HasSubmitted    bool   `json:"has_submitted"`
 	}
 
 	result := make([]ExamWithStatus, len(exams))
 	for i, exam := range exams {
 		status := "upcoming"
-		if exam.StartTime != nil && exam.EndTime != nil {
-			if now.After(*exam.EndTime) {
+		if exam.StartTime != nil {
+			if exam.EndTime != nil && now.After(*exam.EndTime) {
 				status = "completed"
 			} else if now.After(*exam.StartTime) {
 				status = "active"
@@ -184,7 +220,21 @@ func GetExams(c *gin.Context) {
 		}
 		var problemCount int64
 		database.DB.Model(&models.Problem{}).Where("exam_id = ?", exam.ID).Count(&problemCount)
-		result[i] = ExamWithStatus{Exam: exam, Status: status, ProblemCount: problemCount}
+
+		// Check if student already submitted
+		var attemptCount int64
+		database.DB.Model(&models.ExamAttempt{}).
+			Where("exam_id = ? AND user_id = ? AND status = ?", exam.ID, userID, "submitted").
+			Count(&attemptCount)
+		hasSubmitted := attemptCount > 0
+		if hasSubmitted {
+			status = "completed"
+		}
+
+		var subCount int64
+		database.DB.Model(&models.Submission{}).Where("exam_id = ? AND user_id = ?", exam.ID, userID).Count(&subCount)
+
+		result[i] = ExamWithStatus{Exam: exam, Status: status, ProblemCount: problemCount, SubmissionCount: subCount, HasSubmitted: hasSubmitted}
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -223,11 +273,24 @@ func GetExam(c *gin.Context) {
 	}
 
 	var submissions []models.Submission
-	database.DB.Where("user_id = ? AND exam_id = ?", userID, exam.ID).Find(&submissions)
+	database.DB.Where("user_id = ? AND exam_id = ?", userID, exam.ID).
+		Preload("TestResults", func(db *gorm.DB) *gorm.DB {
+			return db.Order("id asc")
+		}).
+		Preload("TestResults.TestCase").
+		Find(&submissions)
+
+	// Check if grades are announced for this exam
+	var announcedCount int64
+	database.DB.Model(&models.Class{}).
+		Joins("JOIN exam_classes ON exam_classes.class_id = classes.id").
+		Where("exam_classes.exam_id = ? AND classes.grades_announced = ?", exam.ID, true).
+		Count(&announcedCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"exam":        exam,
-		"submissions": submissions,
+		"exam":              exam,
+		"submissions":       submissions,
+		"grades_announced":  announcedCount > 0,
 	})
 }
 

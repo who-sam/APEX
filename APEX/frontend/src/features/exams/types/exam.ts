@@ -3,6 +3,7 @@ export type Difficulty = "easy" | "medium" | "hard";
 
 export interface BaseQuestion {
   id: string;
+  serverId?: number;
   type: QuestionType;
   text: string;
   points: number;

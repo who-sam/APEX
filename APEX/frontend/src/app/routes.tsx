@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Index from "@/pages/Index";
 import NotFound from "@/pages/NotFound";
 import AuthPage from "@/features/auth/pages/AuthPage";
@@ -17,6 +17,7 @@ import ExamReview from "@/features/exams/pages/ExamReview";
 import Courses from "@/features/courses/pages/Courses";
 import CourseDetail from "@/features/courses/pages/CourseDetail";
 import QuestionBank from "@/features/exams/pages/QuestionBank";
+import QuestionBankEditor from "@/features/exams/pages/QuestionBankEditor";
 import GradeWritten from "@/features/grading/pages/GradeWritten";
 import Leaderboard from "@/features/results/pages/Leaderboard";
 import Practice from "@/features/social/pages/Practice";
@@ -30,6 +31,18 @@ import { useRole } from "@/contexts/AuthContext";
 function ExamsPage() {
   const { role } = useRole();
   return role === "teacher" ? <TeacherExams /> : <UpcomingExams />;
+}
+
+function TeacherRoute({ children }: { children: React.ReactNode }) {
+  const { role } = useRole();
+  if (role !== "teacher") return <Navigate to="/unauthorized" replace />;
+  return <>{children}</>;
+}
+
+function StudentRoute({ children }: { children: React.ReactNode }) {
+  const { role } = useRole();
+  if (role !== "student") return <Navigate to="/unauthorized" replace />;
+  return <>{children}</>;
 }
 
 export default function AppRoutes() {
@@ -47,12 +60,14 @@ export default function AppRoutes() {
         <Route path="settings" element={<Settings />} />
         <Route path="courses" element={<Courses />} />
         <Route path="courses/:id" element={<CourseDetail />} />
-        <Route path="exam-builder" element={<ExamBuilder />} />
-        <Route path="question-bank" element={<QuestionBank />} />
-        <Route path="grade-written" element={<GradeWritten />} />
-        <Route path="exam/:id" element={<ExamTaking />} />
-        <Route path="exam/:id/review" element={<ExamReview />} />
-        <Route path="exam-preview/:id" element={<ExamPreview />} />
+        <Route path="exam-builder" element={<TeacherRoute><ExamBuilder /></TeacherRoute>} />
+        <Route path="question-bank" element={<TeacherRoute><QuestionBank /></TeacherRoute>} />
+        <Route path="question-bank/new" element={<TeacherRoute><QuestionBankEditor /></TeacherRoute>} />
+        <Route path="question-bank/:id" element={<TeacherRoute><QuestionBankEditor /></TeacherRoute>} />
+        <Route path="grading" element={<TeacherRoute><GradeWritten /></TeacherRoute>} />
+        <Route path="exam/:id" element={<StudentRoute><ExamTaking /></StudentRoute>} />
+        <Route path="exam/:id/review" element={<StudentRoute><ExamReview /></StudentRoute>} />
+        <Route path="exam-preview/:id" element={<TeacherRoute><ExamPreview /></TeacherRoute>} />
         <Route path="leaderboard" element={<Leaderboard />} />
         <Route path="practice" element={<Practice />} />
         <Route path="team" element={<Team />} />

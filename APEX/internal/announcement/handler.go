@@ -4,14 +4,16 @@ import (
 	"apex/internal/database"
 	"apex/internal/models"
 	"apex/internal/notification"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type createRequest struct {
-	Title string `json:"title" binding:"required"`
-	Body  string `json:"body"`
+	Title       string `json:"title" binding:"required"`
+	Body        string `json:"body"`
+	Attachments string `json:"attachments"`
 }
 
 // ListByClass returns announcements for a class. Accessible to teacher (owner) and enrolled students.
@@ -57,11 +59,16 @@ func Create(c *gin.Context) {
 		return
 	}
 
+	attachments := req.Attachments
+	if attachments == "" || attachments == "null" {
+		attachments = "[]"
+	}
 	a := models.Announcement{
-		ClassID:   class.ID,
-		TeacherID: userID,
-		Title:     req.Title,
-		Body:      req.Body,
+		ClassID:     class.ID,
+		TeacherID:   userID,
+		Title:       req.Title,
+		Body:        req.Body,
+		Attachments: attachments,
 	}
 	if err := database.DB.Create(&a).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create announcement"})
@@ -71,7 +78,7 @@ func Create(c *gin.Context) {
 	// Notify each enrolled student.
 	var memberIDs []uint
 	database.DB.Model(&models.ClassMember{}).Where("class_id = ?", class.ID).Pluck("user_id", &memberIDs)
-	link := "/dashboard/courses"
+	link := fmt.Sprintf("/dashboard/courses/%d?tab=announcements", class.ID)
 	for _, uid := range memberIDs {
 		notification.Create(uid, "announcement",
 			class.Name+": "+a.Title,
@@ -81,6 +88,63 @@ func Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, a)
+}
+
+type updateRequest struct {
+	Title       *string `json:"title"`
+	Body        *string `json:"body"`
+	Attachments *string `json:"attachments"`
+}
+
+// Update edits an announcement (teacher owner only).
+func Update(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id := c.Param("id")
+
+	var a models.Announcement
+	if err := database.DB.First(&a, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "announcement not found"})
+		return
+	}
+	if a.TeacherID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+		return
+	}
+
+	var req updateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.Title != nil {
+		if *req.Title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+			return
+		}
+		updates["title"] = *req.Title
+	}
+	if req.Body != nil {
+		updates["body"] = *req.Body
+	}
+	if req.Attachments != nil {
+		v := *req.Attachments
+		if v == "" || v == "null" {
+			v = "[]"
+		}
+		updates["attachments"] = v
+	}
+
+	if len(updates) > 0 {
+		if err := database.DB.Model(&a).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update"})
+			return
+		}
+	}
+
+	database.DB.First(&a, id)
+	c.JSON(http.StatusOK, a)
 }
 
 // Delete removes an announcement (teacher owner only).

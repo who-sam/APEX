@@ -37,12 +37,16 @@ export default function GradeWritten() {
   const [selectedStudentId, setSelectedStudentId] = useState<number>(0);
   const [currentSubIdx, setCurrentSubIdx] = useState(0);
   const [filter, setFilter] = useState<"all" | "pending" | "graded">("pending");
+  const [typeFilter, setTypeFilter] = useState<"all" | "written" | "mcq" | "coding">("all");
   const [localGrades, setLocalGrades] = useState<Record<number, { score: number | null; feedback: string }>>({});
 
-  if (classesLoading || examsLoading) return <PageSkeleton cards={3} />;
-  if (classesError) return <ErrorState message="Failed to load courses" onRetry={refetchClasses} />;
-
-  const courseList = classes || [];
+  const courseList = (classes || []).filter((c: any) =>
+    (allExams || []).some((e: any) =>
+      e.class_id === c.id ||
+      (e.classes || []).some((cl: any) => cl.id === c.id) ||
+      (e.exam_classes || []).some((ec: any) => ec.class_id === c.id)
+    )
+  );
   const examList = allExams || [];
   const examsForCourse = selectedCourseId
     ? examList.filter((e: any) => e.class_id === selectedCourseId || (e.classes || []).some((c: any) => c.id === selectedCourseId) || (e.exam_classes || []).some((ec: any) => ec.class_id === selectedCourseId))
@@ -59,11 +63,12 @@ export default function GradeWritten() {
       studentEmail: sr.email,
       studentUserId: sr.user_id,
     }))
-  ).filter((s: any) => s.status === "pending_review" || s.type === "written" || s.status === "accepted");
+  );
 
-  const pendingSubs = allSubmissions.filter((s: any) => s.status === "pending_review");
-  const gradedSubs = allSubmissions.filter((s: any) => s.status !== "pending_review");
-  const filteredSubs = filter === "all" ? allSubmissions : filter === "pending" ? pendingSubs : gradedSubs;
+  const typedSubs = typeFilter === "all" ? allSubmissions : allSubmissions.filter((s: any) => s.type === typeFilter);
+  const pendingSubs = typedSubs.filter((s: any) => s.status === "pending_review");
+  const gradedSubs = typedSubs.filter((s: any) => s.status !== "pending_review");
+  const filteredSubs = filter === "all" ? typedSubs : filter === "pending" ? pendingSubs : gradedSubs;
 
   const currentSub = filteredSubs.find((s: any) => s.id === selectedStudentId) || filteredSubs[0];
   const localGrade = currentSub ? localGrades[currentSub.id] : undefined;
@@ -135,6 +140,9 @@ export default function GradeWritten() {
     return () => window.removeEventListener("keydown", handler);
   }, [step, currentSub]);
 
+  if (classesLoading || examsLoading) return <PageSkeleton cards={3} />;
+  if (classesError) return <ErrorState message="Failed to load courses" onRetry={refetchClasses} />;
+
   // ---- Step: Course selection ----
   if (step === "course") {
     return (
@@ -142,7 +150,7 @@ export default function GradeWritten() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <FileText className="h-6 w-6 text-primary" />
-            Grade Written Answers
+            Manual Grading
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Select a course to start grading.</p>
         </div>
@@ -215,24 +223,54 @@ export default function GradeWritten() {
 
   const selectedCourse = courseList.find((c: any) => c.id === selectedCourseId);
   const selectedExam = examList.find((e: any) => e.id === selectedExamId);
-  const overallProgress = allSubmissions.length > 0
-    ? (gradedSubs.length / allSubmissions.length) * 100
+  const overallProgress = typedSubs.length > 0
+    ? (gradedSubs.length / typedSubs.length) * 100
     : 0;
 
   if (filteredSubs.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => { setStep("exam"); setSelectedExamId(0); }}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-2xl font-bold text-foreground">Grade Written Answers</h1>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => { setStep("exam"); setSelectedExamId(0); }}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-2xl font-bold text-foreground">Manual Grading</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v as typeof typeFilter); setSelectedStudentId(0); }}>
+              <SelectTrigger className="w-32 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="written">Written</SelectItem>
+                <SelectItem value="mcq">MCQ</SelectItem>
+                <SelectItem value="coding">Coding</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filter} onValueChange={(v) => { setFilter(v as typeof filter); setSelectedStudentId(0); }}>
+              <SelectTrigger className="w-36 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All ({typedSubs.length})</SelectItem>
+                <SelectItem value="pending">Pending ({pendingSubs.length})</SelectItem>
+                <SelectItem value="graded">Graded ({gradedSubs.length})</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <Card className="border-border/50 bg-card/80 backdrop-blur-md">
           <CardContent className="p-12 text-center text-muted-foreground">
             <CheckCircle className="h-12 w-12 mx-auto mb-3 text-green-500 opacity-60" />
-            <p className="font-medium text-foreground">All done!</p>
-            <p className="text-sm mt-1">No {filter === "pending" ? "pending" : ""} submissions to grade.</p>
+            <p className="font-medium text-foreground">
+              {filter === "pending" && gradedSubs.length > 0 ? "All graded!" : "All done!"}
+            </p>
+            <p className="text-sm mt-1">
+              No {filter === "pending" ? "pending" : filter === "graded" ? "graded" : ""} submissions.
+              {filter === "pending" && gradedSubs.length > 0 && " Switch to Graded to re-grade."}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -248,19 +286,30 @@ export default function GradeWritten() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Grade Written Answers</h1>
+            <h1 className="text-xl font-bold text-foreground">Manual Grading</h1>
             <p className="text-xs text-muted-foreground">
               {selectedCourse?.name} &middot; {selectedExam?.title}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v as typeof typeFilter); setSelectedStudentId(0); }}>
+            <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="written">Written</SelectItem>
+              <SelectItem value="mcq">MCQ</SelectItem>
+              <SelectItem value="coding">Coding</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={filter} onValueChange={(v) => { setFilter(v as typeof filter); setSelectedStudentId(0); }}>
             <SelectTrigger className="w-32 h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All ({allSubmissions.length})</SelectItem>
+              <SelectItem value="all">All ({typedSubs.length})</SelectItem>
               <SelectItem value="pending">Pending ({pendingSubs.length})</SelectItem>
               <SelectItem value="graded">Graded ({gradedSubs.length})</SelectItem>
             </SelectContent>
@@ -343,19 +392,35 @@ export default function GradeWritten() {
                   {currentSub.problem?.body && (
                     <p className="text-sm text-muted-foreground mt-2">{currentSub.problem.body}</p>
                   )}
+                  {currentSub.problem?.image_url && (
+                    <img src={currentSub.problem.image_url} alt="Question" className="mt-3 max-h-64 rounded-lg border border-border/50" />
+                  )}
                 </div>
 
                 {/* Student answer */}
-                <div className="rounded-lg border border-border/50 bg-card p-4">
-                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Student's Answer</p>
-                  {currentSub.code ? (
-                    <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground whitespace-pre-wrap">{currentSub.code}</pre>
+                <div className="rounded-lg border border-border/50 bg-card p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Student's Answer</p>
+                    <Badge variant="outline" className="text-[10px]">{currentSub.type || "written"}</Badge>
+                  </div>
+                  {currentSub.type === "mcq" ? (
+                    <McqReview problem={currentSub.problem} selectedRaw={currentSub.selected_options} />
+                  ) : currentSub.type === "coding" ? (
+                    <CodingReview sub={currentSub} />
                   ) : currentSub.text_answer ? (
                     <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{currentSub.text_answer}</p>
+                  ) : currentSub.code ? (
+                    <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground whitespace-pre-wrap">{currentSub.code}</pre>
                   ) : (
                     <p className="text-sm text-muted-foreground italic">No answer provided.</p>
                   )}
                 </div>
+
+                {currentSub.status !== "pending_review" && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                    Overriding previous grade. Saving will update the student's score and aggregate.
+                  </div>
+                )}
 
                 {/* Points grading */}
                 <div className="rounded-lg border border-border/50 bg-card p-4 space-y-4">
@@ -428,6 +493,96 @@ export default function GradeWritten() {
           )}
         </ResizablePanel>
       </ResizablePanelGroup>
+    </div>
+  );
+}
+
+function parseJSON<T>(raw: any, fallback: T): T {
+  if (!raw) return fallback;
+  if (typeof raw !== "string") return raw as T;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
+function McqReview({ problem, selectedRaw }: { problem: any; selectedRaw: any }) {
+  const options = parseJSON<any[]>(problem?.options, []);
+  const selected = parseJSON<any[]>(selectedRaw, []);
+  const selectedSet = new Set((Array.isArray(selected) ? selected : []).map((x: any) => String(x)));
+
+  if (!options.length) {
+    return <p className="text-sm text-muted-foreground italic">No options available.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {options.map((opt: any, i: number) => {
+        const id = String(opt.id ?? i);
+        const text = opt.text ?? opt.label ?? String(opt);
+        const isCorrect = !!opt.is_correct || !!opt.correct;
+        const picked = selectedSet.has(id) || selectedSet.has(String(i));
+        return (
+          <div
+            key={id}
+            className={cn(
+              "flex items-start gap-2 rounded-md border px-3 py-2 text-sm",
+              picked && isCorrect && "border-green-500/50 bg-green-500/10",
+              picked && !isCorrect && "border-red-500/50 bg-red-500/10",
+              !picked && isCorrect && "border-green-500/30 bg-green-500/5",
+              !picked && !isCorrect && "border-border/50 bg-muted/20"
+            )}
+          >
+            <div className={cn(
+              "mt-0.5 h-4 w-4 rounded-full border shrink-0",
+              picked ? "bg-primary border-primary" : "border-muted-foreground/40"
+            )} />
+            <span className="flex-1 text-foreground">{text}</span>
+            {isCorrect && <Badge variant="outline" className="text-[10px] border-green-500/50 text-green-600">correct</Badge>}
+            {picked && <Badge variant="outline" className="text-[10px]">student</Badge>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CodingReview({ sub }: { sub: any }) {
+  const results: any[] = sub.test_results || [];
+  return (
+    <div className="space-y-3">
+      {sub.code ? (
+        <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto font-mono text-foreground whitespace-pre-wrap">{sub.code}</pre>
+      ) : (
+        <p className="text-sm text-muted-foreground italic">No code submitted.</p>
+      )}
+      {results.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Test Cases ({results.filter((r) => r.passed).length}/{results.length} passed)</p>
+          {results.map((r: any, i: number) => (
+            <div
+              key={r.id ?? i}
+              className={cn(
+                "rounded-md border px-3 py-2 text-xs space-y-1",
+                r.passed ? "border-green-500/30 bg-green-500/5" : "border-red-500/30 bg-red-500/5"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-foreground">Test {i + 1}</span>
+                <Badge variant="outline" className={cn("text-[10px]", r.passed ? "text-green-600 border-green-500/50" : "text-red-600 border-red-500/50")}>
+                  {r.passed ? "passed" : r.status || "failed"}
+                </Badge>
+              </div>
+              {r.test_case?.input !== undefined && (
+                <div><span className="text-muted-foreground">input:</span> <code className="font-mono">{r.test_case.input}</code></div>
+              )}
+              {r.test_case?.expected_output !== undefined && (
+                <div><span className="text-muted-foreground">expected:</span> <code className="font-mono">{r.test_case.expected_output}</code></div>
+              )}
+              {r.actual_output !== undefined && (
+                <div><span className="text-muted-foreground">got:</span> <code className="font-mono">{r.actual_output}</code></div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ package teacher
 import (
 	"apex/internal/database"
 	"apex/internal/models"
+	"math"
 	"net/http"
 	"time"
 
@@ -98,11 +99,17 @@ func GetDashboard(c *gin.Context) {
 			className = ecs[0].Class.Name
 		}
 
+		// Count unique students who submitted
 		var subCount int64
-		database.DB.Model(&models.Submission{}).Where("exam_id = ?", exam.ID).Count(&subCount)
+		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ? AND status = ?", exam.ID, "submitted").Count(&subCount)
 
+		// Count total enrolled students across assigned classes
+		var assignedClassIDs []uint
+		database.DB.Model(&models.ExamClass{}).Where("exam_id = ?", exam.ID).Pluck("class_id", &assignedClassIDs)
 		var studentCount int64
-		database.DB.Model(&models.Submission{}).Where("exam_id = ?", exam.ID).Distinct("user_id").Count(&studentCount)
+		if len(assignedClassIDs) > 0 {
+			database.DB.Model(&models.ClassMember{}).Where("class_id IN ?", assignedClassIDs).Distinct("user_id").Count(&studentCount)
+		}
 
 		startStr, endStr := "", ""
 		if exam.StartTime != nil {
@@ -126,10 +133,7 @@ func GetDashboard(c *gin.Context) {
 	var examIDs []uint
 	database.DB.Model(&models.Exam{}).Where("teacher_id = ?", teacherID).Pluck("id", &examIDs)
 	if len(examIDs) > 0 {
-		database.DB.Model(&models.Submission{}).
-			Where("exam_id IN ?", examIDs).
-			Select("COALESCE(AVG(score), 0)").
-			Scan(&resp.AverageScore)
+		resp.AverageScore = computeWeightedAvgAcrossAttempts(examIDs, nil)
 	}
 
 	var recentAttempts []models.ExamAttempt
@@ -171,10 +175,7 @@ func GetDashboard(c *gin.Context) {
 
 		var avgScore float64
 		if len(classExamIDs) > 0 {
-			database.DB.Model(&models.Submission{}).
-				Where("exam_id IN ? AND user_id IN ?", classExamIDs, memberIDs).
-				Select("COALESCE(AVG(score), 0)").
-				Scan(&avgScore)
+			avgScore = computeWeightedAvgAcrossAttempts(classExamIDs, memberIDs)
 		}
 
 		resp.ClassPerformance = append(resp.ClassPerformance, classPerformance{
@@ -237,4 +238,68 @@ func GetPendingGrading(c *gin.Context) {
 		Find(&submissions)
 
 	c.JSON(http.StatusOK, submissions)
+}
+
+// computeWeightedAvgAcrossAttempts computes weighted average score across
+// all submitted attempts for the given exams. If userIDs is non-nil, only
+// those users are included. Returns a rounded percentage (0-100).
+func computeWeightedAvgAcrossAttempts(examIDs []uint, userIDs []uint) float64 {
+	var attempts []models.ExamAttempt
+	q := database.DB.Where("exam_id IN ? AND status = ?", examIDs, "submitted")
+	if len(userIDs) > 0 {
+		q = q.Where("user_id IN ?", userIDs)
+	}
+	q.Find(&attempts)
+	if len(attempts) == 0 {
+		return 0
+	}
+
+	// Preload problems per exam (cache)
+	examProblems := map[uint][]models.Problem{}
+	for _, eid := range examIDs {
+		if _, ok := examProblems[eid]; !ok {
+			var probs []models.Problem
+			database.DB.Where("exam_id = ?", eid).Find(&probs)
+			examProblems[eid] = probs
+		}
+	}
+
+	var totalPct float64
+	var count int
+	for _, att := range attempts {
+		probs := examProblems[att.ExamID]
+		if len(probs) == 0 {
+			continue
+		}
+
+		var subs []models.Submission
+		database.DB.Where("exam_id = ? AND user_id = ?", att.ExamID, att.UserID).Find(&subs)
+
+		subByProblem := map[uint]models.Submission{}
+		for _, s := range subs {
+			subByProblem[s.ProblemID] = s
+		}
+
+		var earnedPts, totalPts float64
+		for _, p := range probs {
+			pts := float64(p.Points)
+			if pts <= 0 {
+				pts = 10
+			}
+			totalPts += pts
+			if s, ok := subByProblem[p.ID]; ok {
+				earnedPts += s.Score / 100.0 * pts
+			}
+		}
+
+		if totalPts > 0 {
+			totalPct += earnedPts / totalPts * 100
+			count++
+		}
+	}
+
+	if count == 0 {
+		return 0
+	}
+	return math.Round(totalPct/float64(count)*100) / 100
 }

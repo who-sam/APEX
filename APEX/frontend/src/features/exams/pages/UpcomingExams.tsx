@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar as CalendarIcon, Clock, BookOpen, ArrowRight, Search, CheckCircle2, XCircle, Filter } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, BookOpen, ArrowRight, Search, CheckCircle2, XCircle, Filter, Lock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,9 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { useStudentExams } from "@/hooks/useExams";
 import { format, isSameDay } from "date-fns";
+import { getExamPhase, type ExamPhase } from "@/features/exams/lib/examStatus";
 
-type ExamStatus = "upcoming" | "completed" | "missed";
+type ExamStatus = ExamPhase;
 type Difficulty = "Easy" | "Medium" | "Hard";
 
 const difficultyColor = (d: string) => {
@@ -24,6 +25,7 @@ const difficultyColor = (d: string) => {
 const statusFilters: { value: ExamStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "upcoming", label: "Upcoming" },
+  { value: "active", label: "Active" },
   { value: "completed", label: "Completed" },
   { value: "missed", label: "Missed" },
 ];
@@ -36,15 +38,7 @@ const difficultyFilters: { value: Difficulty | "all"; label: string }[] = [
 ];
 
 function deriveStatus(exam: any): ExamStatus {
-  if (exam.status === "missed") return "missed";
-  if (exam.status === "completed") return "completed";
-  const now = new Date();
-  if (exam.end_time && new Date(exam.end_time) < now) {
-    // If exam ended and student never submitted, treat as missed
-    if (exam.submission_count === 0 && !exam.score) return "missed";
-    return "completed";
-  }
-  return "upcoming";
+  return getExamPhase(exam);
 }
 
 function getExamDate(exam: any): Date {
@@ -196,10 +190,16 @@ export default function UpcomingExamsPage() {
                             Missed
                           </Badge>
                         )}
-                        {exam.derivedStatus === "upcoming" && (
-                          <Button size="sm" variant="ghost" className="gap-1 text-primary" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/exam/${exam.id}`); }}>
+                        {exam.derivedStatus === "active" && (
+                          <Button size="sm" variant="ghost" className="gap-1 text-primary" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/exam/${exam.id}/take`); }}>
                             Start Exam <ArrowRight className="h-3 w-3" />
                           </Button>
+                        )}
+                        {exam.derivedStatus === "upcoming" && (
+                          <Badge variant="outline" className="bg-muted text-muted-foreground border-border gap-1">
+                            <Lock className="h-3 w-3" />
+                            {exam.start_time ? `Starts ${format(new Date(exam.start_time), "MMM d · h:mm a")}` : "Locked"}
+                          </Badge>
                         )}
                       </div>
                     </div>

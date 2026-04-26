@@ -2,7 +2,9 @@ package notification
 
 import (
 	"apex/internal/database"
+	"apex/internal/email"
 	"apex/internal/models"
+	"fmt"
 )
 
 func Create(userID uint, notifType, title, description, linkTo string) {
@@ -13,5 +15,29 @@ func Create(userID uint, notifType, title, description, linkTo string) {
 		Description: description,
 		LinkTo:      linkTo,
 	}
-	database.DB.Create(&notif)
+	if err := database.DB.Create(&notif).Error; err != nil {
+		return
+	}
+
+	// Async email if user opted in.
+	go func() {
+		var prof models.UserProfile
+		if err := database.DB.Where("user_id = ?", userID).First(&prof).Error; err != nil {
+			return
+		}
+		if !prof.NotifyEmail {
+			return
+		}
+		var user models.User
+		if err := database.DB.First(&user, userID).Error; err != nil {
+			return
+		}
+		if user.Email == "" {
+			return
+		}
+		subject := "[APEX] " + title
+		text := fmt.Sprintf("%s\n\n%s\n", title, description)
+		html := fmt.Sprintf("<p><strong>%s</strong></p><p>%s</p>", title, description)
+		_ = email.Send(user.Email, subject, html, text)
+	}()
 }

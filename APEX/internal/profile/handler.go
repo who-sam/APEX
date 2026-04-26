@@ -41,6 +41,10 @@ type updateProfileRequest struct {
 	NotifyPush          *bool   `json:"notify_push"`
 	NotifyExamReminders *bool   `json:"notify_exam_reminders"`
 	NotifyResults       *bool   `json:"notify_results"`
+	NotifyExamEmail     *bool   `json:"notify_exam_email"`
+	BlockAnnounceWithPending *bool `json:"block_announce_with_pending"`
+	DefaultExamDraft         *bool `json:"default_exam_draft"`
+	DefaultPassingThreshold  *int  `json:"default_passing_threshold"`
 }
 
 func UpdateProfile(c *gin.Context) {
@@ -87,6 +91,18 @@ func UpdateProfile(c *gin.Context) {
 	}
 	if req.NotifyResults != nil {
 		updates["notify_results"] = *req.NotifyResults
+	}
+	if req.NotifyExamEmail != nil {
+		updates["notify_exam_email"] = *req.NotifyExamEmail
+	}
+	if req.BlockAnnounceWithPending != nil {
+		updates["block_announce_with_pending"] = *req.BlockAnnounceWithPending
+	}
+	if req.DefaultExamDraft != nil {
+		updates["default_exam_draft"] = *req.DefaultExamDraft
+	}
+	if req.DefaultPassingThreshold != nil {
+		updates["default_passing_threshold"] = *req.DefaultPassingThreshold
 	}
 
 	if len(updates) > 0 {

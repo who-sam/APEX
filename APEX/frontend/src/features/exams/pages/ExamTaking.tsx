@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import { useStudentExam } from "@/hooks/useExams";
-import { submitExamAttempt } from "@/lib/api";
+import { submitExamAttempt, runSolution } from "@/lib/api";
 import { useExecuteCode } from "@/hooks/useExecuteCode";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -56,6 +56,7 @@ interface MappedQuestion {
   text: string;
   points: number;
   difficulty: string;
+  imageUrl?: string;
   // MCQ
   options?: { id: string; text: string }[];
   multipleCorrect?: boolean;
@@ -81,6 +82,7 @@ function mapProblem(p: any): MappedQuestion {
     text: p.title || p.text || "",
     points: p.points || 10,
     difficulty: p.difficulty || "medium",
+    imageUrl: p.image_url || "",
   };
 
   if (base.type === "mcq") {
@@ -192,6 +194,8 @@ export default function ExamTaking() {
   const [codeInput, setCodeInput] = useState<Record<string, string>>({});
   const [codeOutput, setCodeOutput] = useState<Record<string, string>>({});
   const [runningQuestion, setRunningQuestion] = useState<string | null>(null);
+  const [sampleResults, setSampleResults] = useState<Record<string, any[]>>({});
+  const [runningSamples, setRunningSamples] = useState<string | null>(null);
 
   // Map backend exam data to questions
   const exam = examData?.exam;
@@ -425,6 +429,22 @@ export default function ExamTaking() {
       setSubmitted(false);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleRunSamples = async (qId: string) => {
+    const idx = questions.findIndex((q) => q.id === qId);
+    const a = answers[idx];
+    const q = questions[idx];
+    if (!a?.code?.trim() || !q) return;
+    setRunningSamples(qId);
+    try {
+      const res: any = await runSolution({ problem_id: Number(q.id), language: a.language || "python3", code: a.code });
+      setSampleResults((prev) => ({ ...prev, [qId]: res.results || [] }));
+    } catch (err: any) {
+      toast({ title: "Run failed", description: err.message || "Could not run samples", variant: "destructive" });
+    } finally {
+      setRunningSamples(null);
     }
   };
 
@@ -759,6 +779,9 @@ export default function ExamTaking() {
               <h3 className="text-lg font-semibold text-foreground">
                 {q.text}
               </h3>
+              {q.imageUrl && (
+                <img src={q.imageUrl} alt="Question" className="max-h-80 rounded-lg border border-border/50" />
+              )}
 
               {/* ── MCQ ── */}
               {q.type === "mcq" && q.options && (
@@ -933,6 +956,53 @@ export default function ExamTaking() {
                       }}
                     />
                   </div>
+
+                  {/* Sample Test Cases */}
+                  {q.testCases && q.testCases.length > 0 && (
+                    <div className="rounded-xl border border-border overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted/30 border-b border-border">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Sample Test Cases ({q.testCases.length})
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 rounded-full h-7 text-xs"
+                          onClick={() => handleRunSamples(q.id)}
+                          disabled={runningSamples === q.id}
+                        >
+                          {runningSamples === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                          Run Samples
+                        </Button>
+                      </div>
+                      <div className="p-3 space-y-2 max-h-[220px] overflow-auto">
+                        {q.testCases.map((tc, i) => {
+                          const r = (sampleResults[q.id] || [])[i];
+                          const passed = r?.passed;
+                          const status = r ? (passed ? "Passed" : "Failed") : "Not run";
+                          return (
+                            <div
+                              key={tc.id}
+                              className={cn(
+                                "rounded-md border px-3 py-2 text-xs space-y-1",
+                                r && passed && "border-green-500/30 bg-green-500/5",
+                                r && !passed && "border-red-500/30 bg-red-500/5",
+                                !r && "border-border/50 bg-muted/20"
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-foreground">Test {i + 1}</span>
+                                <span className={cn("text-[10px] uppercase tracking-wider", passed && "text-green-600", r && !passed && "text-red-600")}>{status}</span>
+                              </div>
+                              <div><span className="text-muted-foreground">input:</span> <code className="font-mono">{tc.input}</code></div>
+                              <div><span className="text-muted-foreground">expected:</span> <code className="font-mono">{tc.expectedOutput}</code></div>
+                              {r && <div><span className="text-muted-foreground">got:</span> <code className="font-mono">{r.actual_output ?? ""}</code></div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Custom Input */}
                   <div className="rounded-xl border border-border overflow-hidden">

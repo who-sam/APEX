@@ -45,6 +45,50 @@
 
 ## All phases complete.
 
+---
+
+## Phase F — Destructive exam edits reset attempts (Option B)
+
+Problem: Teacher replace-all save / testcase edit / MCQ answer change cascades
+submission/testcase deletes but orphans ExamAttempt rows. Student sees exam
+as "completed" with no submissions and cannot re-enter. localStorage session
+also stale.
+
+### Backend
+- [x] models.Exam: add ResetAt *time.Time
+- [x] migrations.go: ALTER TABLE exams ADD COLUMN reset_at TIMESTAMPTZ
+- [x] exam/reset.go: ResetExamAttempts(tx, examID)
+      - delete TestResults (via submission ids), Submissions, ExamAttempts for exam
+      - set exams.reset_at = now
+      - notify each enrolled student
+- [x] wire reset into:
+      - problem.DeleteProblem
+      - problem.UpdateProblem (when correct_option_ids changed)
+      - testcase.AddTestCase / UpdateTestCase (if expected_output changed) / DeleteTestCase
+
+### Frontend
+- [x] ExamBuilder: confirm dialog if attempt_count > 0 on edit
+- [x] ExamTaking: wipe localStorage session if session.startedAt < exam.reset_at
+- [x] exam.ts types: reset_at?: string
+
+### Commits
+1. backend model + migration
+2. backend ResetExamAttempts helper + handler wiring
+3. frontend ExamBuilder confirm
+4. frontend ExamTaking session invalidation
+
+### Verify
+- `go build ./...` clean
+- `./node_modules/.bin/tsc --noEmit` clean
+- Manual: edit testcase on active exam with attempts → notifications + student re-entry works
+
+## Teacher feedback + score override (2026-04-24)
+- Migration: `submissions.teacher_feedback TEXT` (idempotent, pre-AutoMigrate).
+- Model: `Submission.TeacherFeedback` field.
+- Handler `PUT /submissions/:id/grade`: accepts optional `teacher_feedback` (pointer; nil skips write). Existing `judge0.FinalizeAttempt` call recomputes attempt score on override.
+- Frontend: `gradeSubmission` payload carries `teacher_feedback`; GradeWritten seeds local draft from `currentSub.teacher_feedback` so overrides retain prior value; Submit button no longer gated on `pending_review`.
+- ExamReview: feedback callout renders only when `gradesAnnounced && sub.teacher_feedback`.
+
 ## Verification checklist
 - `go build ./...` passes
 - `npx tsc --noEmit -p tsconfig.app.json` passes
