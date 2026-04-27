@@ -123,6 +123,13 @@ export function submitExamAttempt(examId: number, answers: any[]) {
   });
 }
 
+export function autosaveExamAttempt(examId: number, payload: unknown) {
+  return apiFetch<{ saved_at: string }>(`/student/exams/${examId}/autosave`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getMyAttempts() {
   return apiFetch<any[]>("/attempts/mine");
 }

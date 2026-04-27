@@ -5,7 +5,9 @@ import (
 	"apex/internal/judge0"
 	"apex/internal/models"
 	"apex/internal/notification"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"time"
@@ -615,8 +617,10 @@ func SubmitAttempt(c *gin.Context) {
 
 	now := time.Now()
 	database.DB.Model(&attempt).Updates(map[string]any{
-		"status":       "submitted",
-		"submitted_at": now,
+		"status":         "submitted",
+		"submitted_at":   now,
+		"draft_answers":  gorm.Expr("NULL"),
+		"draft_saved_at": gorm.Expr("NULL"),
 	})
 
 	notification.Create(userID, "submission",
@@ -629,6 +633,48 @@ func SubmitAttempt(c *gin.Context) {
 		"attempt_id":     attempt.ID,
 		"submission_ids": createdIDs,
 	})
+}
+
+// AutosaveAttempt persists in-progress answers as a JSON blob on the
+// student's active ExamAttempt so they can resume on a different device
+// or after a browser crash. The payload is opaque to the server — the
+// client serialises whatever shape its UI needs and re-hydrates it on
+// next start. Rejected once the attempt has been submitted.
+func AutosaveAttempt(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	examID := c.Param("id")
+
+	var attempt models.ExamAttempt
+	if err := database.DB.Where("user_id = ? AND exam_id = ?", userID, examID).First(&attempt).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no active attempt for this exam"})
+		return
+	}
+	if attempt.Status == "submitted" {
+		c.JSON(http.StatusConflict, gin.H{"error": "attempt already submitted"})
+		return
+	}
+
+	// Read raw body so any client-shape JSON round-trips unchanged.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(body) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if !json.Valid(body) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be valid JSON"})
+		return
+	}
+
+	now := time.Now()
+	if err := database.DB.Model(&attempt).Updates(map[string]any{
+		"draft_answers":  string(body),
+		"draft_saved_at": now,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to autosave"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"saved_at": now})
 }
 
 // GetMyAttempts returns all exam attempts for the current user, with

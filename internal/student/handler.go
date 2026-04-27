@@ -287,10 +287,19 @@ func GetExam(c *gin.Context) {
 		Where("exam_classes.exam_id = ? AND classes.grades_announced = ?", exam.ID, true).
 		Count(&announcedCount)
 
+	// Surface the in-progress attempt (if any) so ExamTaking can hydrate
+	// from the server-side autosave instead of trusting localStorage alone.
+	var attempt *models.ExamAttempt
+	var found models.ExamAttempt
+	if err := database.DB.Where("user_id = ? AND exam_id = ?", userID, exam.ID).First(&found).Error; err == nil {
+		attempt = &found
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"exam":              exam,
 		"submissions":       submissions,
 		"grades_announced":  announcedCount > 0,
+		"attempt":           attempt,
 	})
 }
 

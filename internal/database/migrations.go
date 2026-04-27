@@ -127,6 +127,12 @@ func RunMigrations(db *gorm.DB) {
 	if tableExists(db, "exam_attempts") {
 		// --- exam_attempts.graded_notified ---
 		db.Exec("ALTER TABLE exam_attempts ADD COLUMN IF NOT EXISTS graded_notified BOOLEAN NOT NULL DEFAULT false")
+
+		// --- exam_attempts.draft_answers / draft_saved_at ---
+		// Server-side autosave for in-progress exams so students survive a
+		// browser crash or device switch. Cleared on SubmitAttempt.
+		db.Exec("ALTER TABLE exam_attempts ADD COLUMN IF NOT EXISTS draft_answers JSONB")
+		db.Exec("ALTER TABLE exam_attempts ADD COLUMN IF NOT EXISTS draft_saved_at TIMESTAMPTZ")
 	}
 
 	if tableExists(db, "test_cases") {
