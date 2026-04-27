@@ -4,7 +4,7 @@ import * as api from "@/lib/api";
 export function useGradeSubmission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { score: number; status: string } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { score: number; status: string; teacher_feedback?: string } }) =>
       api.gradeSubmission(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["exam-results"] });
