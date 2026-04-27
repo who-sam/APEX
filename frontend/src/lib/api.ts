@@ -218,18 +218,9 @@ export function deleteTestCase(id: number) {
 }
 
 // ── Submissions ───────────────────────────────────────
-export function submitSolution(data: {
-  problem_id: number;
-  exam_id: number;
-  type?: string;
-  language?: string;
-  code?: string;
-  selected_options?: string;
-  text_answer?: string;
-}) {
-  return apiFetch<any>("/submissions", { method: "POST", body: JSON.stringify(data) });
-}
-
+// Per-question submissions are not exposed; submission rows are created
+// server-side via POST /student/exams/:id/submit (and graded immediately).
+// Sample-test runs and the playground use the helpers below.
 export function runSolution(data: { problem_id: number; language: string; code: string }) {
   return apiFetch<any>("/submissions/run", { method: "POST", body: JSON.stringify(data) });
 }
