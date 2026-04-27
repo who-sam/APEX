@@ -356,6 +356,18 @@ func AssignExam(c *gin.Context) {
 		return
 	}
 
+	// Verify every class_id is owned by the calling teacher.
+	if len(req.ClassIDs) > 0 {
+		var ownedCount int64
+		database.DB.Model(&models.Class{}).
+			Where("id IN ? AND teacher_id = ?", req.ClassIDs, teacherID).
+			Count(&ownedCount)
+		if int(ownedCount) != len(req.ClassIDs) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "one or more classes do not belong to you"})
+			return
+		}
+	}
+
 	database.DB.Where("exam_id = ?", exam.ID).Delete(&models.ExamClass{})
 
 	for _, classID := range req.ClassIDs {
