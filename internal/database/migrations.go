@@ -155,6 +155,12 @@ func RunMigrations(db *gorm.DB) {
 	if tableExists(db, "submissions") {
 		// --- submissions.teacher_feedback ---
 		db.Exec("ALTER TABLE submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT")
+
+		// --- submissions.selected_options sentinel cleanup ---
+		// Older rows stored "null" (literal JSON null) for blank MCQ
+		// submissions; the rest of the codebase treats empty arrays as
+		// "no options". Normalise to '[]' to match.
+		db.Exec("UPDATE submissions SET selected_options = '[]' WHERE selected_options IS NULL OR selected_options::text = 'null'")
 	}
 
 	if tableExists(db, "exam_attempts") && tableExists(db, "problems") && tableExists(db, "submissions") {

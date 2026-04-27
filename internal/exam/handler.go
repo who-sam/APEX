@@ -591,8 +591,8 @@ func SubmitAttempt(c *gin.Context) {
 			}
 		}
 		selected := a.SelectedOptions
-		if selected == "" {
-			selected = "null"
+		if selected == "" || selected == "null" {
+			selected = "[]"
 		}
 
 		sub := models.Submission{
