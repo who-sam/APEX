@@ -147,6 +147,7 @@ type gradeRequest struct {
 }
 
 func GradeSubmission(c *gin.Context) {
+	teacherID := c.GetUint("user_id")
 	submissionID := c.Param("id")
 
 	var req gradeRequest
@@ -158,6 +159,17 @@ func GradeSubmission(c *gin.Context) {
 	var sub models.Submission
 	if err := database.DB.First(&sub, submissionID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "submission not found"})
+		return
+	}
+
+	// Verify the teacher owns the exam this submission belongs to.
+	var exam models.Exam
+	if err := database.DB.Select("id", "teacher_id").First(&exam, sub.ExamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+		return
+	}
+	if exam.TeacherID != teacherID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to grade this submission"})
 		return
 	}
 
