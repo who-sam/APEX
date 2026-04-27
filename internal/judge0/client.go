@@ -12,6 +12,14 @@ import (
 
 var BaseURL = "https://ce.judge0.com"
 
+// Init wires runtime config (currently the Judge0 base URL) so callers can
+// point grading and the playground at a self-hosted Judge0 instance.
+func Init(baseURL string) {
+	if baseURL != "" {
+		BaseURL = baseURL
+	}
+}
+
 var LanguageMap = map[string]int{
 	"python":     100,
 	"python3":    100,
