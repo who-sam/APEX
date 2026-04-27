@@ -106,17 +106,15 @@ func GetExams(c *gin.Context) {
 		var problemCount int64
 		database.DB.Model(&models.Problem{}).Where("exam_id = ?", e.ID).Count(&problemCount)
 
+		// Counts come from ExamAttempt — the canonical record of who took
+		// the exam. The legacy "fall back to distinct user_id from
+		// submissions" path silently masked broken state (orphan
+		// submissions, missed attempt creates) so we drop it.
 		var submissionCount int64
 		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ? AND status = ?", e.ID, "submitted").Count(&submissionCount)
-		if submissionCount == 0 {
-			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&submissionCount)
-		}
 
 		var studentCount int64
 		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
-		if studentCount == 0 {
-			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
-		}
 
 		var classID *uint
 		if len(e.ExamClasses) > 0 {
