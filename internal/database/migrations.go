@@ -121,19 +121,30 @@ func RunMigrations(db *gorm.DB) {
 	db.Exec("ALTER TABLE submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT")
 
 	// --- exam_attempts.score backfill ---
-	// Old attempts were aggregated including pending_review submissions
-	// (score=0 placeholder), pulling the total below 100% when every
-	// auto-graded submission passed. Re-aggregate excluding those rows.
+	// Old attempts were aggregated using only existing Submission rows,
+	// so skipped questions silently dropped out of the denominator and
+	// a student who answered only easy questions could appear at 100%.
+	// Re-aggregate over the exam's full problem list with skipped =
+	// 0/total. Pending-review submissions still drop out of both
+	// numerator and denominator until a teacher grades them.
 	db.Exec(`
 		UPDATE exam_attempts ea SET score = COALESCE((
-			SELECT CASE WHEN SUM(COALESCE(NULLIF(p.points, 0), 10)) = 0 THEN 0
-				ELSE SUM(s.score / 100.0 * COALESCE(NULLIF(p.points, 0), 10))
-					/ SUM(COALESCE(NULLIF(p.points, 0), 10)) * 100.0 END
-			FROM submissions s
-			JOIN problems p ON p.id = s.problem_id
-			WHERE s.exam_attempt_id = ea.id
-			  AND s.status <> 'pending_review'
-			  AND s.status NOT IN ('pending','running')
+			SELECT CASE WHEN SUM(pts) = 0 THEN 0
+				ELSE SUM(earned) / SUM(pts) * 100.0 END
+			FROM (
+				SELECT
+					COALESCE(NULLIF(p.points, 0), 10) AS pts,
+					CASE WHEN s.id IS NULL THEN 0
+						ELSE s.score / 100.0 * COALESCE(NULLIF(p.points, 0), 10) END AS earned,
+					s.status AS status
+				FROM problems p
+				LEFT JOIN submissions s
+					ON s.problem_id = p.id
+					AND s.exam_attempt_id = ea.id
+				WHERE p.exam_id = ea.exam_id
+			) q
+			WHERE q.status IS DISTINCT FROM 'pending_review'
+			  AND (q.status IS NULL OR q.status NOT IN ('pending','running'))
 		), 0)
 		WHERE ea.status = 'submitted'`)
 }
