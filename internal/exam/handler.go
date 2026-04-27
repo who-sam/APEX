@@ -64,10 +64,9 @@ func CreateExam(c *gin.Context) {
 			exam.StartTime = &t
 		}
 	}
-	if exam.StartTime == nil {
-		now := time.Now()
-		exam.StartTime = &now
-	}
+	// Note: start_time is intentionally left nil when the teacher hasn't
+	// set one. Drafts can stay schedule-less; publishing without a
+	// schedule is rejected by UpdateExam below.
 	if req.EndTime != "" {
 		if t, err := parseTime(req.EndTime); err == nil {
 			exam.EndTime = &t
@@ -216,13 +215,23 @@ func UpdateExam(c *gin.Context) {
 			updates["start_time"] = t
 		}
 	}
-	if _, ok := updates["start_time"]; !ok && exam.StartTime == nil {
-		updates["start_time"] = time.Now()
-	}
 	if req.EndTime != "" {
 		if t, err := parseTime(req.EndTime); err == nil {
 			updates["end_time"] = t
 		}
+	}
+
+	// Refuse to publish (is_draft -> false) without a start_time set.
+	// This used to silently set start_time = now, which surprised
+	// teachers by opening the exam the moment they hit Publish.
+	publishing := req.IsDraft != nil && !*req.IsDraft
+	willHaveStart := exam.StartTime != nil
+	if t, ok := updates["start_time"].(time.Time); ok {
+		willHaveStart = !t.IsZero()
+	}
+	if publishing && !willHaveStart {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "set a start time before publishing"})
+		return
 	}
 
 	database.DB.Model(&exam).Updates(updates)
