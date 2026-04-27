@@ -13,6 +13,11 @@ type ExamAttempt struct {
 	Score       float64    `gorm:"not null;default:0" json:"score"`
 	Status      string     `gorm:"size:30;not null;default:in_progress" json:"status"`
 	GradedNotified bool    `gorm:"not null;default:false" json:"graded_notified"`
+	// DraftAnswers holds an in-progress JSON payload from the autosave
+	// endpoint so a student can resume on a fresh device or after a crash.
+	// Cleared once the attempt is submitted.
+	DraftAnswers   string  `gorm:"type:jsonb" json:"draft_answers,omitempty"`
+	DraftSavedAt   *time.Time `json:"draft_saved_at,omitempty"`
 
 	Submissions []Submission `gorm:"foreignKey:ExamAttemptID" json:"submissions,omitempty"`
 }

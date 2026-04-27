@@ -5,7 +5,9 @@ import (
 	"apex/internal/judge0"
 	"apex/internal/models"
 	"apex/internal/notification"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"time"
@@ -62,10 +64,9 @@ func CreateExam(c *gin.Context) {
 			exam.StartTime = &t
 		}
 	}
-	if exam.StartTime == nil {
-		now := time.Now()
-		exam.StartTime = &now
-	}
+	// Note: start_time is intentionally left nil when the teacher hasn't
+	// set one. Drafts can stay schedule-less; publishing without a
+	// schedule is rejected by UpdateExam below.
 	if req.EndTime != "" {
 		if t, err := parseTime(req.EndTime); err == nil {
 			exam.EndTime = &t
@@ -105,17 +106,15 @@ func GetExams(c *gin.Context) {
 		var problemCount int64
 		database.DB.Model(&models.Problem{}).Where("exam_id = ?", e.ID).Count(&problemCount)
 
+		// Counts come from ExamAttempt — the canonical record of who took
+		// the exam. The legacy "fall back to distinct user_id from
+		// submissions" path silently masked broken state (orphan
+		// submissions, missed attempt creates) so we drop it.
 		var submissionCount int64
 		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ? AND status = ?", e.ID, "submitted").Count(&submissionCount)
-		if submissionCount == 0 {
-			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&submissionCount)
-		}
 
 		var studentCount int64
 		database.DB.Model(&models.ExamAttempt{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
-		if studentCount == 0 {
-			database.DB.Model(&models.Submission{}).Where("exam_id = ?", e.ID).Distinct("user_id").Count(&studentCount)
-		}
 
 		var classID *uint
 		if len(e.ExamClasses) > 0 {
@@ -214,13 +213,23 @@ func UpdateExam(c *gin.Context) {
 			updates["start_time"] = t
 		}
 	}
-	if _, ok := updates["start_time"]; !ok && exam.StartTime == nil {
-		updates["start_time"] = time.Now()
-	}
 	if req.EndTime != "" {
 		if t, err := parseTime(req.EndTime); err == nil {
 			updates["end_time"] = t
 		}
+	}
+
+	// Refuse to publish (is_draft -> false) without a start_time set.
+	// This used to silently set start_time = now, which surprised
+	// teachers by opening the exam the moment they hit Publish.
+	publishing := req.IsDraft != nil && !*req.IsDraft
+	willHaveStart := exam.StartTime != nil
+	if t, ok := updates["start_time"].(time.Time); ok {
+		willHaveStart = !t.IsZero()
+	}
+	if publishing && !willHaveStart {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "set a start time before publishing"})
+		return
 	}
 
 	database.DB.Model(&exam).Updates(updates)
@@ -354,6 +363,18 @@ func AssignExam(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "class_ids is required"})
 		return
+	}
+
+	// Verify every class_id is owned by the calling teacher.
+	if len(req.ClassIDs) > 0 {
+		var ownedCount int64
+		database.DB.Model(&models.Class{}).
+			Where("id IN ? AND teacher_id = ?", req.ClassIDs, teacherID).
+			Count(&ownedCount)
+		if int(ownedCount) != len(req.ClassIDs) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "one or more classes do not belong to you"})
+			return
+		}
 	}
 
 	database.DB.Where("exam_id = ?", exam.ID).Delete(&models.ExamClass{})
@@ -570,8 +591,8 @@ func SubmitAttempt(c *gin.Context) {
 			}
 		}
 		selected := a.SelectedOptions
-		if selected == "" {
-			selected = "null"
+		if selected == "" || selected == "null" {
+			selected = "[]"
 		}
 
 		sub := models.Submission{
@@ -603,8 +624,10 @@ func SubmitAttempt(c *gin.Context) {
 
 	now := time.Now()
 	database.DB.Model(&attempt).Updates(map[string]any{
-		"status":       "submitted",
-		"submitted_at": now,
+		"status":         "submitted",
+		"submitted_at":   now,
+		"draft_answers":  gorm.Expr("NULL"),
+		"draft_saved_at": gorm.Expr("NULL"),
 	})
 
 	notification.Create(userID, "submission",
@@ -617,6 +640,48 @@ func SubmitAttempt(c *gin.Context) {
 		"attempt_id":     attempt.ID,
 		"submission_ids": createdIDs,
 	})
+}
+
+// AutosaveAttempt persists in-progress answers as a JSON blob on the
+// student's active ExamAttempt so they can resume on a different device
+// or after a browser crash. The payload is opaque to the server — the
+// client serialises whatever shape its UI needs and re-hydrates it on
+// next start. Rejected once the attempt has been submitted.
+func AutosaveAttempt(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	examID := c.Param("id")
+
+	var attempt models.ExamAttempt
+	if err := database.DB.Where("user_id = ? AND exam_id = ?", userID, examID).First(&attempt).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no active attempt for this exam"})
+		return
+	}
+	if attempt.Status == "submitted" {
+		c.JSON(http.StatusConflict, gin.H{"error": "attempt already submitted"})
+		return
+	}
+
+	// Read raw body so any client-shape JSON round-trips unchanged.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(body) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if !json.Valid(body) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be valid JSON"})
+		return
+	}
+
+	now := time.Now()
+	if err := database.DB.Model(&attempt).Updates(map[string]any{
+		"draft_answers":  string(body),
+		"draft_saved_at": now,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to autosave"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"saved_at": now})
 }
 
 // GetMyAttempts returns all exam attempts for the current user, with

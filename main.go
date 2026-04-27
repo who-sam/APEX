@@ -10,6 +10,7 @@ import (
 	"apex/internal/exam"
 	"apex/internal/execute"
 	"apex/internal/folder"
+	"apex/internal/judge0"
 	"apex/internal/leaderboard"
 	"apex/internal/message"
 	"apex/internal/middleware"
@@ -31,6 +32,7 @@ func main() {
 	database.Connect(cfg)
 	auth.Init(cfg)
 	email.Init(cfg)
+	judge0.Init(cfg.Judge0URL)
 	reminder.Start()
 
 	r := gin.Default()

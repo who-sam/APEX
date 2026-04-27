@@ -254,27 +254,44 @@ func maybeFinalizeAttempt(attemptID *uint) {
 		return
 	}
 
-	var subs []models.Submission
-	database.DB.Where("exam_attempt_id = ?", *attemptID).Preload("Problem").Find(&subs)
-	if len(subs) == 0 {
+	var attempt models.ExamAttempt
+	if err := database.DB.First(&attempt, *attemptID).Error; err != nil {
 		return
 	}
 
-	// Pending-review submissions (written answers awaiting manual grading)
-	// must not pull the aggregate down — they have score=0 as a placeholder.
-	// Exclude them from the denominator until a teacher grades them.
+	var problems []models.Problem
+	database.DB.Where("exam_id = ?", attempt.ExamID).Find(&problems)
+	if len(problems) == 0 {
+		return
+	}
+
+	var subs []models.Submission
+	database.DB.Where("exam_attempt_id = ?", *attemptID).Find(&subs)
+	subByProblem := make(map[uint]models.Submission, len(subs))
+	for _, s := range subs {
+		subByProblem[s.ProblemID] = s
+	}
+
+	// Iterate the exam's problem list so skipped questions (no submission)
+	// stay in the denominator at score=0. Pending-review submissions
+	// (written answers awaiting manual grading) are still excluded from
+	// both numerator and denominator until a teacher grades them, so they
+	// don't pull the aggregate down before grading lands.
 	var earnedPoints float64
 	var totalPoints float64
-	for _, s := range subs {
-		if s.Status == "pending_review" {
+	for _, p := range problems {
+		s, hasSub := subByProblem[p.ID]
+		if hasSub && s.Status == "pending_review" {
 			continue
 		}
-		pts := float64(s.Problem.Points)
+		pts := float64(p.Points)
 		if pts <= 0 {
 			pts = 10
 		}
 		totalPoints += pts
-		earnedPoints += s.Score / 100.0 * pts
+		if hasSub {
+			earnedPoints += s.Score / 100.0 * pts
+		}
 	}
 	pct := 0.0
 	if totalPoints > 0 {
@@ -296,7 +313,6 @@ func maybeFinalizeAttempt(attemptID *uint) {
 		return
 	}
 
-	var attempt models.ExamAttempt
 	if err := database.DB.Preload("Exam").First(&attempt, *attemptID).Error; err != nil {
 		return
 	}

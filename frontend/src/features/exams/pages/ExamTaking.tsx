@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import { useStudentExam } from "@/hooks/useExams";
-import { submitExamAttempt, runSolution } from "@/lib/api";
+import { submitExamAttempt, runSolution, autosaveExamAttempt } from "@/lib/api";
 import { useExecuteCode } from "@/hooks/useExecuteCode";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -210,64 +210,91 @@ export default function ExamTaking() {
     questions.length > 0 &&
     questions.every((q) => submittedProblemIds.has(Number(q.id)));
 
-  // Initialize answers + restore session when questions load
+  // Initialize answers + restore session when questions load. Prefer the
+  // server's autosaved draft over localStorage when it's newer, so a
+  // student can resume on a different device or after losing local state.
   useEffect(() => {
     if (questions.length === 0 || answers.length > 0 || sessionRestored) return;
 
     const durationSec = (exam?.duration_minutes || 60) * 60;
     let initialAnswers = initAnswers(questions);
     let initialTimeLeft = durationSec;
-    let restored = false;
 
+    // Read local + server snapshots, then pick the newer one.
+    let localSnap: { startedAt: string; answers: any[]; currentIdx?: number; visitedQuestions?: number[] } | null = null;
     try {
       const raw = localStorage.getItem(sessionKey);
-      if (raw) {
-        const sess = JSON.parse(raw);
-        const startedAtMs = new Date(sess.startedAt).getTime();
-        const resetAtMs = exam?.reset_at ? new Date(exam.reset_at).getTime() : 0;
-        if (resetAtMs && startedAtMs < resetAtMs) {
-          // Teacher destructively edited the exam after this session started.
-          // Discard stale cache and force a fresh attempt.
-          localStorage.removeItem(sessionKey);
-          setStarted(false);
-          setAnswers(initialAnswers);
-          setTimeLeft(durationSec);
-          setSessionRestored(true);
-          return;
-        }
-        const elapsed = Math.floor((Date.now() - startedAtMs) / 1000);
-        const remaining = durationSec - elapsed;
-
-        if (remaining > 0 && Array.isArray(sess.answers)) {
-          // Merge saved answers keyed by questionId
-          const savedById: Record<string, any> = {};
-          sess.answers.forEach((a: any) => {
-            if (a && a.questionId) savedById[a.questionId] = a;
-          });
-          initialAnswers = initialAnswers.map((a) => ({
-            ...a,
-            ...(savedById[a.questionId] || {}),
-          }));
-          initialTimeLeft = remaining;
-          setStarted(true);
-          setCurrentIdx(typeof sess.currentIdx === "number" ? sess.currentIdx : 0);
-          setVisitedQuestions(new Set(sess.visitedQuestions || []));
-          restored = true;
-        } else {
-          localStorage.removeItem(sessionKey);
-        }
-      }
+      if (raw) localSnap = JSON.parse(raw);
     } catch {
       localStorage.removeItem(sessionKey);
+    }
+
+    const serverAttempt = examData?.attempt;
+    let serverSnap: { startedAt: string; answers: any[]; currentIdx?: number; visitedQuestions?: number[] } | null = null;
+    if (serverAttempt?.draft_answers) {
+      try {
+        const parsed = typeof serverAttempt.draft_answers === "string"
+          ? JSON.parse(serverAttempt.draft_answers)
+          : serverAttempt.draft_answers;
+        const startedAt = serverAttempt.started_at || parsed?.startedAt || new Date().toISOString();
+        if (Array.isArray(parsed?.answers)) {
+          serverSnap = {
+            startedAt,
+            answers: parsed.answers,
+            currentIdx: parsed.currentIdx,
+            visitedQuestions: parsed.visitedQuestions,
+          };
+        }
+      } catch {
+        /* ignore corrupt payload */
+      }
+    }
+
+    const localSavedAt = localSnap ? new Date(localSnap.startedAt).getTime() : 0;
+    const serverSavedAt = serverAttempt?.draft_saved_at
+      ? new Date(serverAttempt.draft_saved_at).getTime()
+      : (serverSnap ? new Date(serverSnap.startedAt).getTime() : 0);
+    const snap = serverSavedAt > localSavedAt ? serverSnap || localSnap : localSnap || serverSnap;
+
+    if (snap) {
+      const startedAtMs = new Date(snap.startedAt).getTime();
+      const resetAtMs = exam?.reset_at ? new Date(exam.reset_at).getTime() : 0;
+      if (resetAtMs && startedAtMs < resetAtMs) {
+        // Teacher destructively edited the exam; discard stale cache.
+        localStorage.removeItem(sessionKey);
+        setStarted(false);
+        setAnswers(initialAnswers);
+        setTimeLeft(durationSec);
+        setSessionRestored(true);
+        return;
+      }
+      const elapsed = Math.floor((Date.now() - startedAtMs) / 1000);
+      const remaining = durationSec - elapsed;
+      if (remaining > 0 && Array.isArray(snap.answers)) {
+        const savedById: Record<string, any> = {};
+        snap.answers.forEach((a: any) => {
+          if (a && a.questionId) savedById[a.questionId] = a;
+        });
+        initialAnswers = initialAnswers.map((a) => ({
+          ...a,
+          ...(savedById[a.questionId] || {}),
+        }));
+        initialTimeLeft = remaining;
+        setStarted(true);
+        setCurrentIdx(typeof snap.currentIdx === "number" ? snap.currentIdx : 0);
+        setVisitedQuestions(new Set(snap.visitedQuestions || []));
+      } else {
+        localStorage.removeItem(sessionKey);
+      }
     }
 
     setAnswers(initialAnswers);
     setTimeLeft(initialTimeLeft);
     setSessionRestored(true);
-    void restored;
-  }, [questions.length]);
+  }, [questions.length, examData?.attempt]);
 
-  // Persist session on changes
+  // Persist session on changes (localStorage = instant offline backup,
+  // server autosave below = authoritative cross-device source of truth).
   useEffect(() => {
     if (!started || submitted || answers.length === 0) return;
     try {
@@ -286,6 +313,24 @@ export default function ExamTaking() {
       /* ignore */
     }
   }, [started, submitted, answers, currentIdx, visitedQuestions, sessionKey]);
+
+  // Debounced server-side autosave so a browser crash, tab close, or
+  // device switch doesn't lose in-progress answers. Best-effort: failures
+  // are swallowed because localStorage already covers the offline case.
+  useEffect(() => {
+    if (!started || submitted || answers.length === 0) return;
+    const handle = setTimeout(() => {
+      const existing = localStorage.getItem(sessionKey);
+      const startedAt = existing ? JSON.parse(existing).startedAt : new Date().toISOString();
+      autosaveExamAttempt(examId, {
+        startedAt,
+        answers,
+        currentIdx,
+        visitedQuestions: Array.from(visitedQuestions),
+      }).catch(() => { /* offline / network — localStorage still has it */ });
+    }, 1500);
+    return () => clearTimeout(handle);
+  }, [examId, started, submitted, answers, currentIdx, visitedQuestions, sessionKey]);
 
   // Seed session on start click
   useEffect(() => {
