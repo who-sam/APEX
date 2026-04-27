@@ -214,7 +214,18 @@ func GetSubmission(c *gin.Context) {
 
 	role, _ := c.Get("role")
 	roleStr, _ := role.(string)
-	if roleStr != "teacher" && sub.UserID != userID {
+	if roleStr == "teacher" {
+		// Teachers may only read submissions on exams they own.
+		var exam models.Exam
+		if err := database.DB.Select("id", "teacher_id").First(&exam, sub.ExamID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+			return
+		}
+		if exam.TeacherID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+	} else if sub.UserID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
 		return
 	}
