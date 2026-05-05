@@ -20,7 +20,6 @@ func RegisterRoutes(public, protected *gin.RouterGroup) {
 		s.GET("/submissions", GetSubmissions)
 		s.GET("/stats", GetStats)
 		s.GET("/performance", GetPerformance)
-		s.GET("/practice", GetPractice)
 		s.POST("/exams/:id/start", exam.StartAttempt)
 		s.PUT("/exams/:id/autosave", exam.AutosaveAttempt)
 		s.POST("/exams/:id/submit", exam.SubmitAttempt)

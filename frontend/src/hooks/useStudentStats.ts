@@ -9,6 +9,3 @@ export function useStudentPerformance() {
   return useQuery({ queryKey: ["student-performance"], queryFn: api.getStudentPerformance });
 }
 
-export function useStudentPractice() {
-  return useQuery({ queryKey: ["student-practice"], queryFn: api.getStudentPractice });
-}

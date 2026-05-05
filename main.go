@@ -11,8 +11,6 @@ import (
 	"apex/internal/execute"
 	"apex/internal/folder"
 	"apex/internal/judge0"
-	"apex/internal/leaderboard"
-	"apex/internal/message"
 	"apex/internal/middleware"
 	"apex/internal/notification"
 	"apex/internal/problem"
@@ -21,7 +19,6 @@ import (
 	"apex/internal/student"
 	"apex/internal/submission"
 	"apex/internal/teacher"
-	"apex/internal/team"
 	"apex/internal/testcase"
 
 	"github.com/gin-gonic/gin"
@@ -51,10 +48,7 @@ func main() {
 	submission.RegisterRoutes(public, protected)
 	execute.RegisterRoutes(public, protected)
 	notification.RegisterRoutes(public, protected)
-	leaderboard.RegisterRoutes(public, protected)
 	profile.RegisterRoutes(public, protected)
-	message.RegisterRoutes(public, protected)
-	team.RegisterRoutes(public, protected)
 	teacher.RegisterRoutes(public, protected)
 	announcement.RegisterRoutes(public, protected)
 	folder.RegisterRoutes(public, protected)

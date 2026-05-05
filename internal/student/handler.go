@@ -4,6 +4,7 @@ import (
 	"apex/internal/database"
 	"apex/internal/models"
 	"apex/internal/notification"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -51,7 +52,7 @@ func JoinClass(c *gin.Context) {
 	notification.Create(class.TeacherID, "class",
 		"New Student Joined",
 		student.Name+" joined "+class.Name,
-		"/dashboard/team",
+		fmt.Sprintf("/dashboard/courses/%d", class.ID),
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "joined class successfully", "class": class})
@@ -377,32 +378,4 @@ func GetPerformance(c *gin.Context) {
 		Scan(&results)
 
 	c.JSON(http.StatusOK, results)
-}
-
-func GetPractice(c *gin.Context) {
-	userID := c.GetUint("user_id")
-
-	var classIDs []uint
-	database.DB.Model(&models.ClassMember{}).Where("user_id = ?", userID).Pluck("class_id", &classIDs)
-
-	if len(classIDs) == 0 {
-		c.JSON(http.StatusOK, []any{})
-		return
-	}
-
-	var examIDs []uint
-	database.DB.Model(&models.ExamClass{}).Where("class_id IN ?", classIDs).Pluck("exam_id", &examIDs)
-
-	if len(examIDs) == 0 {
-		c.JSON(http.StatusOK, []any{})
-		return
-	}
-
-	var exams []models.Exam
-	database.DB.Where("id IN ? AND is_practice = ?", examIDs, true).
-		Preload("Problems").
-		Order("created_at desc").
-		Find(&exams)
-
-	c.JSON(http.StatusOK, exams)
 }

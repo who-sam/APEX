@@ -19,10 +19,6 @@ import CourseDetail from "@/features/courses/pages/CourseDetail";
 import QuestionBank from "@/features/exams/pages/QuestionBank";
 import QuestionBankEditor from "@/features/exams/pages/QuestionBankEditor";
 import GradeWritten from "@/features/grading/pages/GradeWritten";
-import Leaderboard from "@/features/results/pages/Leaderboard";
-import Practice from "@/features/social/pages/Practice";
-import Team from "@/features/social/pages/Team";
-import Messages from "@/features/social/pages/Messages";
 import HelpPage from "@/features/social/pages/Help";
 import Notifications from "@/features/social/pages/Notifications";
 import ExamPreview from "@/features/exams/pages/ExamPreview";
@@ -68,10 +64,6 @@ export default function AppRoutes() {
         <Route path="exam/:id" element={<StudentRoute><ExamTaking /></StudentRoute>} />
         <Route path="exam/:id/review" element={<StudentRoute><ExamReview /></StudentRoute>} />
         <Route path="exam-preview/:id" element={<TeacherRoute><ExamPreview /></TeacherRoute>} />
-        <Route path="leaderboard" element={<Leaderboard />} />
-        <Route path="practice" element={<Practice />} />
-        <Route path="team" element={<Team />} />
-        <Route path="messages" element={<Messages />} />
         <Route path="help" element={<HelpPage />} />
         <Route path="notifications" element={<Notifications />} />
       </Route>

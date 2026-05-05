@@ -257,10 +257,6 @@ export function getStudentPerformance() {
   return apiFetch<any>("/student/performance");
 }
 
-export function getStudentPractice() {
-  return apiFetch<any[]>("/student/practice");
-}
-
 // ── Profile ───────────────────────────────────────────
 export function getProfile() {
   return apiFetch<any>("/profile");
@@ -272,48 +268,6 @@ export function updateProfile(data: { name?: string; bio?: string; avatar_url?: 
 
 export function changePassword(data: { current_password: string; new_password: string }) {
   return apiFetch<any>("/profile/password", { method: "PUT", body: JSON.stringify(data) });
-}
-
-// ── Messages ──────────────────────────────────────────
-export function getMessages() {
-  return apiFetch<any[]>("/messages");
-}
-
-export function getMessage(id: number) {
-  return apiFetch<any>(`/messages/${id}`);
-}
-
-export function sendMessage(data: { to_id: number; subject: string; body: string; type?: string }) {
-  return apiFetch<any>("/messages", { method: "POST", body: JSON.stringify(data) });
-}
-
-export function markMessageRead(id: number) {
-  return apiFetch<any>(`/messages/${id}/read`, { method: "PUT" });
-}
-
-export function toggleMessageStar(id: number) {
-  return apiFetch<any>(`/messages/${id}/star`, { method: "PUT" });
-}
-
-export function deleteMessage(id: number) {
-  return apiFetch<any>(`/messages/${id}`, { method: "DELETE" });
-}
-
-// ── Teams ─────────────────────────────────────────────
-export function getTeams() {
-  return apiFetch<any[]>("/teams");
-}
-
-export function getTeam(id: number) {
-  return apiFetch<any>(`/teams/${id}`);
-}
-
-export function createTeam(data: { name: string; class_id: number }) {
-  return apiFetch<any>("/teams", { method: "POST", body: JSON.stringify(data) });
-}
-
-export function addTeamMember(teamId: number, userId: number) {
-  return apiFetch<any>(`/teams/${teamId}/members`, { method: "POST", body: JSON.stringify({ user_id: userId }) });
 }
 
 // ── Notifications ─────────────────────────────────────
@@ -331,15 +285,6 @@ export function markAllNotificationsRead() {
 
 export function getUnreadNotificationCount() {
   return apiFetch<{ count: number }>("/notifications/unread-count");
-}
-
-// ── Leaderboard ───────────────────────────────────────
-export function getClassLeaderboard(classId: number, period = "all") {
-  return apiFetch<any[]>(`/leaderboard?class_id=${classId}&period=${period}`);
-}
-
-export function getGlobalLeaderboard(period = "all") {
-  return apiFetch<any[]>(`/leaderboard/global?period=${period}`);
 }
 
 // ── Teacher ───────────────────────────────────────────

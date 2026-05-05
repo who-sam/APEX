@@ -146,6 +146,16 @@ func RunMigrations(db *gorm.DB) {
 		db.Exec("UPDATE announcements SET attachments = '[]' WHERE attachments IS NULL")
 	}
 
+	// --- Drop legacy tables no longer backed by models ---
+	// messages and teams/team_members were removed. Their FK constraints on
+	// users(id) must be dropped before the table to allow account deletion.
+	db.Exec("ALTER TABLE IF EXISTS messages DROP CONSTRAINT IF EXISTS fk_messages_from_user")
+	db.Exec("ALTER TABLE IF EXISTS messages DROP CONSTRAINT IF EXISTS fk_messages_to_user")
+	db.Exec("ALTER TABLE IF EXISTS team_members DROP CONSTRAINT IF EXISTS fk_team_members_user")
+	db.Exec("DROP TABLE IF EXISTS messages")
+	db.Exec("DROP TABLE IF EXISTS team_members")
+	db.Exec("DROP TABLE IF EXISTS teams")
+
 	if tableExists(db, "users") {
 		// --- users.google_id for Google OAuth account linking ---
 		db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(64)")

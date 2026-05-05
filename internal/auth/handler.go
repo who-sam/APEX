@@ -148,16 +148,6 @@ func DeleteAccount(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete notifications"})
 		return
 	}
-	if err := tx.Where("from_id = ? OR to_id = ?", userID, userID).Delete(&models.Message{}).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete messages"})
-		return
-	}
-	if err := tx.Where("user_id = ?", userID).Delete(&models.TeamMember{}).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete team memberships"})
-		return
-	}
 	if err := tx.Where("user_id = ?", userID).Delete(&models.PasswordResetToken{}).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete reset tokens"})

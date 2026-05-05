@@ -37,7 +37,7 @@ Current booleans:
 | Column | `false` | `true` | Existing rows should be | Filtered in |
 |--------|---------|--------|------------------------|-------------|
 | `exams.is_draft` | Published | Draft (hidden from students) | `false` | student GetExams, student GetClass |
-| `exams.is_practice` | Regular exam | Practice mode | `false` | student GetPractice |
+| `exams.is_practice` | Regular exam | Practice mode | `false` | (none — column unused, kept for schema compat) |
 | `problems.is_bank` | Exam-bound question | Reusable bank question | `false` | teacher GetAllProblems (bank view) |
 
 ### 4. Test schema changes against existing data

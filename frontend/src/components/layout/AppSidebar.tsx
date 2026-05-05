@@ -5,15 +5,11 @@ import {
   Code2,
   HelpCircle,
   LogOut,
-  Mail,
   Settings,
-  Users,
   Sun,
   Moon,
   FilePlus2,
-  GraduationCap,
   User,
-  Trophy,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -26,8 +22,6 @@ const teacherMainItems = [
   { icon: FilePlus2, url: "/dashboard/exam-builder", label: "Exam Builder" },
   { icon: Calendar, url: "/dashboard/exams", label: "Exams" },
   { icon: ClipboardCheck, url: "/dashboard/results", label: "Results" },
-  { icon: Users, url: "/dashboard/team", label: "Team" },
-  { icon: Mail, url: "/dashboard/messages", label: "Messages" },
 ];
 
 const teacherSecondaryItems: typeof teacherMainItems = [];
@@ -35,12 +29,9 @@ const teacherSecondaryItems: typeof teacherMainItems = [];
 const studentMainItems = [
   { icon: BarChart3, url: "/dashboard", label: "Dashboard" },
   { icon: User, url: "/dashboard/profile", label: "Profile" },
-  { icon: Trophy, url: "/dashboard/leaderboard", label: "Leaderboard" },
   { icon: Code2, url: "/dashboard/playground", label: "Code Editor" },
   { icon: Calendar, url: "/dashboard/exams", label: "Exams" },
   { icon: ClipboardCheck, url: "/dashboard/results", label: "Results" },
-  { icon: GraduationCap, url: "/dashboard/practice", label: "Practice" },
-  { icon: Mail, url: "/dashboard/messages", label: "Messages" },
 ];
 
 const studentSecondaryItems: typeof studentMainItems = [];

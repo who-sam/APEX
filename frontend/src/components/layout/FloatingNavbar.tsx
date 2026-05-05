@@ -20,7 +20,7 @@ import { useExams, useStudentExams } from "@/hooks/useExams";
 import { useIsMobile, useIsTablet } from "@/hooks/use-mobile";
 import { useTheme } from "next-themes";
 import { useState, useEffect, useRef } from "react";
-import { BookOpen, FileText, BarChart3, Code, GraduationCap, Trophy, Users, HelpCircle, BellRing } from "lucide-react";
+import { BookOpen, FileText, BarChart3, Code, GraduationCap, HelpCircle, BellRing } from "lucide-react";
 
 const teacherNavTabs = [
   { label: "Dashboard", url: "/dashboard" },
@@ -94,10 +94,6 @@ export function FloatingNavbar() {
     { label: "Courses", url: "/dashboard/courses", icon: BookOpen, category: "Pages" },
     { label: "Exams", url: "/dashboard/exams", icon: GraduationCap, category: "Pages" },
     { label: "Results & Analytics", url: "/dashboard/results", icon: BarChart3, category: "Pages" },
-    { label: "Leaderboard", url: "/dashboard/leaderboard", icon: Trophy, category: "Pages" },
-    { label: "Practice", url: "/dashboard/practice", icon: GraduationCap, category: "Pages" },
-    { label: "Team", url: "/dashboard/team", icon: Users, category: "Pages" },
-    { label: "Messages", url: "/dashboard/messages", icon: FileText, category: "Pages" },
     { label: "Help & Support", url: "/dashboard/help", icon: HelpCircle, category: "Pages" },
     { label: "Notifications", url: "/dashboard/notifications", icon: BellRing, category: "Pages" },
     { label: "Settings", url: "/dashboard/settings", icon: Settings, category: "Pages" },

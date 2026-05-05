@@ -37,15 +37,16 @@ APEX lets teachers build mixed-format exams (coding, MCQ, written), assign them 
 - Assign exams to one or many classes.
 - Auto-grading via Judge0 with normalized output diffing; manual grading queue for written answers (with teacher feedback + score override).
 - Announcements per class with attachments; notification fan-out to enrolled students.
-- Dashboard, results explorer, pending-grading queue, class stats, leaderboard.
+- Dashboard, results explorer, pending-grading queue, class stats.
 - Grade announcement gating: optionally block announcement until all manual grading is complete.
+- Exam preview: view any exam exactly as students see it before publishing.
 
 **Student**
 - Join classes via 8-char invite code; leave class; see assigned exams.
 - Timed exam attempts with autosave, resume, and shuffled question order.
 - Monaco editor with multi-language run / submit, sample-test feedback.
 - Results review per attempt with per-test breakdown and teacher feedback.
-- Practice mode (non-graded), profile, notifications, messages, teams, leaderboards (class + global).
+- Profile, notifications, help page.
 
 **Platform**
 - JWT auth, password reset by email, Google Identity Services sign-in.
@@ -80,7 +81,7 @@ Backend is a single Gin process. Routes are split into `public` (no auth) and `p
 
 | Layer       | Choice                                                            |
 |-------------|-------------------------------------------------------------------|
-| Language    | Go 1.25                                                           |
+| Language    | Go 1.25.3                                                         |
 | HTTP        | `gin-gonic/gin` 1.12, `gin-contrib/cors`                          |
 | ORM         | `gorm.io/gorm` 1.31 + `gorm.io/driver/postgres`                   |
 | Auth        | `golang-jwt/jwt/v5`, Google Identity Services (`google.golang.org/api`) |
@@ -175,7 +176,7 @@ All config is loaded from environment (`.env` is auto-loaded via `godotenv`). De
 │   ├── models/                   # GORM models (single source of truth for schema)
 │   ├── auth/                     # signup, login, Google OAuth, password reset, account delete
 │   ├── class/                    # CRUD, member removal, stats
-│   ├── student/                  # student-scoped views (join, classes, exams, stats, practice)
+│   ├── student/                  # student-scoped views (join, classes, exams, stats, performance)
 │   ├── teacher/                  # teacher dashboard, pending-grading queue
 │   ├── exam/                     # exam CRUD, assign, close/reopen, attempts (start/submit), results
 │   ├── problem/                  # exam problems + question bank
@@ -186,10 +187,7 @@ All config is loaded from environment (`.env` is auto-loaded via `godotenv`). De
 │   ├── folder/                   # bank-question folders
 │   ├── announcement/             # per-class announcements + attachments
 │   ├── notification/             # in-app notifications + helper for fan-out
-│   ├── leaderboard/              # class + global
 │   ├── profile/                  # profile + change-password
-│   ├── message/                  # direct messages
-│   ├── team/                     # teams + members
 │   ├── email/                    # SMTP wrapper (no-op when SMTP_HOST empty)
 │   └── reminder/                 # background ticker for exam reminders
 └── frontend/
@@ -202,6 +200,9 @@ All config is loaded from environment (`.env` is auto-loaded via `godotenv`). De
     │   ├── components/           # shared UI (shadcn/ui + layout)
     │   ├── features/             # feature folders: auth, dashboard, exams, courses,
     │   │                         #   grading, playground, results, settings, social
+    │   │                         # key routes: exam-builder, question-bank, grading,
+    │   │                         #   exam/:id (take), exam/:id/review, exam-preview/:id,
+    │   │                         #   help, notifications
     │   ├── pages/                # Index, NotFound
     │   ├── hooks/ lib/ assets/
     │   └── test/                 # Vitest setup + suites
@@ -223,7 +224,7 @@ Core entities (see `internal/models/*.go` for full struct tags):
 - **Submission** — one row per (attempt, problem). Status lifecycle: `pending` → `running` → (`passed` | `failed` | `pending_review`). Carries `score`, `passed_count`/`total_count`, `code`/`selected_options`/`text_answer`, optional `teacher_feedback`. `TestResult` rows hold per-test outcome.
 - **Folder** — per-teacher grouping for bank questions.
 - **Announcement** — per-class, with JSONB `attachments`. Fans out `Notification` rows to enrolled students.
-- **Notification**, **Message**, **Team** / **TeamMember**, **PasswordResetToken** — straightforward.
+- **Notification**, **PasswordResetToken** — straightforward.
 
 > Schema changes **must** follow [ORM_RULES.md](ORM_RULES.md) — never use `gorm:"default:X"` on existing tables. Add the column nullable, backfill, then constrain. All such migrations live in `internal/database/migrations.go`.
 
@@ -273,7 +274,6 @@ Base URL: `http://localhost:8080/api`. All protected routes require `Authorizati
 | GET    | `/student/submissions`            |
 | GET    | `/student/stats`                  |
 | GET    | `/student/performance`            |
-| GET    | `/student/practice`               |
 | POST   | `/student/exams/:id/start`        |
 | POST   | `/student/exams/:id/submit`       |
 | GET    | `/attempts/mine`                  |
@@ -335,25 +335,13 @@ Base URL: `http://localhost:8080/api`. All protected routes require `Authorizati
 | PUT    | `/announcements/:id`                       |
 | DELETE | `/announcements/:id`                       |
 
-### Notifications / Messages / Teams / Leaderboard
+### Notifications
 | Method | Path                                  |
 |--------|---------------------------------------|
 | GET    | `/notifications`                      |
 | GET    | `/notifications/unread-count`         |
 | PUT    | `/notifications/:id/read`             |
 | PUT    | `/notifications/read-all`             |
-| GET    | `/messages`                           |
-| GET    | `/messages/:id`                       |
-| POST   | `/messages`                           |
-| PUT    | `/messages/:id/read`                  |
-| PUT    | `/messages/:id/star`                  |
-| DELETE | `/messages/:id`                       |
-| GET    | `/teams`                              |
-| GET    | `/teams/:id`                          |
-| POST   | `/teams`                              |
-| POST   | `/teams/:id/members`                  |
-| GET    | `/leaderboard`                        |
-| GET    | `/leaderboard/global`                 |
 
 ---
 

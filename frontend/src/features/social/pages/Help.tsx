@@ -10,10 +10,7 @@ import {
 } from "@/components/ui/accordion";
 
 const faqs = [
-  { q: "How do I start a practice exam?", a: "Navigate to the Practice page from the sidebar or top nav. Browse the available exams, filter by category or difficulty, and click 'Start Practice' to begin." },
-  { q: "How are exam scores calculated?", a: "Each correct answer earns you points. Your final score is the percentage of correct answers. Skipped questions count as incorrect. Time bonuses may apply for faster completion." },
-  { q: "Can I retake an exam?", a: "Yes! You can retake any practice exam as many times as you'd like. Your best score will be recorded in your results history." },
-  { q: "How do I join or create a team?", a: "Go to the Team page to view your current team. Team leaders can invite new members via email. Contact your admin if you need to switch teams." },
+  { q: "How are exam scores calculated?", a: "Each correct answer earns you points. Your final score is the percentage of correct answers. Skipped questions count as incorrect." },
   { q: "What happens if I lose connection during an exam?", a: "Don't worry — your progress is auto-saved every 30 seconds. When you reconnect, you can resume from where you left off." },
   { q: "How do I change my notification preferences?", a: "Head to Settings → Notifications to toggle email, push, exam reminders, and result alerts on or off." },
 ];

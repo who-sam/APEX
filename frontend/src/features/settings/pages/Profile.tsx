@@ -31,8 +31,6 @@ const defaultAchievements: Achievement[] = [
   { id: "3", name: "10 Exams Completed", description: "Complete 10 exams", icon: "Trophy", maxProgress: 10, progress: 8, unlocked: false },
   { id: "4", name: "Speed Demon", description: "Finish an exam in under half the time", icon: "Zap", maxProgress: 1, unlocked: true, earnedAt: "2026-02-27" },
   { id: "5", name: "Polyglot", description: "Submit in 3 different languages", icon: "Globe", maxProgress: 3, progress: 3, unlocked: true, earnedAt: "2026-01-10" },
-  { id: "6", name: "Top 3", description: "Rank in the top 3 on the leaderboard", icon: "Target", maxProgress: 1, unlocked: false, progress: 0 },
-  { id: "7", name: "Bookworm", description: "Complete all practice sets", icon: "BookOpen", maxProgress: 15, progress: 12, unlocked: false },
 ];
 
 export default function Profile() {
