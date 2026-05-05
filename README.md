@@ -33,7 +33,7 @@ APEX lets teachers build mixed-format exams (coding, MCQ, written), assign them 
 - Class management with invite codes, cover images, member roster, removal.
 - Exam builder: coding / MCQ / written, per-question points, difficulty, hints, time/memory limits, image attachments, tags.
 - Question bank with folders for reuse across exams.
-- Draft vs published exams; shuffle questions; show-results-after toggle; per-exam passing score.
+- Draft vs published exams; publishing requires `start_time` to be set. Shuffle questions; show-results-after toggle; per-exam passing score.
 - Assign exams to one or many classes.
 - Auto-grading via Judge0 with normalized output diffing; manual grading queue for written answers (with teacher feedback + score override).
 - Announcements per class with attachments; notification fan-out to enrolled students.
@@ -43,7 +43,7 @@ APEX lets teachers build mixed-format exams (coding, MCQ, written), assign them 
 
 **Student**
 - Join classes via 8-char invite code; leave class; see assigned exams.
-- Timed exam attempts with autosave, resume, and shuffled question order.
+- Timed exam attempts with server-side autosave (`PUT /student/exams/:id/autosave`), resume, and shuffled question order.
 - Monaco editor with multi-language run / submit, sample-test feedback.
 - Results review per attempt with per-test breakdown and teacher feedback.
 - Profile, notifications, help page.
@@ -275,6 +275,7 @@ Base URL: `http://localhost:8080/api`. All protected routes require `Authorizati
 | GET    | `/student/stats`                  |
 | GET    | `/student/performance`            |
 | POST   | `/student/exams/:id/start`        |
+| PUT    | `/student/exams/:id/autosave`     |
 | POST   | `/student/exams/:id/submit`       |
 | GET    | `/attempts/mine`                  |
 
@@ -285,17 +286,17 @@ Base URL: `http://localhost:8080/api`. All protected routes require `Authorizati
 | GET    | `/teacher/grading/pending`    |
 
 ### Exams (teacher)
-| Method | Path                          |
-|--------|-------------------------------|
-| POST   | `/exams`                      |
-| GET    | `/exams`                      |
-| GET    | `/exams/:id`                  |
-| PUT    | `/exams/:id`                  |
-| DELETE | `/exams/:id`                  |
-| POST   | `/exams/:id/assign`           |
-| POST   | `/exams/:id/close`            |
-| POST   | `/exams/:id/reopen`           |
-| GET    | `/exams/:id/results`          |
+| Method | Path                          | Notes                                                  |
+|--------|-------------------------------|--------------------------------------------------------|
+| POST   | `/exams`                      |                                                        |
+| GET    | `/exams`                      |                                                        |
+| GET    | `/exams/:id`                  |                                                        |
+| PUT    | `/exams/:id`                  | Publishing (is_draft→false) requires start_time set    |
+| DELETE | `/exams/:id`                  |                                                        |
+| POST   | `/exams/:id/assign`           | Validates all class_ids belong to calling teacher      |
+| POST   | `/exams/:id/close`            |                                                        |
+| POST   | `/exams/:id/reopen`           |                                                        |
+| GET    | `/exams/:id/results`          |                                                        |
 
 ### Problems (teacher)
 | Method | Path                              |
@@ -319,13 +320,12 @@ Base URL: `http://localhost:8080/api`. All protected routes require `Authorizati
 | DELETE | `/folders/:id`      |
 
 ### Submissions
-| Method | Path                              |
-|--------|-----------------------------------|
-| POST   | `/submissions`                    |
-| POST   | `/submissions/run`                |
-| GET    | `/submissions/:id`                |
-| PUT    | `/submissions/:id/grade`          |
-| POST   | `/execute`                        |
+| Method | Path                              | Notes                                      |
+|--------|-----------------------------------|--------------------------------------------|
+| POST   | `/submissions/run`                | Run against sample test cases              |
+| GET    | `/submissions/:id`                | Student (own) or teacher (exam owner)      |
+| PUT    | `/submissions/:id/grade`          | Teacher (exam owner) only                  |
+| POST   | `/execute`                        | One-off playground run                     |
 
 ### Announcements
 | Method | Path                                       |
@@ -358,11 +358,12 @@ Base URL: `http://localhost:8080/api`. All protected routes require `Authorizati
 ## Code Execution & Grading
 
 - `POST /execute` and `POST /submissions/run` send code to Judge0 and stream back stdout/stderr/time/memory for the playground and "run sample tests" flows.
-- `POST /submissions` is graded by `internal/judge0/grader.go`:
+- Grading is triggered server-side by `POST /student/exams/:id/submit` (via `internal/judge0/grader.go`). There is no standalone `POST /submissions` endpoint — submission rows are created atomically during exam submission.
   - Each `TestCase` is sent to Judge0 with `input`. Output is normalized (trailing whitespace, newline endings, optional trailing newline) before equality check.
   - `score = passed_count / total_count * 100` for coding; MCQ scored against `correct_option_ids` (set equality, with `multiple_correct` rule); written submissions go to `pending_review`.
   - Aggregated `ExamAttempt.score` excludes `pending_review` rows so an in-flight written grade doesn't depress the visible total.
-- Manual grading: teachers grade written answers from `/teacher/grading/pending`; `PUT /submissions/:id/grade` accepts `{score, teacher_feedback}` and re-aggregates the parent attempt.
+- Manual grading: teachers grade written answers from `/teacher/grading/pending`; `PUT /submissions/:id/grade` accepts `{score, teacher_feedback}` and re-aggregates the parent attempt. Gated to the exam owner.
+- Judge0 base URL is set at startup via `judge0.Init(cfg.Judge0URL)` — point `JUDGE0_URL` at a self-hosted instance for production.
 - Language aliases for Judge0 (e.g. `python` → Python 3) live in `internal/judge0/client.go`.
 
 ---
