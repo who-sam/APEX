@@ -36,7 +36,6 @@ import {
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
@@ -635,7 +634,7 @@ export default function ExamTaking() {
           </h1>
           {exam.description && (
             <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{exam.description}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{exam.description}</ReactMarkdown>
             </div>
           )}
           <div className="flex justify-center gap-4 text-sm">
@@ -924,7 +923,7 @@ export default function ExamTaking() {
                 <div className="space-y-3">
                   {q.description && (
                     <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{q.description}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{q.description}</ReactMarkdown>
                     </div>
                   )}
 

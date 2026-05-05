@@ -5,6 +5,7 @@ import (
 	"apex/internal/email"
 	"apex/internal/models"
 	"fmt"
+	"html"
 )
 
 func Create(userID uint, notifType, title, description, linkTo string) {
@@ -37,7 +38,8 @@ func Create(userID uint, notifType, title, description, linkTo string) {
 		}
 		subject := "[APEX] " + title
 		text := fmt.Sprintf("%s\n\n%s\n", title, description)
-		html := fmt.Sprintf("<p><strong>%s</strong></p><p>%s</p>", title, description)
-		_ = email.Send(user.Email, subject, html, text)
+		body := fmt.Sprintf("<p><strong>%s</strong></p><p>%s</p>",
+			html.EscapeString(title), html.EscapeString(description))
+		_ = email.Send(user.Email, subject, body, text)
 	}()
 }

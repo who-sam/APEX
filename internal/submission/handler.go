@@ -23,6 +23,36 @@ func RunSolution(c *gin.Context) {
 		return
 	}
 
+	var problem models.Problem
+	if err := database.DB.Select("id", "exam_id", "teacher_id").First(&problem, req.ProblemID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "problem not found"})
+		return
+	}
+
+	userID := c.GetUint("user_id")
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
+	if roleStr == "teacher" {
+		if problem.TeacherID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+	} else {
+		if problem.ExamID == nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+		var assigned int64
+		database.DB.Model(&models.ExamClass{}).
+			Joins("JOIN class_members ON class_members.class_id = exam_classes.class_id").
+			Where("exam_classes.exam_id = ? AND class_members.user_id = ?", *problem.ExamID, userID).
+			Count(&assigned)
+		if assigned == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			return
+		}
+	}
+
 	var testCases []models.TestCase
 	database.DB.Where("problem_id = ? AND is_sample = ?", req.ProblemID, true).
 		Order("order_index asc").

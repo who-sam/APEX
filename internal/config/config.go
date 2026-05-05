@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -30,13 +31,17 @@ type Config struct {
 }
 
 func Load() Config {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" || jwtSecret == "dev-secret-change-in-prod" || len(jwtSecret) < 32 {
+		log.Fatal("JWT_SECRET must be set to a strong random value (>=32 chars)")
+	}
 	return Config{
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnv("DB_PORT", "5432"),
 		DBUser:     getEnv("DB_USER", "postgres"),
 		DBPassword: getEnv("DB_PASSWORD", "postgres"),
 		DBName:     getEnv("DB_NAME", "apex"),
-		JWTSecret:  getEnv("JWT_SECRET", "dev-secret-change-in-prod"),
+		JWTSecret:  jwtSecret,
 		Judge0URL:  getEnv("JUDGE0_URL", "https://ce.judge0.com"),
 
 		SMTPHost: getEnv("SMTP_HOST", ""),
