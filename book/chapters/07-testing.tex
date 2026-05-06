@@ -1,0 +1,111 @@
+\chapter{Testing and Quality Assurance}
+\label{ch:testing}
+
+This chapter documents the test strategy that supports the requirements in \Cref{ch:requirements}. APEX is tested at three levels: backend unit and integration tests with the standard Go testing toolchain, frontend component tests with Vitest, and manual end-to-end exercises against the running app. Static checks (\texttt{go vet}, ESLint, TypeScript) catch the kind of mistakes that tests should not have to.
+
+\section{What is tested, and where}
+
+\Cref{tab:test-pyramid} summarises the surface covered at each level. The split is deliberate: anything that depends on PostgreSQL or Judge0 is best tested as an integration test, not a unit test, because the grading and finalisation logic is dominated by the database queries and HTTP round trips.
+
+\begin{table}[H]
+  \centering
+  \caption{Test surface by level.}
+  \label{tab:test-pyramid}
+  \small
+  \begin{tabularx}{\linewidth}{l X X}
+    \toprule
+    Level & Coverage focus & Tooling \\
+    \midrule
+    Unit (Go)            & pure logic in \texttt{judge0} (output normalisation, MCQ set comparison), JWT claim extraction, time parsing, route registration  & \texttt{go test} \\
+    Integration (Go)     & handler+database flows: signup-login, attempt lifecycle, finalisation, manual grade overrides, IDOR rejection, password reset round-trip & \texttt{go test} with a live Postgres test DB  \\
+    Unit (frontend)      & utility functions, component rendering with stubbed data (Question card, AnswerEditor, Timer)                                          & Vitest, \texttt{frontend/src/test/setup.ts}  \\
+    End-to-end (manual)  & golden-path: build $\to$ assign $\to$ take $\to$ grade $\to$ review for one coding, one MCQ, one written exam                  & \texttt{./start.sh} with seeded data           \\
+    Static               & type checks, linting, vet                                                                                                              & \texttt{tsc}, \texttt{eslint}, \texttt{go vet} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Backend tests}
+
+The backend tests live alongside their packages in \texttt{*\_test.go} files. The convention follows Go's standard testing toolchain~\cite{go}: each test exercises one exported function or one HTTP handler, sets up its own fixtures, and tears them down explicitly.
+
+\paragraph{Unit tests.} The hardest-to-write logic in the system is also the easiest to unit-test. \texttt{judge0.normalizeOutput} (\texttt{internal/judge0/grader.go:366--374}) has a small table-driven test that asserts: trailing whitespace is stripped per line, \texttt{\textbackslash r\textbackslash n} collapses to \texttt{\textbackslash n}, and edge whitespace is trimmed. The MCQ set-equality check inside \texttt{judge0.GradeMCQ} is unit-tested with a fake DB shim. \texttt{exam.parseTime} (\texttt{internal/exam/handler.go:737--751}) is unit-tested across all five accepted layouts.
+
+\paragraph{Integration tests.} The integration suite uses a dedicated Postgres test database (\texttt{apex\_test}) brought up by Docker Compose. Each test starts a transaction, runs its scenario, and rolls back so tests are independent. The flows under test are:
+
+\begin{itemize}
+  \item Signup, login, login with bad password, login on a Google-only account (empty hash).
+  \item Forgot-password $\to$ reset-password $\to$ login-with-new-password, including the stale-token rejection path.
+  \item Create class, join with invite code, leave, remove member.
+  \item Build a draft exam, fail to publish without \texttt{start\_time}, set start time, publish, assign.
+  \item Start an attempt twice (idempotent), submit, second submit returns 409.
+  \item Auto-grade a coding submission against a stubbed Judge0 (an HTTP test server returning canned responses).
+  \item Manually grade a written submission, override, and verify the attempt's aggregate score updates.
+  \item Reject IDOR on \texttt{POST /submissions/run} (the F1 fix from \Cref{ch:security}).
+\end{itemize}
+
+\paragraph{Stubbing Judge0.} The auto-grader's only HTTP client lives in \texttt{judge0.RunCode} and uses \texttt{judge0.BaseURL} as the base. Integration tests spin up an \texttt{httptest.Server} that serves canned \texttt{/submissions} responses, then re-point \texttt{BaseURL} at the test server's URL via \texttt{judge0.Init}. This keeps the integration tests deterministic without losing coverage of the surrounding HTTP marshalling.
+
+\section{Frontend tests}
+
+The frontend test setup lives in \texttt{frontend/src/test/setup.ts} and is wired into Vitest via \texttt{vitest.config} (inherited from \texttt{vite.config.ts}). The seed test, \texttt{frontend/src/test/example.test.ts}, asserts that the test runner is wired correctly.
+
+\paragraph{Component tests.} Component tests use \texttt{@testing-library/react} to render a component with stubbed props and assert visible text and interactions. Three components have current coverage:
+
+\begin{itemize}
+  \item The Markdown renderer in \texttt{ExamTaking.tsx} is asserted not to render raw HTML when its source contains \texttt{<script>} or \texttt{<img onerror=...>}.
+  \item The autosave timer hook stubs \texttt{api.autosaveExamAttempt} and asserts the call cadence.
+  \item The MCQ option list asserts that selecting an option toggles its underlying ID in the answers array.
+\end{itemize}
+
+\paragraph{What is intentionally not unit-tested.} Page-level components that depend on routing, auth context, and the API client are exercised by manual end-to-end runs rather than by component tests. The reasoning is the standard one: a component test that mocks half the world tells you mostly that the mocks are consistent with each other.
+
+\section{Manual end-to-end exercises}
+
+The end-to-end test plan is run at the close of every implementation phase and against every release candidate. The seed data set creates two users and one class:
+
+\begin{itemize}
+  \item \textbf{Dr.\ Demo} (\texttt{teacher@demo.test}, role \texttt{teacher}).
+  \item \textbf{Sam Student} (\texttt{student@demo.test}, role \texttt{student}).
+  \item One class (\texttt{Demo CS101}, invite code \texttt{ABCD1234}) with Sam enrolled.
+  \item One coding exam (\texttt{Sum Two Numbers}) with three test cases (one sample, two hidden).
+  \item One MCQ exam (\texttt{Time Complexity Quiz}) with four questions.
+  \item One written exam (\texttt{Discuss Recursion}) with one question and a rubric.
+\end{itemize}
+
+The golden path exercises:
+
+\begin{enumerate}
+  \item Dr.\ Demo signs up, creates the class, builds and assigns each exam.
+  \item Sam signs up, joins the class with the invite code, sees the assigned exams.
+  \item Sam takes the coding exam: edits in Monaco, runs samples, submits. Dr.\ Demo's results screen shows the auto-graded score and per-test detail.
+  \item Sam takes the MCQ exam, submits. Auto-grader marks it accepted/wrong-answer in milliseconds.
+  \item Sam takes the written exam, submits. Dr.\ Demo's pending-grading queue shows one item; she grades it with feedback. Sam receives the "Exam Graded" notification.
+  \item Dr.\ Demo toggles \texttt{grades\_announced}; Sam's review screen reveals the aggregate score and feedback.
+\end{enumerate}
+
+\paragraph{Edge-case exercises.} The plan also covers: take-after-end-time (rejected with 403), publish-without-schedule (rejected with 400), draft autosave $\to$ refresh page $\to$ resume on the same device, draft autosave $\to$ resume on a fresh browser (server-side draft is preferred), submit twice (second is 409), grade an attempt then override and re-grade (aggregate updates), delete a class with active attempts (cascades cleanly).
+
+\section{Static checks}
+
+\paragraph{Go.} \texttt{go vet ./...} runs as part of the CI step and catches printf-mismatch, shadowed return values, lock-by-value, and the other patterns vet knows about. The codebase compiles without warnings.
+
+\paragraph{TypeScript.} \texttt{npm run lint} runs ESLint with the React and TypeScript plugins. The build (\texttt{npm run build}) refuses to emit if \texttt{tsc} reports an error, so type errors are surfaced before they reach a deploy.
+
+\paragraph{Repository conventions.} Two markdown documents in the repo root encode rules that the type system cannot: \texttt{ORM\_RULES.md} for migration patterns, and \texttt{BUG\_FIX\_PLAN.md} for the running list of phases and their issue traces. New work is expected to update both.
+
+\section{Coverage and gaps}
+
+Coverage is measured by \texttt{go test -cover} and \texttt{vitest --coverage}. The project does not enforce a minimum percentage --- the experience is that headline coverage numbers are easy to manipulate and not the metric a maintainer cares about --- but a few subsystems are deliberately well-covered: \texttt{judge0} (output normalisation and the three graders), \texttt{exam.SubmitAttempt}, \texttt{auth.Signup}/\texttt{Login}, and the password-reset round trip.
+
+The known gaps are:
+
+\begin{itemize}
+  \item The reminder scheduler is exercised manually by setting an exam's \texttt{start\_time} 50 minutes in the future and watching the email log; an integration test that wraps a fake clock would close the gap.
+  \item The Google OAuth path is exercised manually because the Google SDK refuses to validate test tokens. A handler-level test that injects a fake \texttt{idtoken.Validate} via a function variable would let it run on CI.
+  \item The end-to-end test plan is manual; an automated Playwright suite is on the roadmap (\Cref{ch:conclusion}).
+\end{itemize}
+
+\section{Summary}
+
+The test surface is shaped by what the code can lie about. The pieces that compute (output normalisation, MCQ set equality, finalisation arithmetic, JWT parsing) are unit-tested. The pieces that travel through the database (attempt lifecycle, ownership checks, password-reset round-trip) are integration-tested. The pieces that are dominated by user judgment (the take screen, the grading queue, the results review) are manually tested against a small seeded data set. The result is a suite that runs in seconds on every push and a manual checklist that runs in about ten minutes per release candidate.

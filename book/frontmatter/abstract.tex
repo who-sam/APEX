@@ -1,0 +1,17 @@
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Online assessment in higher education is increasingly expected to support not only multiple-choice and written questions but also live programming, with timed delivery, automatic grading, secure submission, and a workflow that scales from a single classroom to a department. Existing learning-management systems treat coding exercises as a bolt-on, and dedicated online judges treat classroom organisation as out-of-scope. This book documents APEX, a self-hostable web portal that integrates the three formats into one system.
+
+APEX is built around three design choices. First, a single Go backend (Gin~+~GORM~+~PostgreSQL) exposes a typed REST API with role-scoped middleware, while a React + Vite + TypeScript single-page application acts as the only client. Second, a dedicated grading service uses the Judge0 sandbox to compile and run student code against teacher-defined test cases, normalising whitespace and trailing newlines so that benign formatting differences do not penalise students. Third, written answers flow through a manual grading queue with teacher feedback and per-question score override, while multiple-choice answers are graded synchronously inside the submission handler.
+
+The system was implemented over the course of one academic year and comprises approximately ten thousand lines of Go on the server, twelve thousand lines of TypeScript on the client, and a Postgres schema of fourteen first-class entities. A background scheduler ticks every minute to dispatch exam reminders and finalisation tasks; idempotent SQL migrations are gated in front of the GORM auto-migrator. A focused security review hardened the system against four classes of weakness common in classroom portals: insecure direct object references on submission ownership, stored cross-site scripting on announcement bodies, weak fall-back JWT secrets, and HTML injection through email templates.
+
+Evaluation included end-to-end tests against a seeded class with mixed coding, multiple-choice, and written exams, latency measurements of the auto-grader under realistic load, and a small System Usability Scale study with student and teacher participants. Results suggest that the integrated workflow is usable for classes of the size APEX targets and that the auto-grader's per-submission latency is dominated by Judge0 compilation rather than by the surrounding API.
+
+The book documents the requirements that motivated each subsystem, the design decisions that shaped the codebase, the implementation in enough detail for a future maintainer to extend, the security review and its outcomes, the testing and deployment story, a user manual for both teacher and student roles, a results chapter, and a forward-looking conclusion. The full source code is available alongside the book.
+
+\paragraph{Keywords}
+online assessment, auto-grading, online judge, classroom management, JWT, Go, React, PostgreSQL, Judge0.
+
+\clearpage

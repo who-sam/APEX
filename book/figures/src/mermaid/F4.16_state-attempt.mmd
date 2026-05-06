@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> in_progress: StartAttempt
+    in_progress --> in_progress: AutosaveAttempt (draft_answers, draft_saved_at)
+    in_progress --> submitted: SubmitAttempt
+    submitted --> submitted: re-aggregate via FinalizeAttempt
+    submitted --> graded_notified: maybeFinalizeAttempt → "Exam Graded"
+
+    note right of in_progress
+      one row per (user_id, exam_id)
+      idempotent on re-entry
+    end note
+    note right of submitted
+      submissions array fully created
+      draft_answers cleared (NULL)
+    end note

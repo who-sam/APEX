@@ -1,0 +1,14 @@
+stateDiagram-v2
+    [*] --> Loading
+    Loading --> NotStarted: start_time > now
+    Loading --> Closed: end_time < now
+    Loading --> Forbidden: not enrolled / not assigned
+    Loading --> Active: window open
+    Active --> Editing: render question N
+    Editing --> Autosaving: every 15 s
+    Autosaving --> Editing
+    Editing --> Editing: change question
+    Editing --> Submitting: click Submit
+    Submitting --> Submitted: 201 from API
+    Submitting --> Editing: 4xx error
+    Submitted --> [*]

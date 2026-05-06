@@ -1,0 +1,22 @@
+@startuml
+skinparam shadowing false
+start
+:git push;
+:CI: go vet ./...;
+:CI: go test ./...;
+:CI: cd frontend && npm ci;
+:CI: npm run lint;
+:CI: npm run test  (vitest);
+:CI: npm run build  (Vite -> dist/);
+if (all green?) then (yes)
+  :ssh deploy host;
+  :rsync new binary + dist;
+  :systemctl restart apex.service;
+  :smoke: GET /api/auth/login;
+  :smoke: open dashboard URL;
+  stop
+else (no)
+  :surface failures in PR;
+  stop
+endif
+@enduml

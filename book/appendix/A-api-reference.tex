@@ -1,0 +1,112 @@
+\chapter{API Reference}
+\label{appendix:api-reference}
+
+This appendix lists every HTTP endpoint exposed by the APEX backend. Endpoints under \texttt{public} require no authentication; endpoints under \texttt{protected} require a valid \texttt{Authorization: Bearer <jwt>} header. \Cref{fig:FA.1} draws the access matrix by role.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{FA.1_endpoint-heatmap.pdf}
+  \caption{Endpoint access matrix by role.}
+  \label{fig:FA.1}
+\end{figure}
+
+\section{Public}
+
+\begin{longtable}{l l p{8cm}}
+  \toprule
+  Method & Path & Purpose \\
+  \midrule
+  POST   & \texttt{/api/auth/signup}            & Create a user (email, password, name, role). \\
+  POST   & \texttt{/api/auth/login}             & Email + password login, returns JWT. \\
+  POST   & \texttt{/api/auth/google}            & Google ID-token exchange. \\
+  POST   & \texttt{/api/auth/forgot-password}   & Request a password-reset email. \\
+  POST   & \texttt{/api/auth/reset-password}    & Reset password with the token from the email. \\
+  \bottomrule
+\end{longtable}
+
+\section{Protected: shared}
+
+\begin{longtable}{l l p{8cm}}
+  \toprule
+  Method & Path & Purpose \\
+  \midrule
+  DELETE & \texttt{/api/auth/account}                  & Delete the calling user's account in a single tx. \\
+  GET    & \texttt{/api/profile}                       & Read calling user's profile. \\
+  PUT    & \texttt{/api/profile}                       & Update profile (name, bio, avatar, notification toggles). \\
+  PUT    & \texttt{/api/profile/password}              & Change password. \\
+  GET    & \texttt{/api/notifications}                 & List notifications. \\
+  PUT    & \texttt{/api/notifications/:id/read}        & Mark one notification read. \\
+  PUT    & \texttt{/api/notifications/read-all}        & Mark all notifications read. \\
+  GET    & \texttt{/api/notifications/unread-count}    & Unread count for the bell icon. \\
+  POST   & \texttt{/api/submissions/run}               & Run candidate solution against sample test cases (no persist). \\
+  GET    & \texttt{/api/submissions/:id}               & Read a submission (ownership re-checked). \\
+  POST   & \texttt{/api/execute}                       & Standalone code execution (playground). \\
+  \bottomrule
+\end{longtable}
+
+\section{Protected: teacher}
+
+\begin{longtable}{l l p{8cm}}
+  \toprule
+  Method & Path & Purpose \\
+  \midrule
+  POST   & \texttt{/api/exams}                                  & Create exam (defaults to draft). \\
+  GET    & \texttt{/api/exams}                                  & List teacher's exams with status. \\
+  GET    & \texttt{/api/exams/:id}                              & Read exam with problems and assignments. \\
+  PUT    & \texttt{/api/exams/:id}                              & Update; refuses to publish without start time. \\
+  DELETE & \texttt{/api/exams/:id}                              & Delete exam (cascades). \\
+  POST   & \texttt{/api/exams/:id/assign}                       & Assign to one or more classes. \\
+  POST   & \texttt{/api/exams/:id/close}                        & Close exam window now. \\
+  POST   & \texttt{/api/exams/:id/reopen}                       & Reopen for N minutes. \\
+  GET    & \texttt{/api/exams/:id/results}                      & Per-student results. \\
+  POST   & \texttt{/api/exams/:examId/problems}                 & Add a problem to an exam. \\
+  GET    & \texttt{/api/problems}                               & List bank problems. \\
+  GET    & \texttt{/api/problems/:id}                           & Read problem. \\
+  PUT    & \texttt{/api/problems/:id}                           & Update problem. \\
+  DELETE & \texttt{/api/problems/:id}                           & Delete problem. \\
+  POST   & \texttt{/api/problems/bank}                          & Save problem to bank. \\
+  POST   & \texttt{/api/problems/:problemId/test-cases}         & Add test case. \\
+  PUT    & \texttt{/api/test-cases/:id}                         & Update test case. \\
+  DELETE & \texttt{/api/test-cases/:id}                         & Delete test case. \\
+  POST   & \texttt{/api/classes}                                & Create class. \\
+  GET    & \texttt{/api/classes}                                & List teacher's classes. \\
+  GET    & \texttt{/api/classes/:id}                            & Read class with members + exams. \\
+  PUT    & \texttt{/api/classes/:id}                            & Update class (name, threshold, etc.). \\
+  DELETE & \texttt{/api/classes/:id}                            & Delete class (cascades). \\
+  DELETE & \texttt{/api/classes/:classId/members/:userId}       & Remove member. \\
+  GET    & \texttt{/api/classes/:classId/announcements}         & List announcements. \\
+  POST   & \texttt{/api/classes/:classId/announcements}         & Create announcement (fan-out notify). \\
+  PUT    & \texttt{/api/announcements/:id}                      & Update announcement. \\
+  DELETE & \texttt{/api/announcements/:id}                      & Delete announcement. \\
+  PUT    & \texttt{/api/submissions/:id/grade}                  & Manual grade or override. \\
+  GET    & \texttt{/api/teacher/dashboard}                      & Aggregate dashboard data. \\
+  POST   & \texttt{/api/folders}                                & Create folder. \\
+  GET    & \texttt{/api/folders}                                & List folders. \\
+  PUT    & \texttt{/api/folders/:id}                            & Rename folder. \\
+  DELETE & \texttt{/api/folders/:id}                            & Delete folder. \\
+  \bottomrule
+\end{longtable}
+
+\section{Protected: student}
+
+\begin{longtable}{l l p{8cm}}
+  \toprule
+  Method & Path & Purpose \\
+  \midrule
+  GET    & \texttt{/api/student/exams}                          & List assigned exams. \\
+  GET    & \texttt{/api/student/exams/:id}                      & Read assigned exam (with attempt + draft). \\
+  POST   & \texttt{/api/student/exams/:id/start}                & Start (or resume) timed attempt. \\
+  POST   & \texttt{/api/student/exams/:id/submit}               & Submit attempt; creates submissions, kicks graders. \\
+  PUT    & \texttt{/api/student/exams/:id/autosave}             & Persist draft answers (raw JSON body). \\
+  GET    & \texttt{/api/attempts/mine}                          & List own attempts. \\
+  GET    & \texttt{/api/student/classes}                        & List enrolled classes. \\
+  POST   & \texttt{/api/student/classes/join}                   & Join class by 8-char invite code. \\
+  DELETE & \texttt{/api/student/classes/:id}                    & Leave class. \\
+  GET    & \texttt{/api/student/classes/:id}                    & Read class as student. \\
+  GET    & \texttt{/api/student/submissions}                    & List student's own submissions. \\
+  GET    & \texttt{/api/student/stats}                          & Aggregate stats. \\
+  GET    & \texttt{/api/student/performance}                    & Per-exam performance series. \\
+  \bottomrule
+\end{longtable}
+
+The route registration sites are \texttt{internal/<package>/routes.go}; per-handler implementations are documented in \Cref{ch:implementation}.

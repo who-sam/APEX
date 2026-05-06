@@ -1,0 +1,235 @@
+\chapter{User Manual}
+\label{ch:user-manual}
+
+This chapter walks through APEX from the user's chair. The screenshots are taken from a local instance brought up by \texttt{./start.sh} with the seed data set described in \Cref{ch:testing}: \emph{Dr.~Demo} as a teacher, \emph{Sam Student} as a student, one demo class, and one each of a coding, MCQ, and written exam. The screen captures are at 1440$\times$900 with the browser chrome cropped. Every screen is reachable from the routes documented in \Cref{fig:F5.11}.
+
+\paragraph{A note on availability.} The screenshots referenced below are produced from a running deployment and live in \texttt{book/figures/screenshots/}. When this manuscript is built without that directory populated --- for example, on a fresh clone --- LaTeX will substitute a placeholder rectangle and the prose still flows. The capture script and seed data are documented in \Cref{appendix:screenshots-extra}.
+
+\section{Sign-up and sign-in}
+
+A new user lands on the marketing-style \texttt{/} home page (\Cref{fig:F9.1}) and clicks \emph{Get started}, arriving at \texttt{/auth} (\Cref{fig:F9.2}). The auth screen carries three primary actions: sign in with email + password, sign up (which prompts for a role), and sign in with Google.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.1_landing.png}
+  \caption{Landing page.}
+  \label{fig:F9.1}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\linewidth]{F9.2_auth-signin.png}
+  \caption{Sign-in form. The Google button calls Google Identity Services~\cite{gids}; the role picker appears only when a Google account is new to APEX.}
+  \label{fig:F9.2}
+\end{figure}
+
+A successful sign-in redirects to \texttt{/dashboard}, which renders one of two layouts depending on the decoded role. The teacher dashboard (\Cref{fig:F9.3}) lists owned classes and recent activity; the student dashboard (\Cref{fig:F9.4}) lists upcoming and active exams.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.3_dashboard-teacher.png}
+  \caption{Teacher dashboard.}
+  \label{fig:F9.3}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.4_dashboard-student.png}
+  \caption{Student dashboard.}
+  \label{fig:F9.4}
+\end{figure}
+
+\section{Teacher: managing classes}
+
+From the teacher dashboard, \emph{Courses} opens \texttt{/dashboard/courses}, listing owned classes. \emph{New class} pops a dialog (name, optional section); on save, the class appears with its 8-character invite code (\Cref{fig:F9.5}). Sharing the invite code with students is the only enrollment mechanism.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.5_class-list-teacher.png}
+  \caption{Teacher's class list with invite codes.}
+  \label{fig:F9.5}
+\end{figure}
+
+Clicking a class opens its detail screen (\Cref{fig:F9.6}). The detail shows the roster, the assigned exams, and the announcements feed. The teacher can rename the class, change cover image, toggle \emph{Grades announced}, change the passing threshold, post an announcement, or remove a member.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.6_class-detail-teacher.png}
+  \caption{Class detail (teacher view).}
+  \label{fig:F9.6}
+\end{figure}
+
+\section{Teacher: building an exam}
+
+\emph{Exams} (\texttt{/dashboard/exams}) lists owned exams with status badges (Draft, Upcoming, Active, Completed). \emph{New exam} opens the exam builder at \texttt{/dashboard/exam-builder} (\Cref{fig:F9.7}). The header collects metadata; a left rail lists the questions; the right pane edits the selected question.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.7_exam-builder.png}
+  \caption{Exam builder.}
+  \label{fig:F9.7}
+\end{figure}
+
+Adding a coding question (\Cref{fig:F9.8}) requires a title, a Markdown description, the time and memory limits, optional starter code, and a list of test cases. Each test case is sample or hidden; sample test cases are visible to the student during the attempt. Adding an MCQ (\Cref{fig:F9.9}) is a list of options with a per-option \emph{Correct} checkbox; the editor enforces \emph{at least one correct} before allowing publish. Adding a written question (\Cref{fig:F9.10}) collects the prompt, the rubric, and the maximum word count; the \emph{Require manual grading} toggle is on by default.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.8_problem-editor-coding.png}
+  \caption{Coding problem editor.}
+  \label{fig:F9.8}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.9_problem-editor-mcq.png}
+  \caption{MCQ editor.}
+  \label{fig:F9.9}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.10_problem-editor-written.png}
+  \caption{Written-question editor.}
+  \label{fig:F9.10}
+\end{figure}
+
+When the exam has at least one question and a non-empty \texttt{start\_time}, the \emph{Publish} toggle is enabled (\Cref{fig:F9.11}). Toggling it without a start time produces a field-level error (\Cref{fig:F9.12}) --- this is the user-facing surface of the rule in \texttt{exam.UpdateExam:222--233}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.11_publish-toggle.png}
+  \caption{Publish toggle, enabled.}
+  \label{fig:F9.11}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.12_publish-needs-start.png}
+  \caption{Publishing without a start time is rejected with a field-level error.}
+  \label{fig:F9.12}
+\end{figure}
+
+\emph{Assign to classes} (\Cref{fig:F9.13}) opens a multi-select dialog of the teacher's classes. \emph{Preview} (\Cref{fig:F9.14}) opens \texttt{/dashboard/exam-preview/:id}, which renders the exam exactly as a student would see it.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.13_assign-classes.png}
+  \caption{Assigning the exam to one or more classes.}
+  \label{fig:F9.13}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.14_exam-preview.png}
+  \caption{Exam preview as a student.}
+  \label{fig:F9.14}
+\end{figure}
+
+\section{Student: joining a class and starting an exam}
+
+The student lands on \texttt{/dashboard/courses} and clicks \emph{Join with code} (\Cref{fig:F9.15}). The 8-character invite code is the only required input. After joining, the class appears on the dashboard and any assigned exams appear under \emph{Upcoming}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{F9.15_join-class.png}
+  \caption{Student joins a class with an invite code.}
+  \label{fig:F9.15}
+\end{figure}
+
+Clicking \emph{Start exam} on an in-window exam opens \texttt{/dashboard/exam/:id}. The take screen (\Cref{fig:F9.16}) shows the question text, a left navigation rail of question numbers, the remaining time top-right, and a Submit button. Coding questions render in a Monaco editor; MCQs render as a checkbox list; written questions render as a textarea with a word counter.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.16_take-coding.png}
+  \caption{Taking a coding question.}
+  \label{fig:F9.16}
+\end{figure}
+
+\paragraph{Running sample tests.} A coding question's \emph{Run samples} button calls \texttt{POST /submissions/run} and renders per-test results inline (\Cref{fig:F9.17}). Hidden test cases are not run on this path --- they are reserved for the actual submission.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.17_take-coding-run.png}
+  \caption{Sample test results.}
+  \label{fig:F9.17}
+\end{figure}
+
+\paragraph{Autosave.} A subtle "saved 4s ago" indicator near the timer reflects \texttt{draft\_saved\_at} from the server (\Cref{fig:F9.18}). If the browser crashes or the student switches device, opening the exam again restores the same answers from the server-side draft.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.18_autosave-indicator.png}
+  \caption{The autosave indicator next to the countdown timer.}
+  \label{fig:F9.18}
+\end{figure}
+
+\paragraph{Submitting.} \emph{Submit} pops a confirmation dialog (\Cref{fig:F9.19}). On confirm, the SPA posts to \texttt{POST /student/exams/:id/submit} and shows the post-submit success screen (\Cref{fig:F9.20}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.19_submit-dialog.png}
+  \caption{Submit confirmation.}
+  \label{fig:F9.19}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.20_post-submit.png}
+  \caption{Post-submit screen.}
+  \label{fig:F9.20}
+\end{figure}
+
+\section{Grading and review}
+
+\paragraph{Pending-grading queue.} The teacher's \emph{Grading} tab (\texttt{/dashboard/grading}, \Cref{fig:F9.21}) lists submissions in \texttt{pending\_review}. Opening one shows the student answer, the rubric, and inputs for score and textual feedback (\Cref{fig:F9.22}). On save, the SPA posts to \texttt{PUT /submissions/:id/grade}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.21_grading-queue.png}
+  \caption{Pending-grading queue.}
+  \label{fig:F9.21}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.22_grading-detail.png}
+  \caption{Grading a written answer.}
+  \label{fig:F9.22}
+\end{figure}
+
+\paragraph{Per-student results.} The teacher's per-exam results screen (\Cref{fig:F9.23}) shows a table with one row per student: total score, percentage, and time taken. Clicking a row opens the per-question breakdown (\Cref{fig:F9.24}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.23_results-by-student.png}
+  \caption{Per-student results.}
+  \label{fig:F9.23}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.24_results-detail.png}
+  \caption{Per-question breakdown.}
+  \label{fig:F9.24}
+\end{figure}
+
+\paragraph{Student review.} Once \texttt{grades\_announced} is on (and the exam's \texttt{show\_results\_after} toggle is on), the student's \emph{Results} tab (\Cref{fig:F9.25}) lists their attempts. Opening one shows the per-question result, the teacher's textual feedback, and per-test outputs for sample tests only (\Cref{fig:F9.25}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F9.25_student-review.png}
+  \caption{Student review screen.}
+  \label{fig:F9.25}
+\end{figure}
+
+\section{Other surfaces}
+
+\paragraph{Notifications.} The bell icon in the top bar opens the notifications popover; the \emph{Notifications} page (\texttt{/dashboard/notifications}) lists everything historically. Each notification carries a deep link.
+
+\paragraph{Profile and settings.} \emph{Profile} (\texttt{/dashboard/profile}) edits the display name, bio, and avatar. \emph{Settings} (\texttt{/dashboard/settings}) toggles email vs.\ in-app notifications per channel, including the per-user \emph{exam reminder email} opt-in that the reminder scheduler honours.
+
+\paragraph{Question bank.} \emph{Question bank} (\texttt{/dashboard/question-bank}, teacher only) lets the teacher save problems for reuse, organise them in folders, and import them into a new exam. The bank shares the \texttt{problems} table with the exam-attached problems but uses \texttt{is\_bank = true} to scope queries.
+
+\section{Summary}
+
+The system is structured as one teacher path (build $\to$ assign $\to$ grade $\to$ announce) and one student path (join $\to$ take $\to$ review). The screenshots in this chapter are the load-bearing user-facing artefacts; the next chapter measures the system's behaviour under realistic load.

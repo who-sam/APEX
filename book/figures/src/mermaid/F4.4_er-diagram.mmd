@@ -1,0 +1,101 @@
+erDiagram
+    USER ||--o{ CLASS : teaches
+    USER ||--o{ CLASS_MEMBER : enrolls
+    USER ||--o{ EXAM_ATTEMPT : "takes"
+    USER ||--o{ SUBMISSION : "submits"
+    USER ||--o| USER_PROFILE : has
+    USER ||--o{ NOTIFICATION : receives
+    USER ||--o{ PASSWORD_RESET_TOKEN : requests
+    USER ||--o{ EXAM : authors
+    CLASS ||--o{ CLASS_MEMBER : contains
+    CLASS ||--o{ EXAM_CLASS : assigned
+    CLASS ||--o{ ANNOUNCEMENT : has
+    EXAM ||--o{ PROBLEM : contains
+    EXAM ||--o{ EXAM_CLASS : "assigned to"
+    EXAM ||--o{ EXAM_ATTEMPT : "attempted by"
+    EXAM_ATTEMPT ||--o{ SUBMISSION : "groups"
+    PROBLEM ||--o{ TEST_CASE : "has"
+    PROBLEM ||--o{ SUBMISSION : "answered by"
+    SUBMISSION ||--o{ TEST_RESULT : "produces"
+    TEST_CASE ||--o{ TEST_RESULT : "evaluated by"
+    FOLDER ||--o{ PROBLEM : "groups (bank only)"
+
+    USER {
+        uint id PK
+        string email UK
+        string password_hash
+        string role
+        string name
+        string google_id
+        time created_at
+    }
+    CLASS {
+        uint id PK
+        uint teacher_id FK
+        string name
+        string section
+        string invite_code UK
+        bool grades_announced
+        int passing_threshold
+    }
+    EXAM {
+        uint id PK
+        uint teacher_id FK
+        string title
+        int duration_minutes
+        time start_time
+        time end_time
+        bool is_draft
+        bool shuffle_questions
+        bool show_results_after
+        int passing_score
+    }
+    PROBLEM {
+        uint id PK
+        uint exam_id FK
+        bool is_bank
+        string type
+        int points
+        string difficulty
+        int time_limit_ms
+        int memory_limit_kb
+    }
+    TEST_CASE {
+        uint id PK
+        uint problem_id FK
+        text input
+        text expected_output
+        bool is_sample
+        int points
+    }
+    EXAM_ATTEMPT {
+        uint id PK
+        uint user_id FK
+        uint exam_id FK
+        time started_at
+        time submitted_at
+        float score
+        string status
+        json draft_answers
+    }
+    SUBMISSION {
+        uint id PK
+        uint user_id FK
+        uint problem_id FK
+        uint exam_id FK
+        uint exam_attempt_id FK
+        string type
+        string language
+        text code
+        string status
+        float score
+    }
+    TEST_RESULT {
+        uint id PK
+        uint submission_id FK
+        uint test_case_id FK
+        bool passed
+        text actual_output
+        int execution_time_ms
+        int memory_kb
+    }

@@ -1,0 +1,26 @@
+@startuml
+skinparam shadowing false
+
+node "APEX (next gen)" {
+  component "Gin /api" as API
+  component "GraphQL gateway?" as GQL
+  component "WebSocket /grade-stream" as WS
+  component "Reminder + analytics worker pool" as W
+  component "Plagiarism worker (MOSS / JPlag)" as PL
+  database "PostgreSQL + materialised views" as PG
+  queue "Redis pub/sub" as R
+}
+
+cloud "Self-hosted Judge0 cluster" as J0
+cloud "MS / GitHub OAuth" as O
+
+API --> PG
+API --> R
+W --> R
+PL --> R
+WS --> R
+API --> WS : forward grading events
+API --> J0
+API --> O
+PL --> J0 : optional re-execution
+@enduml

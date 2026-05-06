@@ -1,0 +1,21 @@
+stateDiagram-v2
+    [*] --> Draft: CreateExam (is_draft=true)
+    Draft --> Published: UpdateExam(is_draft=false) when start_time set
+    Draft --> Draft: edit content / metadata
+    Published --> Upcoming: now < start_time
+    Published --> Active: start_time <= now <= end_time
+    Published --> Completed: now > end_time
+    Active --> Completed: end_time elapsed (or CloseExam)
+    Completed --> Active: ReopenExam(minutes)
+    Active --> Active: AssignExam to more classes
+    Published --> Reset: ResetExam (sets reset_at, invalidates sessions)
+    Reset --> Active: reset complete
+
+    note right of Draft
+      attempts blocked
+      not visible to students
+    end note
+    note right of Active
+      students may start/resume
+      reminders fire
+    end note

@@ -1,0 +1,46 @@
+@startuml
+skinparam shadowing false
+
+cloud "Untrusted (browser)" #LightYellow {
+  [Student SPA]
+  [Teacher SPA]
+  [Attacker browser]
+}
+
+node "Trusted (server)" #LightGreen {
+  [Gin /api]
+  [middleware.Auth]
+  [middleware.RequireRole]
+  [bcrypt password verify]
+  [google idtoken.Validate]
+  [GORM + Postgres]
+  [judge0 sandbox call]
+  [SMTP]
+}
+
+cloud "External services" #LightGray {
+  [Judge0 sandbox]
+  [Google OAuth]
+  [SMTP relay]
+}
+
+[Student SPA] --> [Gin /api] : HTTPS\n+ Bearer JWT
+[Teacher SPA] --> [Gin /api]
+[Attacker browser] --> [Gin /api] : forged token? expired?\nIDOR attempts on /submissions/:id
+[Gin /api] --> [middleware.Auth] : reject if missing/invalid
+[middleware.Auth] --> [middleware.RequireRole]
+[middleware.RequireRole] --> [GORM + Postgres]
+[Gin /api] --> [judge0 sandbox call]
+[judge0 sandbox call] --> [Judge0 sandbox]
+[Gin /api] --> [google idtoken.Validate]
+[google idtoken.Validate] --> [Google OAuth]
+[Gin /api] --> [SMTP]
+[SMTP] --> [SMTP relay]
+
+note bottom of [middleware.RequireRole]
+  per-resource ownership re-checks
+  happen INSIDE handlers
+  (e.g. submission handler verifies
+   exam.teacher_id == c.user_id)
+end note
+@enduml

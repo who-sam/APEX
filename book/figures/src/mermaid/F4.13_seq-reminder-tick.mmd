@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant T as 1-minute ticker
+    participant R as reminder.runOnce
+    participant DB as Postgres
+    participant N as notification.Create
+    participant E as email.Send
+
+    T->>R: tick
+    R->>DB: SELECT exams WHERE start_time IN (now, now+60m] AND reminder_sent_at IS NULL
+    loop each upcoming exam
+        R->>DB: classes -> members -> opted-in profiles
+        R->>N: in-app reminder per opted-in user
+        R->>DB: UPDATE reminder_sent_at = now
+    end
+    R->>DB: emailSweep1Hour: exams in [+58, +62] minutes
+    loop opted-in students
+        R->>E: "starts in about 1 hour"
+    end
+    R->>DB: UPDATE email_reminder1h_sent_at
+    R->>DB: emailSweepStart: exams in [-2, +2] minutes
+    loop opted-in students
+        R->>E: "is starting now"
+    end
+    R->>DB: UPDATE email_reminder_start_sent_at

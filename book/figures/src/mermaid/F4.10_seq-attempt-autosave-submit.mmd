@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    actor S as Student
+    participant SPA as ExamTaking.tsx
+    participant API as /api
+    participant H as exam handler
+    participant DB as Postgres
+
+    S->>SPA: open /dashboard/exam/:id
+    SPA->>API: POST /student/exams/:id/start
+    API->>H: StartAttempt
+    H->>DB: enrolment + assignment + window checks
+    H->>DB: INSERT exam_attempt (or fetch existing)
+    H-->>SPA: 200 attempt
+    loop every 15s while editing
+        SPA->>API: PUT /student/exams/:id/autosave (raw JSON body)
+        API->>H: AutosaveAttempt
+        H->>DB: UPDATE attempt SET draft_answers, draft_saved_at
+        H-->>SPA: 200 {saved_at}
+    end
+    S->>SPA: click Submit
+    SPA->>API: POST /student/exams/:id/submit {answers}
+    API->>H: SubmitAttempt
+    loop for each answer
+        H->>DB: INSERT submission (status=pending)
+        H->>H: go judge0.Grade / GradeMCQ / GradeWritten
+    end
+    H->>DB: UPDATE attempt status=submitted, draft cleared
+    H->>DB: INSERT notification
+    H-->>SPA: 201 {attempt_id, submission_ids}
