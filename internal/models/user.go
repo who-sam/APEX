@@ -21,7 +21,7 @@ type UserProfile struct {
 	NotifyPush          bool   `gorm:"default:true" json:"notify_push"`
 	NotifyExamReminders bool   `gorm:"default:true" json:"notify_exam_reminders"`
 	NotifyResults       bool   `gorm:"default:false" json:"notify_results"`
-	NotifyExamEmail     bool   `gorm:"default:false" json:"notify_exam_email"`
+	NotifyExamEmail     bool   `gorm:"default:true" json:"notify_exam_email"`
 	BlockAnnounceWithPending bool `gorm:"default:true" json:"block_announce_with_pending"`
 	DefaultExamDraft         bool `gorm:"default:true" json:"default_exam_draft"`
 	DefaultPassingThreshold  int  `gorm:"default:60" json:"default_passing_threshold"`

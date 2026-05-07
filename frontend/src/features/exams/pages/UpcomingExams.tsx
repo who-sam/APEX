@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar as CalendarIcon, Clock, BookOpen, ArrowRight, Search, CheckCircle2, XCircle, Filter, Lock } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, BookOpen, ArrowRight, Search, CheckCircle2, XCircle, Filter, Lock, User, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { useStudentExams } from "@/hooks/useExams";
+import { useMyAttempts } from "@/hooks/useAttempts";
 import { format, isSameDay } from "date-fns";
 import { getExamPhase, type ExamPhase } from "@/features/exams/lib/examStatus";
 
@@ -30,13 +31,6 @@ const statusFilters: { value: ExamStatus | "all"; label: string }[] = [
   { value: "missed", label: "Missed" },
 ];
 
-const difficultyFilters: { value: Difficulty | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "Easy", label: "Easy" },
-  { value: "Medium", label: "Medium" },
-  { value: "Hard", label: "Hard" },
-];
-
 function deriveStatus(exam: any): ExamStatus {
   return getExamPhase(exam);
 }
@@ -48,9 +42,9 @@ function getExamDate(exam: any): Date {
 export default function UpcomingExamsPage() {
   const navigate = useNavigate();
   const { data: examsData, isLoading, error, refetch } = useStudentExams();
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const { data: attempts } = useMyAttempts();
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<ExamStatus | "all">("all");
-  const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | "all">("all");
   const [search, setSearch] = useState("");
 
   if (isLoading) return <PageSkeleton cards={2} rows={5} />;
@@ -66,8 +60,20 @@ export default function UpcomingExamsPage() {
     difficulty: (e.difficulty as Difficulty) || "Medium",
   }));
 
+  // Build set of exam IDs that have an in-progress (started but not submitted) attempt
+  const inProgressExamIds = new Set<number>(
+    (attempts || [])
+      .filter((a: any) => a.status !== "submitted")
+      .map((a: any) => Number(a.exam_id))
+  );
+
   const examDates = exams.map((e: any) => e.examDate);
-  const selectedExam = selectedDate ? exams.find((e: any) => isSameDay(e.examDate, selectedDate)) : null;
+
+  // Exams matching the selected calendar date (may be multiple)
+  const selectedDateExams = selectedDate
+    ? exams.filter((e: any) => isSameDay(e.examDate, selectedDate))
+    : [];
+  const hasExamsOnSelectedDate = selectedDateExams.length > 0;
 
   const stats = useMemo(() => ({
     total: exams.length,
@@ -79,10 +85,12 @@ export default function UpcomingExamsPage() {
   const filtered = useMemo(() => {
     return exams
       .filter((e: any) => statusFilter === "all" || e.derivedStatus === statusFilter)
-      .filter((e: any) => difficultyFilter === "all" || e.difficulty === difficultyFilter)
       .filter((e: any) => !search || e.name.toLowerCase().includes(search.toLowerCase()))
+      // When a date with exams is selected, filter list to that day
+      .filter((e: any) => !selectedDate || !hasExamsOnSelectedDate || isSameDay(e.examDate, selectedDate))
       .sort((a: any, b: any) => a.examDate.getTime() - b.examDate.getTime());
-  }, [exams, statusFilter, difficultyFilter, search]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exams, statusFilter, search, selectedDate, hasExamsOnSelectedDate]);
 
   return (
     <div className="space-y-6">
@@ -125,8 +133,6 @@ export default function UpcomingExamsPage() {
                     {f.label}
                   </Button>
                 ))}
-
-
               </div>
             </div>
 
@@ -141,6 +147,7 @@ export default function UpcomingExamsPage() {
               <div className="space-y-3">
                 {filtered.map((exam: any) => {
                   const isSelected = selectedDate && isSameDay(exam.examDate, selectedDate);
+                  const isInProgress = inProgressExamIds.has(Number(exam.id));
                   return (
                     <div
                       key={exam.id}
@@ -164,16 +171,24 @@ export default function UpcomingExamsPage() {
                         </div>
                         <div className="space-y-1">
                           <p className="font-medium text-foreground">{exam.name}</p>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             <span>
                               {exam.start_time
                                 ? format(exam.examDate, "EEEE, MMM d · h:mm a")
-                                : format(exam.examDate, "EEEE, MMM d")}
+                                : format(exam.examDate, "EEEE, MMM d · TBD")}
                             </span>
                             <span>&middot;</span>
                             <span>{exam.duration}</span>
                             <span>&middot;</span>
                             <span>{exam.questions} questions</span>
+                            {exam.teacher?.name && (
+                              <>
+                                <span>&middot;</span>
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />{exam.teacher.name}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -192,7 +207,7 @@ export default function UpcomingExamsPage() {
                         )}
                         {exam.derivedStatus === "active" && (
                           <Button size="sm" variant="ghost" className="gap-1 text-primary" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/exam/${exam.id}/take`); }}>
-                            Start Exam <ArrowRight className="h-3 w-3" />
+                            {isInProgress ? "Continue Exam" : "Start Exam"} <ArrowRight className="h-3 w-3" />
                           </Button>
                         )}
                         {exam.derivedStatus === "upcoming" && (
@@ -213,9 +228,16 @@ export default function UpcomingExamsPage() {
         {/* Calendar */}
         <Card className="self-start border-border/50 bg-card/80 backdrop-blur-md w-fit">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <CalendarIcon className="h-5 w-5 text-primary" />
-              Calendar
+            <CardTitle className="flex items-center justify-between gap-2 text-lg">
+              <span className="flex items-center gap-2">
+                <CalendarIcon className="h-5 w-5 text-primary" />
+                Calendar
+              </span>
+              {selectedDate && (
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedDate(undefined)}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -249,23 +271,38 @@ export default function UpcomingExamsPage() {
             </div>
 
             {/* Selected date detail */}
-            {selectedExam && (
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
-                <p className="font-semibold text-foreground">{selectedExam.name}</p>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  {selectedExam.duration} &middot; {selectedExam.questions} questions
-                </div>
-                <div className="flex items-center gap-2">
-                  {selectedExam.derivedStatus === "completed" && (
-                    <Badge className="bg-green-500/15 text-green-500 border-green-500/30" variant="outline">
-                      {selectedExam.score != null ? `${Math.round(selectedExam.score)}%` : "Done"}
-                    </Badge>
-                  )}
-                  {selectedExam.derivedStatus === "missed" && (
-                    <Badge variant="destructive">Missed</Badge>
-                  )}
-                </div>
+            {selectedDateExams.length > 0 && (
+              <div className="space-y-2">
+                {selectedDateExams.map((exam: any) => (
+                  <div key={exam.id} className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
+                    <p className="font-semibold text-foreground">{exam.name}</p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      {exam.start_time ? format(new Date(exam.start_time), "h:mm a") : "TBD"} &middot; {exam.duration} &middot; {exam.questions} questions
+                    </div>
+                    {exam.teacher?.name && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <User className="h-4 w-4" />
+                        {exam.teacher.name}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {exam.derivedStatus === "completed" && (
+                        <Badge className="bg-green-500/15 text-green-500 border-green-500/30" variant="outline">
+                          {exam.score != null ? `${Math.round(exam.score)}%` : "Done"}
+                        </Badge>
+                      )}
+                      {exam.derivedStatus === "missed" && (
+                        <Badge variant="destructive">Missed</Badge>
+                      )}
+                      {exam.derivedStatus === "active" && (
+                        <Button size="sm" variant="ghost" className="h-7 gap-1 text-primary px-2" onClick={() => navigate(`/dashboard/exam/${exam.id}/take`)}>
+                          {inProgressExamIds.has(Number(exam.id)) ? "Continue" : "Start"} <ArrowRight className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

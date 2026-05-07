@@ -196,6 +196,7 @@ func GetExams(c *gin.Context) {
 	var exams []models.Exam
 	database.DB.Where("id IN ? AND is_draft = ?", examIDs, false).
 		Preload("ExamClasses.Class").
+		Preload("Teacher").
 		Order("start_time asc").
 		Find(&exams)
 

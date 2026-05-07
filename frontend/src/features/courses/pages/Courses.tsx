@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { useRole } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useStudentClasses, useJoinClass, useLeaveClass } from "@/hooks/useClasses";
+import { useCreateFolder } from "@/hooks/useFolders";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import {
-  BookOpen, Plus, Users, Upload, Copy, Check, Search, LogIn, LogOut,
+  BookOpen, Plus, Users, Copy, Check, Search, LogIn, LogOut,
   MoreHorizontal, Eye, Pencil, Trash2, ImagePlus, X,
 } from "lucide-react";
 import {
@@ -34,10 +36,13 @@ function TeacherCourses() {
   const updateClassMutation = useUpdateClass();
   const deleteClassMutation = useDeleteClass();
 
+  const createFolderMutation = useCreateFolder();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newSection, setNewSection] = useState("");
   const [newPhoto, setNewPhoto] = useState<string | null>(null);
+  const [createQbFolder, setCreateQbFolder] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -69,9 +74,13 @@ function TeacherCourses() {
       if (newPhoto && created?.id) {
         await updateClassMutation.mutateAsync({ id: created.id, cover_image: newPhoto });
       }
+      if (createQbFolder) {
+        await createFolderMutation.mutateAsync({ name: newName.trim() });
+      }
       setNewName("");
       setNewSection("");
       setNewPhoto(null);
+      setCreateQbFolder(false);
       setCreateOpen(false);
       toast({
         title: "Course created",
@@ -250,10 +259,6 @@ function TeacherCourses() {
                 <span className="text-muted-foreground">{course.exam_count || 0} exams</span>
               </div>
 
-              <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={(e) => e.stopPropagation()}>
-                <Upload className="h-3.5 w-3.5" />
-                Enroll via CSV
-              </Button>
             </CardContent>
           </Card>
         ))}
@@ -374,8 +379,18 @@ function TeacherCourses() {
               )}
             </div>
           </div>
+          <div className="flex items-center gap-2 py-1">
+            <Checkbox
+              id="qb-folder"
+              checked={createQbFolder}
+              onCheckedChange={(v) => setCreateQbFolder(!!v)}
+            />
+            <Label htmlFor="qb-folder" className="text-sm font-normal cursor-pointer">
+              Create a Question Bank folder for this course
+            </Label>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" onClick={() => { setCreateOpen(false); setCreateQbFolder(false); }}>
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={!newName.trim() || createClassMutation.isPending}>
