@@ -1,5 +1,5 @@
 erDiagram
-    USER ||--o{ CLASS : teaches
+    USER ||--o{ COURSE : teaches
     USER ||--o{ CLASS_MEMBER : enrolls
     USER ||--o{ EXAM_ATTEMPT : "takes"
     USER ||--o{ SUBMISSION : "submits"
@@ -7,9 +7,9 @@ erDiagram
     USER ||--o{ NOTIFICATION : receives
     USER ||--o{ PASSWORD_RESET_TOKEN : requests
     USER ||--o{ EXAM : authors
-    CLASS ||--o{ CLASS_MEMBER : contains
-    CLASS ||--o{ EXAM_CLASS : assigned
-    CLASS ||--o{ ANNOUNCEMENT : has
+    COURSE ||--o{ CLASS_MEMBER : contains
+    COURSE ||--o{ EXAM_CLASS : assigned
+    COURSE ||--o{ ANNOUNCEMENT : has
     EXAM ||--o{ PROBLEM : contains
     EXAM ||--o{ EXAM_CLASS : "assigned to"
     EXAM ||--o{ EXAM_ATTEMPT : "attempted by"
@@ -29,7 +29,7 @@ erDiagram
         string google_id
         time created_at
     }
-    CLASS {
+    COURSE {
         uint id PK
         uint teacher_id FK
         string name

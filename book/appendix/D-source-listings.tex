@@ -3,7 +3,7 @@
 
 This appendix collects the longer source extracts referenced from the body chapters. Each listing is reproduced verbatim from the indicated file and line range; line numbers in the surrounding prose are absolute.
 
-\section{Backend bootstrap (\texttt{main.go})}
+\section{Backend bootstrap}
 
 \begin{lstlisting}[language=Go,caption={\texttt{main.go}, the entire file. Bootstrap order is fixed: config, database (which runs migrations), package init, scheduler, router, routes, serve.}]
 package main
@@ -65,7 +65,7 @@ func main() {
 }
 \end{lstlisting}
 
-\section{JWT middleware (\texttt{internal/middleware/auth.go})}
+\section{JWT middleware}
 
 \begin{lstlisting}[language=Go,caption={Auth + RequireRole middleware.}]
 package middleware
@@ -155,7 +155,7 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 }
 \end{lstlisting}
 
-\section{Reminder scheduler (\texttt{internal/reminder/scheduler.go})}
+\section{Reminder scheduler}
 
 \begin{lstlisting}[language=Go,caption={Reminder scheduler entry, including the three sweeps and per-exam dedup columns.}]
 func Start() {
@@ -194,7 +194,7 @@ func runOnce() {
 }
 \end{lstlisting}
 
-\section{Frontend AuthContext (\texttt{frontend/src/contexts/AuthContext.tsx})}
+\section{Frontend AuthContext}
 
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize,breaklines=true,caption={The session restore path that decodes the JWT in the browser.}]
 function parseJWT(token: string): {

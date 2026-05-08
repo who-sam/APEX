@@ -3,9 +3,9 @@ flowchart TD
     B --> C[load problem]
     C --> D[parse correct_option_ids JSON]
     D --> E[parse selected_options JSON]
-    E --> F{len(correctSet) == 0?}
+    E --> F{"len(correctSet) == 0?"}
     F -->|yes| G[status=pending_review<br/>cannot fail student]
-    F -->|no| H{len(correctSet) == len(selectedSet)<br/>AND all selected in correctSet?}
+    F -->|no| H{"len(correctSet) == len(selectedSet) AND all selected in correctSet?"}
     H -->|yes| I[score=100<br/>status=accepted]
     H -->|no| J[score=0<br/>status=wrong_answer]
     I --> K[update submission]

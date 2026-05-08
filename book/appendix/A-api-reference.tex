@@ -12,7 +12,7 @@ This appendix lists every HTTP endpoint exposed by the APEX backend. Endpoints u
 
 \section{Public}
 
-\begin{longtable}{l l p{8cm}}
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.8cm} X}
   \toprule
   Method & Path & Purpose \\
   \midrule
@@ -22,11 +22,11 @@ This appendix lists every HTTP endpoint exposed by the APEX backend. Endpoints u
   POST   & \texttt{/api/auth/forgot-password}   & Request a password-reset email. \\
   POST   & \texttt{/api/auth/reset-password}    & Reset password with the token from the email. \\
   \bottomrule
-\end{longtable}
+\end{xltabular}
 
 \section{Protected: shared}
 
-\begin{longtable}{l l p{8cm}}
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.8cm} X}
   \toprule
   Method & Path & Purpose \\
   \midrule
@@ -42,11 +42,11 @@ This appendix lists every HTTP endpoint exposed by the APEX backend. Endpoints u
   GET    & \texttt{/api/submissions/:id}               & Read a submission (ownership re-checked). \\
   POST   & \texttt{/api/execute}                       & Standalone code execution (playground). \\
   \bottomrule
-\end{longtable}
+\end{xltabular}
 
 \section{Protected: teacher}
 
-\begin{longtable}{l l p{8cm}}
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.8cm} X}
   \toprule
   Method & Path & Purpose \\
   \midrule
@@ -85,11 +85,11 @@ This appendix lists every HTTP endpoint exposed by the APEX backend. Endpoints u
   PUT    & \texttt{/api/folders/:id}                            & Rename folder. \\
   DELETE & \texttt{/api/folders/:id}                            & Delete folder. \\
   \bottomrule
-\end{longtable}
+\end{xltabular}
 
 \section{Protected: student}
 
-\begin{longtable}{l l p{8cm}}
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.8cm} X}
   \toprule
   Method & Path & Purpose \\
   \midrule
@@ -107,6 +107,6 @@ This appendix lists every HTTP endpoint exposed by the APEX backend. Endpoints u
   GET    & \texttt{/api/student/stats}                          & Aggregate stats. \\
   GET    & \texttt{/api/student/performance}                    & Per-exam performance series. \\
   \bottomrule
-\end{longtable}
+\end{xltabular}
 
 The route registration sites are \texttt{internal/<package>/routes.go}; per-handler implementations are documented in \Cref{ch:implementation}.

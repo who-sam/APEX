@@ -42,7 +42,7 @@ The persistence schema centres on three aggregates: identity (users, profiles, p
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{F4.4_er-diagram.pdf}
+  \includegraphics[width=\linewidth]{F4.4_er-diagram}
   \caption{Entity-relationship diagram covering all GORM models in \texttt{internal/models/}.}
   \label{fig:F4.4}
 \end{figure}
@@ -99,21 +99,21 @@ Two design choices in the data model are worth flagging.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{F4.14_state-exam.pdf}
+  \includegraphics[width=0.95\linewidth]{F4.14_state-exam}
   \caption{Exam state machine. Publishing requires a non-null \texttt{start\_time} (\texttt{exam.UpdateExam} returns 400 otherwise, \texttt{internal/exam/handler.go:222--233}).}
   \label{fig:F4.14}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{F4.15_state-submission.pdf}
+  \includegraphics[width=0.95\linewidth]{F4.15_state-submission}
   \caption{Submission state machine. \texttt{pending\_review} is the special state for written answers and for MCQs that have no configured correct answers.}
   \label{fig:F4.15}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{F4.16_state-attempt.pdf}
+  \includegraphics[width=0.95\linewidth]{F4.16_state-attempt}
   \caption{Attempt state machine. The unique \texttt{(user\_id, exam\_id)} index makes every state transition idempotent on retry.}
   \label{fig:F4.16}
 \end{figure}
@@ -126,42 +126,42 @@ The five sequences in this section cover the operations that touch more than one
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{F4.8_seq-login.pdf}
+  \includegraphics[width=0.95\linewidth]{F4.8_seq-login}
   \caption{Login. Password verification uses bcrypt~\cite{provos1999bcrypt}; the JWT~\cite{rfc7519} is HS256 with a 24-hour expiry.}
   \label{fig:F4.8}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{F4.9_seq-google-oauth.pdf}
+  \includegraphics[width=0.95\linewidth]{F4.9_seq-google-oauth}
   \caption{Google OAuth. The frontend gets an ID token from Google Identity Services~\cite{gids}, the backend validates it via the official Go SDK (\texttt{idtoken.Validate}), and either matches by \texttt{google\_id}, links to an existing email, or creates a new account once a role has been chosen.}
   \label{fig:F4.9}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{F4.10_seq-attempt-autosave-submit.pdf}
+  \includegraphics[width=\linewidth]{F4.10_seq-attempt-autosave-submit}
   \caption{Autosave + submit. The autosave endpoint (\texttt{exam.AutosaveAttempt}, \texttt{internal/exam/handler.go:650--685}) stores the raw JSON body from the client, so the SPA can serialise whatever shape its UI needs.}
   \label{fig:F4.10}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{F4.11_seq-autograde-coding.pdf}
+  \includegraphics[width=\linewidth]{F4.11_seq-autograde-coding}
   \caption{Auto-grading. \texttt{judge0.Grade} (\texttt{internal/judge0/grader.go:13--109}) compares Judge0's normalised stdout against the test case's normalised expected output and aggregates a percentage.}
   \label{fig:F4.11}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{F4.12_seq-grade-written.pdf}
+  \includegraphics[width=\linewidth]{F4.12_seq-grade-written}
   \caption{Manual grading of a written answer. \texttt{submission.GradeSubmission} (\texttt{internal/submission/handler.go:76--128}) re-checks ownership before applying the score and triggers the same finalisation pipeline as auto-grading.}
   \label{fig:F4.12}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{F4.13_seq-reminder-tick.pdf}
+  \includegraphics[width=\linewidth]{F4.13_seq-reminder-tick}
   \caption{Reminder scheduler. \texttt{reminder.runOnce} (\texttt{internal/reminder/scheduler.go:29--53}) runs once a minute, in three sweeps: in-app reminder, "starts in 1 hour" email, and "starting now" email. Each sweep dedupes via a per-exam timestamp.}
   \label{fig:F4.13}
 \end{figure}
@@ -199,7 +199,7 @@ GORM's \texttt{AutoMigrate} can add columns and create tables, but it cannot run
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{F4.18_migration-pipeline.pdf}
+  \includegraphics[width=0.95\linewidth]{F4.18_migration-pipeline}
   \caption{Schema bring-up order. Idempotent SQL runs first, then GORM's \texttt{AutoMigrate} creates new tables and indices, then a small post-step adjusts foreign-key constraints that depend on tables \texttt{AutoMigrate} just created.}
   \label{fig:F4.18}
 \end{figure}

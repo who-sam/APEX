@@ -1,0 +1,5 @@
+* { font-family: 'DejaVu Sans', 'Liberation Sans', sans-serif !important; }
+.label, .nodeLabel, .edgeLabel, text, foreignObject div, foreignObject span {
+  font-family: 'DejaVu Sans', 'Liberation Sans', sans-serif !important;
+  font-size: 14px !important;
+}

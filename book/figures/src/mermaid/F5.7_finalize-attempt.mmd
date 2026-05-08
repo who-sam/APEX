@@ -1,5 +1,5 @@
 flowchart TD
-    A[maybeFinalizeAttempt(attemptID)] --> B{attemptID == nil?}
+    A["maybeFinalizeAttempt(attemptID)"] --> B{attemptID == nil?}
     B -->|yes| Z[return]
     B -->|no| C[count submissions WHERE status IN pending,running]
     C --> D{count > 0?}

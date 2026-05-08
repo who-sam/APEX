@@ -10,7 +10,7 @@ MMD_SRC := $(wildcard figures/src/mermaid/*.mmd)
 PUML_SRC := $(wildcard figures/src/plantuml/*.puml)
 CHART_SRC := $(wildcard figures/src/charts/*.py)
 
-MMD_OUT := $(patsubst figures/src/mermaid/%.mmd,figures/out/%.pdf,$(MMD_SRC))
+MMD_OUT := $(patsubst figures/src/mermaid/%.mmd,figures/out/%.png,$(MMD_SRC))
 PUML_OUT := $(patsubst figures/src/plantuml/%.puml,figures/out/%.pdf,$(PUML_SRC))
 CHART_OUT := $(patsubst figures/src/charts/%.py,figures/out/%.pdf,$(CHART_SRC))
 
@@ -23,21 +23,19 @@ all: figs book
 
 figs: $(FIGS)
 
-figures/out/%.pdf: figures/src/mermaid/%.mmd
+figures/out/%.png: figures/src/mermaid/%.mmd figures/src/mermaid.css
 	@mkdir -p figures/out
-	mmdc -i $< -o figures/out/$*.svg -b transparent
-	rsvg-convert -f pdf -o $@ figures/out/$*.svg
-	@rm -f figures/out/$*.svg
+	mmdc -i $< -o $@ -b transparent --cssFile figures/src/mermaid.css --scale 2 --width 1600
 
 figures/out/%.pdf: figures/src/plantuml/%.puml
 	@mkdir -p figures/out
 	plantuml -tsvg -o $(CURDIR)/figures/out $<
-	rsvg-convert -f pdf -o $@ figures/out/$*.svg
+	inkscape --export-type=pdf --export-area-drawing --export-text-to-path --export-filename=$@ figures/out/$*.svg
 	@rm -f figures/out/$*.svg
 
 figures/out/%.pdf: figures/src/charts/%.py
 	@mkdir -p figures/out
-	python3 $< $@
+	MPLBACKEND=Agg python3 $< $@
 
 book:
 	latexmk main.tex

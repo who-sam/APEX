@@ -37,20 +37,20 @@ The script is intentionally readable rather than idempotent --- it is a way to b
   \caption{Environment variables read by the backend (\texttt{internal/config/config.go}).}
   \label{tab:env}
   \small
-  \begin{tabularx}{\linewidth}{l l X}
+  \begin{tabularx}{\linewidth}{>{\ttfamily}p{3.4cm} p{4.2cm} X}
     \toprule
-    Variable & Default / required & Purpose \\
+    \normalfont Variable & Default / required & Purpose \\
     \midrule
-    \texttt{DB\_HOST}             & \texttt{localhost}        & Postgres host \\
-    \texttt{DB\_PORT}             & \texttt{5432}             & Postgres port \\
-    \texttt{DB\_USER}             & \texttt{postgres}         & Postgres user \\
-    \texttt{DB\_PASSWORD}         & \texttt{postgres}         & Postgres password \\
-    \texttt{DB\_NAME}             & \texttt{apex}             & Postgres database \\
-    \texttt{JWT\_SECRET}          & \emph{required, $\geq$32 chars} & HMAC secret for JWT signing \\
-    \texttt{JUDGE0\_URL}          & \texttt{https://ce.judge0.com} & Judge0 base URL \\
-    \texttt{APP\_URL}             & \texttt{http://localhost:5173} & used in password-reset email links \\
-    \texttt{GOOGLE\_CLIENT\_ID}   & \emph{empty disables OAuth} & Google OAuth audience \\
-    \texttt{SMTP\_HOST}, \texttt{SMTP\_PORT}, \texttt{SMTP\_USER}, \texttt{SMTP\_PASSWORD}, \texttt{SMTP\_FROM} & \emph{empty disables email} & SMTP relay credentials \\
+    DB\_HOST             & \texttt{localhost}                 & Postgres host \\
+    DB\_PORT             & \texttt{5432}                      & Postgres port \\
+    DB\_USER             & \texttt{postgres}                  & Postgres user \\
+    DB\_PASSWORD         & \texttt{postgres}                  & Postgres password \\
+    DB\_NAME             & \texttt{apex}                      & Postgres database \\
+    JWT\_SECRET          & \normalfont\emph{required, $\geq$32 chars} & HMAC secret for JWT signing \\
+    JUDGE0\_URL          & \texttt{https://ce.judge0.com}     & Judge0 base URL \\
+    APP\_URL             & \texttt{http://localhost:5173}     & used in password-reset email links \\
+    GOOGLE\_CLIENT\_ID   & \normalfont\emph{empty disables OAuth} & Google OAuth audience \\
+    SMTP\_*              & \normalfont\emph{empty disables email} & SMTP relay credentials (\texttt{HOST}, \texttt{PORT}, \texttt{USER}, \texttt{PASSWORD}, \texttt{FROM}) \\
     \bottomrule
   \end{tabularx}
 \end{table}

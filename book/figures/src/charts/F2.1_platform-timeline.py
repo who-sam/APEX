@@ -24,12 +24,18 @@ def main(out_path: str) -> None:
     PLATFORMS.sort(key=lambda kv: kv[1])
     names = [p[0] for p in PLATFORMS]
     years = [p[1] for p in PLATFORMS]
-    fig, ax = plt.subplots(figsize=(8, 3))
-    ax.scatter(years, [0] * len(years), s=60, color="#1F4E79", zorder=3)
-    for x, y in zip(years, names):
-        ax.text(x, 0.05, f"{y}\n{x}", rotation=45, ha="left", va="bottom", fontsize=8)
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    ax.scatter(years, [0] * len(years), s=70, color="#1F4E79", zorder=3)
+    # Stagger labels above/below the line, vertical orientation, no overlap
+    for i, (x, y) in enumerate(zip(years, names)):
+        offset = 0.15 if i % 2 == 0 else -0.15
+        va = "bottom" if offset > 0 else "top"
+        ax.annotate(f"{y}\n{x}", xy=(x, 0), xytext=(x, offset),
+                    ha="center", va=va, fontsize=8,
+                    arrowprops=dict(arrowstyle="-", color="lightgray", lw=0.6))
     ax.hlines(0, min(years) - 1, max(years) + 1, color="gray", linewidth=1)
     ax.set_yticks([])
+    ax.set_ylim(-0.6, 0.6)
     ax.set_xlim(min(years) - 2, max(years) + 2)
     ax.set_title("Selected online-assessment platforms by year")
     ax.spines["left"].set_visible(False)

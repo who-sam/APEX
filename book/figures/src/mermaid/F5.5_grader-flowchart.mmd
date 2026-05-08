@@ -1,11 +1,11 @@
 flowchart TD
-    A[Grade(submissionID)] --> B[load Submission]
+    A["Grade(submissionID)"] --> B[load Submission]
     B --> C[mark status=running]
     C --> D[load TestCases ORDER BY order_index]
     D --> E{len == 0?}
     E -->|yes| F[score=100, status=accepted]
     E -->|no| G[loop test cases]
-    G --> H[Judge0 RunCode(code, lang, stdin)]
+    G --> H["Judge0 RunCode(code, lang, stdin)"]
     H --> I[normalizeOutput on actual + expected]
     I --> J{ran && actual==expected?}
     J -->|yes| K[passed++]

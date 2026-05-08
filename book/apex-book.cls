@@ -4,7 +4,7 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesClass{apex-book}[2026/05/05 APEX graduation book class]
 
-\LoadClass[12pt,a4paper,oneside]{report}
+\LoadClass[12pt,a4paper,oneside]{book}
 
 % --- Geometry, spacing, typography ------------------------------------
 \RequirePackage[a4paper,margin=2.5cm,headheight=14pt]{geometry}
@@ -17,6 +17,14 @@
 \setmonofont{Latin Modern Mono}[Scale=0.92]
 \RequirePackage{ragged2e}
 \RequirePackage[english]{babel}
+\RequirePackage{xurl}
+\setlength{\emergencystretch}{3em}
+\sloppy
+% Encourage line-breaks inside long inline \texttt{...} paths/identifiers
+% by reducing penalties for break-after characters and easing tt hyphenation.
+\makeatletter
+\def\BreakableTT@chars{/.\_-:}
+\makeatother
 
 % --- Math -------------------------------------------------------------
 \RequirePackage{amsmath,amssymb}
@@ -24,6 +32,12 @@
 % --- Graphics, colour, layout ----------------------------------------
 \RequirePackage{graphicx}
 \graphicspath{{figures/out/}{figures/screenshots/}}
+% Cap every \includegraphics so figures never overflow the page
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>0.78\textheight 0.78\textheight\else\Gin@nat@height\fi}
+\makeatother
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
 \RequirePackage{xcolor}
 \definecolor{apexblue}{HTML}{1F4E79}
 \definecolor{apexgrey}{HTML}{555555}
@@ -34,6 +48,7 @@
 \RequirePackage{longtable}
 \RequirePackage{array}
 \RequirePackage{tabularx}
+\RequirePackage{xltabular}
 
 % --- Captions and floats ---------------------------------------------
 \RequirePackage[font=small,labelfont=bf,labelsep=period]{caption}
