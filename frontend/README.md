@@ -1,5 +1,14 @@
 # Welcome to your Lovable project
 
+## Landing page environment variables
+
+The public landing at `/` reads two optional Vite env vars. If unset, the corresponding links are hidden rather than pointing at dead placeholders.
+
+- `VITE_GITHUB_URL` — repository URL shown on the header, hero, and footer GitHub buttons.
+- `VITE_CONTACT_EMAIL` — contact address rendered as a `mailto:` link in the footer.
+
+Set them in `.env.local` (gitignored) for local dev or your hosting provider's env settings for production.
+
 ## Project info
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
