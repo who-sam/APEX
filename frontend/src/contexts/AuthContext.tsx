@@ -20,6 +20,7 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string, role: string) => Promise<void>;
   loginWithGoogle: (idToken: string, role?: string) => Promise<{ needsRole: boolean; email?: string }>;
   logout: () => void;
+  setUserName: (name: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -126,6 +127,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { needsRole: false, email: data.user?.email };
   }, []);
 
+  const setUserName = useCallback((name: string) => {
+    setUser((prev) => (prev ? { ...prev, name } : prev));
+  }, []);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -146,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signup,
         loginWithGoogle,
         logout,
+        setUserName,
       }}
     >
       {children}

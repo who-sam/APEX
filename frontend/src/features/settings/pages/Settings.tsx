@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { firstName, middleName, lastName, studentId, email } = useUser();
   const { role } = useRole();
-  const { logout } = useAuth();
+  const { logout, setUserName } = useAuth();
   const { theme, setTheme } = useTheme();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -52,7 +52,18 @@ export default function SettingsPage() {
   // Load bio + notification prefs from API once profile data arrives
   if (profileData && !profileLoaded) {
     const prof = profileData.profile || {};
-    const loadedProfile = { firstName, middleName, lastName, email, bio: prof.bio || "" };
+    const apiName: string = profileData.user?.name ?? "";
+    const parts = apiName.split(" ").filter(Boolean);
+    const apiFirst = parts[0] ?? firstName;
+    const apiLast = parts.length > 2 ? parts[parts.length - 1] : (parts[1] ?? lastName);
+    const apiMiddle = parts.length > 2 ? parts.slice(1, -1).join(" ") : middleName;
+    const loadedProfile = {
+      firstName: apiFirst,
+      middleName: apiMiddle,
+      lastName: apiLast,
+      email: profileData.user?.email ?? email,
+      bio: prof.bio || "",
+    };
     setProfile(loadedProfile);
     setOriginalProfile(loadedProfile);
     const loadedNotifications = {
@@ -104,6 +115,7 @@ export default function SettingsPage() {
     const fullName = [profile.firstName, profile.middleName, profile.lastName].filter(Boolean).join(" ");
     try {
       await updateProfileMutation.mutateAsync({ name: fullName, bio: profile.bio });
+      setUserName(fullName);
       setOriginalProfile(profile);
       toast({ title: "Settings saved", description: "Your profile has been updated." });
     } catch (err: any) {
