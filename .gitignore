@@ -5,3 +5,4 @@ dist/
 *.binary
 *.db
 *.mp4
+/seed
