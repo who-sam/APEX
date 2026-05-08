@@ -40,7 +40,8 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import { useStudentExam } from "@/hooks/useExams";
-import { submitExamAttempt, runSolution, autosaveExamAttempt } from "@/lib/api";
+import { submitExamAttempt, runSolution, autosaveExamAttempt, startExamAttempt } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { useExecuteCode } from "@/hooks/useExecuteCode";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -165,6 +166,7 @@ export default function ExamTaking() {
   const examId = Number(id);
   const { data: examData, isLoading, error, refetch } = useStudentExam(examId);
   const executeMutation = useExecuteCode();
+  const queryClient = useQueryClient();
 
   // Check localStorage synchronously to avoid flashing start screen on resume
   const [started, setStarted] = useState(() => {
@@ -348,6 +350,16 @@ export default function ExamTaking() {
       }
     } catch {
       /* ignore */
+    }
+    // Register the in-progress attempt server-side so the dashboard
+    // ("Start" → "Continue"), results, and cross-device resume all see it.
+    if (!examData?.attempt) {
+      startExamAttempt(examId)
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["my-attempts"] });
+          queryClient.invalidateQueries({ queryKey: ["student-exams"] });
+        })
+        .catch(() => {});
     }
   }, [started]);
 
