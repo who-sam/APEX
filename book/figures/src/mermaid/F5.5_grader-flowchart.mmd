@@ -1,0 +1,26 @@
+flowchart TD
+    A["Grade(submissionID)"] --> B[load Submission]
+    B --> C[mark status=running]
+    C --> D[load TestCases ORDER BY order_index]
+    D --> E{len == 0?}
+    E -->|yes| F[score=100, status=accepted]
+    E -->|no| G[loop test cases]
+    G --> H["Judge0 RunCode(code, lang, stdin)"]
+    H --> I[normalizeOutput on actual + expected]
+    I --> J{ran && actual==expected?}
+    J -->|yes| K[passed++]
+    J -->|no| L[map StatusID -> WA/CE/TLE/RE]
+    K --> M[insert TestResult]
+    L --> M
+    M --> G
+    G -->|done| N[score = passed/total * 100]
+    N --> O[update Submission: status, score, max time/memory]
+    F --> P[maybeFinalizeAttempt]
+    O --> P
+    P --> Q{any pending or running for attempt?}
+    Q -->|yes| R[return]
+    Q -->|no| S[aggregate over exam.problems]
+    S --> T[update attempt.score]
+    T --> U{any pending_review?}
+    U -->|no| V[fire Exam Graded notif]
+    U -->|yes| R

@@ -1,0 +1,189 @@
+\chapter{Security Review}
+\label{ch:security}
+
+This chapter documents the threat model APEX is built against, the four classes of weakness uncovered during the focused security review, the patches that landed in commit \texttt{2eaac88}, and the patterns of code that the codebase now follows to keep those weaknesses from recurring. None of the issues was discovered in production --- the review was scheduled before the system left development --- but each was reachable in the deployed code path.
+
+\section{Threat model}
+
+APEX is a self-hosted classroom portal. The actors are well known to one another: a teacher, the students enrolled in their classes, and a small number of background processes (the reminder scheduler, the auto-grader). The threat model accordingly focuses on:
+
+\begin{itemize}
+  \item \textbf{Inside attackers.} A logged-in student trying to read another student's submission, or a logged-in teacher trying to grade or read another teacher's exam. This is the primary risk.
+  \item \textbf{Untrusted user content.} Markdown bodies on announcements and exam descriptions, MCQ option text, and free-form exam titles are all rendered into other users' browsers.
+  \item \textbf{Forged or stolen credentials.} A bearer token is, by definition, all you need to act as the user it identifies. The token must be hard to forge and hard to keep using after expiry.
+  \item \textbf{Operator misconfiguration.} A self-hosting instructor cannot be relied on to set every environment variable correctly; the system must fail closed when a critical variable is missing.
+\end{itemize}
+
+\Cref{fig:F6.2} draws the trust boundary that the rest of this chapter argues against.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{F6.2_trust-boundary.pdf}
+  \caption{Trust boundary. The browser is untrusted; the server is trusted; per-resource ownership re-checks happen \emph{inside} handlers, not at the middleware boundary.}
+  \label{fig:F6.2}
+\end{figure}
+
+\section{Findings and fixes}
+
+The four findings below were identified in the focused review that produced commit \texttt{2eaac88}. Each is described as found, then patched.
+
+\subsection{F1: insecure direct object reference on submissions}
+
+\paragraph{What was wrong.} \texttt{POST /submissions/run} ran a candidate solution against a problem's sample test cases and returned the per-test results. The original handler trusted the \texttt{problem\_id} from the request body alone: any logged-in user could pass any problem ID and receive its sample inputs and expected outputs in the response. For a coding problem authored by another teacher and assigned to another class, that turned the endpoint into a sample-test leak. \cite{cwe-639} catalogues this pattern as IDOR.
+
+\paragraph{The fix.} The handler now resolves the problem first and then performs role-specific authorisation:
+
+\begin{itemize}
+  \item For a teacher, the problem's \texttt{teacher\_id} must equal the caller's \texttt{user\_id}.
+  \item For a student, the problem must be attached to an exam (\texttt{exam\_id} non-null) and that exam must be assigned to a class in which the caller is a member, verified with a join across \texttt{exam\_classes} and \texttt{class\_members}.
+\end{itemize}
+
+\Cref{lst:idor-fix} reproduces the diff (\texttt{internal/submission/handler.go:26--54}). The same ownership pattern was applied to \texttt{submission.GradeSubmission} (a teacher may only grade submissions on their own exams, \texttt{internal/submission/handler.go:92--101}) and \texttt{submission.GetSubmission} (\texttt{internal/submission/handler.go:142--158}).
+
+\begin{figure}[H]
+\begin{lstlisting}[language=Go,caption={IDOR fix on \texttt{RunSolution} (\texttt{internal/submission/handler.go:26--54}).},label={lst:idor-fix}]
+var problem models.Problem
+if err := database.DB.Select("id", "exam_id", "teacher_id").First(&problem, req.ProblemID).Error; err != nil {
+    c.JSON(http.StatusNotFound, gin.H{"error": "problem not found"})
+    return
+}
+
+userID := c.GetUint("user_id")
+role, _ := c.Get("role")
+roleStr, _ := role.(string)
+if roleStr == "teacher" {
+    if problem.TeacherID != userID {
+        c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+        return
+    }
+} else {
+    if problem.ExamID == nil {
+        c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+        return
+    }
+    var assigned int64
+    database.DB.Model(&models.ExamClass{}).
+        Joins("JOIN class_members ON class_members.class_id = exam_classes.class_id").
+        Where("exam_classes.exam_id = ? AND class_members.user_id = ?", *problem.ExamID, userID).
+        Count(&assigned)
+    if assigned == 0 {
+        c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+        return
+    }
+}
+\end{lstlisting}
+\end{figure}
+
+\paragraph{Why this lives inside the handler.} A natural reaction is to move ownership checks into a middleware helper. APEX deliberately does not. The rule is different per endpoint: an exam handler checks against \texttt{exam.teacher\_id}; a submission handler checks against the parent exam's \texttt{teacher\_id}; an announcement handler checks against \texttt{class.teacher\_id} or class membership. Hiding these behind a generic helper makes the rule less visible at the call site, which is the opposite of what a security-relevant check wants.
+
+\subsection{F2: stored XSS through markdown raw HTML}
+
+\paragraph{What was wrong.} The student-facing exam screen and the teacher-facing exam preview rendered Markdown bodies via \texttt{react-markdown} with the \texttt{rehype-raw} plugin enabled. \texttt{rehype-raw} reparses any inline HTML inside the Markdown source, so a teacher could embed an \texttt{<img onerror=...>} or \texttt{<script>} tag in a problem description and have it execute in every student's browser. \cite{cwe-79} catalogues this as classic stored XSS; a teacher is technically a privileged user, but inside one institution the abuse surface --- a colleague exfiltrating another teacher's session cookie, or a class peer hosting payloads via teacher-shared questions --- is real.
+
+\paragraph{The fix.} The \texttt{rehype-raw} plugin was removed from \texttt{ExamTaking.tsx} and \texttt{ExamPreview.tsx}, and \texttt{rehype-raw} was dropped from \texttt{frontend/package.json}. Markdown still renders through \texttt{react-markdown} with \texttt{remark-gfm} for tables and task lists; raw HTML is now stripped at parse time. The trade-off --- teachers can no longer hand-write HTML in a problem description --- is acceptable: the markdown grammar remains expressive enough for every problem in the demo data set.
+
+\subsection{F3: weak fallback JWT secret}
+
+\paragraph{What was wrong.} \texttt{config.Load} previously defaulted \texttt{JWT\_SECRET} to a constant string \texttt{"dev-secret-change-in-prod"}. A self-hosting deployment that forgot to set the variable would silently boot, sign tokens with a publicly-known secret, and accept tokens forged by anyone who downloaded the source. The fix-as-shipped is a fail-closed validator at startup:
+
+\begin{figure}[H]
+\begin{lstlisting}[language=Go,caption={JWT-secret validation at startup (\texttt{internal/config/config.go}).},label={lst:jwt-secret}]
+jwtSecret := os.Getenv("JWT_SECRET")
+if jwtSecret == "" || jwtSecret == "dev-secret-change-in-prod" || len(jwtSecret) < 32 {
+    log.Fatal("JWT_SECRET must be set to a strong random value (>=32 chars)")
+}
+\end{lstlisting}
+\end{figure}
+
+The check rejects three foot-guns: a missing variable, the historical placeholder, and any value shorter than 32 characters (a deliberately conservative bar for HMAC-SHA-256 security). \texttt{log.Fatal} exits with a non-zero status, so a process supervisor (systemd, Docker) cannot mask the failure.
+
+\subsection{F4: HTML injection in email notifications}
+
+\paragraph{What was wrong.} \texttt{notification.Create} (\texttt{internal/notification/helper.go:11--45}) built the email's HTML body by interpolating the title and description directly into a small HTML template:
+
+\begin{verbatim}
+html := fmt.Sprintf("<p><strong>%s</strong></p><p>%s</p>", title, description)
+\end{verbatim}
+
+A teacher creating an announcement with a body of \texttt{<a href="https://evil.example">click me</a>} would have that link rendered as live HTML in every recipient's email. The same was true of any other field that flowed into a notification --- exam titles, problem titles, etc.
+
+\paragraph{The fix.} Both fields are HTML-escaped before interpolation:
+
+\begin{figure}[H]
+\begin{lstlisting}[language=Go,caption={HTML escaping in notification emails (\texttt{internal/notification/helper.go:39--43}).},label={lst:html-escape}]
+body := fmt.Sprintf("<p><strong>%s</strong></p><p>%s</p>",
+    html.EscapeString(title), html.EscapeString(description))
+_ = email.Send(user.Email, subject, body, text)
+\end{lstlisting}
+\end{figure}
+
+The plain-text version of the email was never affected (no HTML grammar there). The fix is intentionally narrow: it does not change what is stored in the database, only what is rendered into the email body. If a future feature renders notifications back into the SPA as HTML, the same escaping will need to happen there too --- but the current SPA renders notification descriptions as plain text in a list, so the in-app surface is already safe.
+
+\section{Authentication and password reset}
+
+The authentication subsystem is documented in \Cref{ch:design,ch:implementation}; this section restates the security-relevant invariants and walks the password reset lifecycle.
+
+\paragraph{JWT signing.} HS256 with a $\geq$32-character secret~\cite{rfc7519}. \texttt{middleware.Auth} rejects any token whose signing method is not HMAC, which closes the well-known "alg=none" forgery~\cite{owasp-top10}.
+
+\paragraph{Password storage.} bcrypt with the default cost factor~\cite{provos1999bcrypt}. The hash is generated by \texttt{bcrypt.GenerateFromPassword} on signup and on reset; verification uses \texttt{bcrypt.CompareHashAndPassword}, which is constant-time within the bcrypt scheme.
+
+\paragraph{Account-enumeration resistance.} Both \texttt{Login} and \texttt{ForgotPassword} return identical responses for "no such email" and the failure case. Login returns "invalid email or password"; \texttt{ForgotPassword} returns "If an account exists for that email, a reset link has been sent."
+
+\paragraph{Reset-token lifecycle.} Tokens are 32 random bytes, hex-encoded for the user-facing link and SHA-256-hashed before storage in \texttt{password\_reset\_tokens.token\_hash}. Tokens expire after 1 hour. Issuing a new token for the same user marks all prior unused tokens as used. The successful reset path stamps \texttt{used\_at}, so a token cannot be replayed even within its 1-hour window. \Cref{fig:F6.5} draws the lifecycle.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\linewidth]{F6.5_password-reset-lifecycle}
+  \caption{Password reset token lifecycle. The token is hashed at rest; the email contains the raw token only.}
+  \label{fig:F6.5}
+\end{figure}
+
+\section{Authorisation patterns}
+
+The pattern repeated across the codebase is \emph{three-layer authorisation}:
+
+\begin{enumerate}
+  \item \textbf{Identity.} \texttt{middleware.Auth} validates the JWT signature, checks the expiry, and drops \texttt{user\_id}, \texttt{email}, and \texttt{role} into the Gin context. A request that fails this check never reaches a handler.
+  \item \textbf{Coarse permission.} \texttt{middleware.RequireRole} guards entire route groups by role. A student calling \texttt{POST /exams} (teacher-only) is rejected at this layer.
+  \item \textbf{Per-resource ownership.} The handler re-checks the calling identity against the resource's owner. Teacher endpoints typically use \texttt{WHERE id = ? AND teacher\_id = ?}; student endpoints typically join through \texttt{class\_members} and \texttt{exam\_classes}.
+\end{enumerate}
+
+The IDOR fix (\Cref{lst:idor-fix}) is an instance of layer 3. Layers 1 and 2 cannot make the layer 3 check redundant: a logged-in teacher with the right role string is still not entitled to operate on another teacher's exam, and the only place that knows the answer is the handler that already loaded the resource.
+
+\section{Cross-site scripting and input handling}
+
+The XSS finding (F2) was the only stored-XSS issue; the rest of the codebase already followed two conventions that prevent the others.
+
+\paragraph{No \texttt{dangerouslySetInnerHTML} on user content.} The SPA renders user-authored fields (announcement bodies, problem descriptions, MCQ option text, exam titles) through React's default text-escaping. The only pieces of user content rendered as Markdown are problem descriptions and announcement bodies, and both go through \texttt{react-markdown} with \texttt{rehype-raw} \emph{disabled}.
+
+\paragraph{Email rendering escapes user input.} F4's fix means every notification-email body that flows from a user-authored field is HTML-escaped via \texttt{html.EscapeString} before interpolation.
+
+\paragraph{API responses are JSON.} Every API endpoint returns \texttt{application/json}. The Gin response helper (\texttt{c.JSON}) handles encoding; there is no path that builds an HTML response server-side.
+
+\section{Other defensive measures}
+
+\paragraph{CORS.} \texttt{middleware.CORS} allows only the Vite dev origin (\texttt{http://localhost:5173}) and rejects credentialed cross-origin requests. Production deployments serve the SPA from the same origin as the API behind a reverse proxy, so CORS is not the trust boundary.
+
+\paragraph{No SQL injection.} Every database access goes through GORM's parameterised helpers. The only \texttt{db.Exec} calls in the codebase are in \texttt{internal/database/migrations.go}, where the SQL is static.
+
+\paragraph{Idempotent destructive operations.} Account deletion runs in a single Postgres transaction; a failure rolls the entire delete back. Exam deletion cascades through \texttt{TestResult}, \texttt{TestCase}, \texttt{Submission}, \texttt{ExamAttempt}, \texttt{Problem}, and \texttt{ExamClass} in a single transaction (\texttt{exam.DeleteExam}, \texttt{internal/exam/handler.go:295--346}).
+
+\paragraph{Secret material out of source control.} The repository ships \texttt{.env.example} but not \texttt{.env}; the Go binary refuses to start without a populated secret. \texttt{frontend/.env} likewise carries any \texttt{VITE\_} variables and is gitignored.
+
+\paragraph{Sandboxed code execution.} Student code runs inside Judge0's isolate~\cite{judge0,isolate}, never inside the APEX process. The Go code is a thin HTTP client over Judge0; APEX never calls \texttt{exec}, \texttt{eval}, or any other host-level execution primitive.
+
+\section{Threats not yet mitigated}
+
+A focused review trades coverage for depth. The following classes of threat are partially mitigated and warrant follow-up before APEX is deployed beyond a single classroom:
+
+\begin{itemize}
+  \item \textbf{Token theft.} A leaked JWT remains valid until its \texttt{exp} claim. The current design has no server-side revocation list. A short expiry (24~h) limits the blast radius; introducing a refresh-token model with a server-side revocation table would shrink it further.
+  \item \textbf{Rate limiting.} Login, signup, password-reset request, and Google sign-in are not rate-limited. A determined adversary could enumerate weak passwords with effective bcrypt cost as their only brake. A per-IP and per-account rate limit on the auth endpoints is the most cost-effective next mitigation.
+  \item \textbf{Audit logging.} Successful logins and password resets are not logged; failed logins likewise. A simple append-only audit log table would close the gap with little code.
+  \item \textbf{Plagiarism detection.} APEX does not yet integrate MOSS~\cite{moss} or JPlag~\cite{prechelt2002jplag}. This is a known gap and is on the roadmap (\Cref{ch:conclusion}).
+  \item \textbf{Proctoring signals.} The take screen does not record tab-blur, fullscreen exit, or paste events. Adding non-invasive signals (and surfacing them on the teacher's results screen) is a natural extension.
+\end{itemize}
+
+\section{Summary}
+
+The four security findings shipped with patches before the system left development. The deeper change was procedural: every protected handler now re-checks ownership at layer 3, every email-bound user field is HTML-escaped, the SPA's Markdown renderer no longer reparses raw HTML, and the JWT secret is validated at startup. The patterns in this chapter --- three-layer authorisation, fail-closed configuration, idempotent destruction, sandboxed execution --- are the load-bearing security properties for the next chapters' tests, deployments, and user-facing operations.

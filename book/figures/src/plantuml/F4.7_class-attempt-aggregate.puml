@@ -1,0 +1,67 @@
+@startuml
+skinparam shadowing false
+hide circle
+hide methods
+
+class ExamAttempt {
+  +ID : uint
+  +UserID : uint  // unique idx (user_id, exam_id)
+  +ExamID : uint
+  +StartedAt : time
+  +SubmittedAt : *time
+  +Score : float
+  +Status : string
+  +GradedNotified : bool
+  +DraftAnswers : *jsonb
+  +DraftSavedAt : *time
+}
+
+class Submission {
+  +ID : uint
+  +UserID : uint
+  +ProblemID : uint
+  +ExamID : uint
+  +ExamAttemptID : *uint
+  +Type : string
+  +Language : string
+  +Code : text
+  +SelectedOptions : jsonb
+  +TextAnswer : text
+  +Status : string
+  +Score : float
+  +TeacherFeedback : text
+  +PassedCount : int
+  +TotalCount : int
+  +ExecutionTimeMs : int
+  +MemoryKb : int
+}
+
+class TestResult {
+  +ID : uint
+  +SubmissionID : uint
+  +TestCaseID : uint
+  +Passed : bool
+  +ActualOutput : text
+  +ExecutionTimeMs : int
+  +MemoryKb : int
+  +Status : string
+}
+
+class User {
+  +ID : uint
+  +Email : string
+  +Role : string
+  +GoogleID : string
+}
+
+ExamAttempt "1" *-- "many" Submission
+Submission "1" *-- "many" TestResult
+User "1" o-- "many" ExamAttempt
+User "1" o-- "many" Submission
+
+note right of ExamAttempt
+  unique (user_id, exam_id)
+  enforces single attempt
+  per student per exam
+end note
+@enduml

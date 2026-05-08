@@ -1,0 +1,82 @@
+\documentclass{apex-book}
+
+\addbibresource{refs.bib}
+
+% --- Project metadata (filled by user before submission) -------------
+\newcommand{\bookTitle}{APEX: A Classroom Portal for Mixed-Format Exams, Auto-Grading, and Live Coding}
+\newcommand{\bookAuthor}{[Author Name]}
+\newcommand{\bookSupervisor}{[Supervisor Name]}
+\newcommand{\bookDept}{[Department]}
+\newcommand{\bookUniversity}{[University]}
+\newcommand{\bookDate}{\today}
+
+% --- Acronyms ---------------------------------------------------------
+\makeglossaries
+\newacronym{api}{API}{Application Programming Interface}
+\newacronym{cors}{CORS}{Cross-Origin Resource Sharing}
+\newacronym{crud}{CRUD}{Create, Read, Update, Delete}
+\newacronym{csrf}{CSRF}{Cross-Site Request Forgery}
+\newacronym{dom}{DOM}{Document Object Model}
+\newacronym{er}{ER}{Entity-Relationship}
+\newacronym{gids}{GIS}{Google Identity Services}
+\newacronym{gorm}{GORM}{Go Object-Relational Mapper}
+\newacronym{idor}{IDOR}{Insecure Direct Object Reference}
+\newacronym{jwt}{JWT}{JSON Web Token}
+\newacronym{mcq}{MCQ}{Multiple-Choice Question}
+\newacronym{oauth}{OAuth}{Open Authorization}
+\newacronym{oidc}{OIDC}{OpenID Connect}
+\newacronym{orm}{ORM}{Object-Relational Mapper}
+\newacronym{owasp}{OWASP}{Open Worldwide Application Security Project}
+\newacronym{rbac}{RBAC}{Role-Based Access Control}
+\newacronym{rest}{REST}{Representational State Transfer}
+\newacronym{spa}{SPA}{Single-Page Application}
+\newacronym{sus}{SUS}{System Usability Scale}
+\newacronym{ts}{TS}{TypeScript}
+\newacronym{ui}{UI}{User Interface}
+\newacronym{ux}{UX}{User Experience}
+\newacronym{xss}{XSS}{Cross-Site Scripting}
+\newacronym{tle}{TLE}{Time Limit Exceeded}
+\newacronym{mle}{MLE}{Memory Limit Exceeded}
+\newacronym{ce}{CE}{Compilation Error}
+
+\begin{document}
+
+% --- Front matter ----------------------------------------------------
+\frontmatter
+\pagenumbering{roman}
+\input{frontmatter/titlepage}
+\input{frontmatter/approval}
+\input{frontmatter/acknowledgements}
+\input{frontmatter/abstract}
+\tableofcontents
+\listoffigures
+\listoftables
+\printglossary[type=\acronymtype,title={List of Abbreviations}]
+
+% --- Body ------------------------------------------------------------
+\mainmatter
+\pagenumbering{arabic}
+\input{chapters/01-introduction}
+\input{chapters/02-literature}
+\input{chapters/03-requirements}
+\input{chapters/04-design}
+\input{chapters/05-implementation}
+\input{chapters/06-security}
+\input{chapters/07-testing}
+\input{chapters/08-deployment}
+\input{chapters/09-user-manual}
+\input{chapters/10-results}
+\input{chapters/11-conclusion}
+
+% --- Back matter -----------------------------------------------------
+\appendix
+\input{appendix/A-api-reference}
+\input{appendix/B-schema-ddl}
+\input{appendix/C-env-vars}
+\input{appendix/D-source-listings}
+\input{appendix/E-screenshots-extra}
+\input{appendix/F-gantt}
+
+\printbibliography[heading=bibintoc,title={References}]
+
+\end{document}

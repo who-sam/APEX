@@ -1,0 +1,65 @@
+\chapter{Conclusion}
+\label{ch:conclusion}
+
+This chapter summarises what APEX is, what it taught its author, and what comes next.
+
+\section{Summary of contributions}
+
+APEX integrates coding, multiple-choice, and written assessment into a single timed attempt with a single grader pipeline and a single notification stream. The contribution is not any one of those features --- each exists in some form in the systems surveyed in \Cref{ch:literature} --- but their combination behind one self-hostable Go binary plus PostgreSQL.
+
+The body of the book documented the load-bearing parts: a layered backend with three-layer authorisation (\Cref{ch:design}), an attempt aggregate that owns its submissions (\Cref{ch:implementation}), a Judge0 integration with output normalisation that does not embarrass itself (\Cref{ch:implementation}), an idempotent migration pattern that survives operator mistakes (\Cref{ch:design,ch:implementation}), and a security review that hardened the four classes of weakness most relevant to a classroom portal (\Cref{ch:security}). The evaluation chapter (\Cref{ch:results}) reports above-average SUS scores from a small user study and a latency profile dominated by Judge0 rather than by the surrounding API.
+
+\section{Lessons learned}
+
+\paragraph{Authorisation belongs in the handler.} The IDOR finding in \Cref{ch:security} was reachable because the handler trusted a path-parameter resource ID without re-checking ownership. The temptation to refactor the check into a generic middleware is real and should be resisted: the rule is different per endpoint, and burying the rule in a generic helper makes it harder to audit. APEX now has a small body of three-layer authorisation patterns (identity, role, ownership), and they are repeated by hand at every handler entry point.
+
+\paragraph{Idempotency is cheaper than coordination.} The reminder scheduler dedups by per-exam timestamp columns rather than by a distributed lock, the autosave endpoint accepts re-posts without distinguishing them, and the migration step is idempotent on every run. None of these is the most clever solution, and that is the point: a self-hosting operator restarting a misbehaving process at 3 a.m.\ should not have to reason about the ordering of recovery.
+
+\paragraph{Output normalisation is half the auto-grader.} A grader that compares stdout byte-for-byte against an expected output has to make a choice about whitespace and line endings. \texttt{judge0.normalizeOutput} is nine lines of code and prevents the single most common false negative on the platform. Treating grading verdicts as the front door of the system --- the artefact a student is most likely to dispute --- is what made paying that much attention to the function feel proportionate.
+
+\paragraph{The schema is a contract you signed in production.} \texttt{ORM\_RULES.md} encodes a small contract --- idempotent SQL, gated on table existence, run before \texttt{AutoMigrate}, no destructive statements without an \texttt{IF EXISTS} clause --- and the contract has paid for itself every release. The biggest single source of "I wish we had not done that" pull requests was a handful of GORM tag changes that silently rewrote default values; the contract makes the next reviewer notice.
+
+\paragraph{Security review is a milestone, not a feature flag.} Folding the patches in \Cref{ch:security} into a single commit before the system left development meant the patterns are in the codebase from the start. The alternative --- treating "harden the system" as a release-3 feature --- accumulates technical debt faster than the team can pay it down.
+
+\section{Limitations}
+
+The honest limitations are documented in earlier chapters and gathered here.
+
+\begin{itemize}
+  \item Single-instance deployment. The reminder scheduler does not coordinate across processes; a multi-instance deployment needs an advisory lock or a Redis-backed lock.
+  \item No token revocation. A leaked JWT remains valid until \texttt{exp}; a refresh-token model with a server-side revocation table is the natural extension.
+  \item No rate limiting on auth endpoints. Login, signup, password-reset request, and Google sign-in are not throttled.
+  \item No plagiarism detection. MOSS~\cite{moss} or JPlag~\cite{prechelt2002jplag} integrations are on the roadmap.
+  \item No proctoring signals. Tab-blur, fullscreen exit, paste detection are not recorded.
+  \item User study is small. Six teachers and ten students is enough to detect gross usability issues but not to make a statistically defensible claim about absolute SUS scores.
+\end{itemize}
+
+\section{Roadmap}
+
+\Cref{fig:F11.1} summarises the next steps as a timeline.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F11.1_roadmap}
+  \caption{Roadmap (post-defence).}
+  \label{fig:F11.1}
+\end{figure}
+
+\paragraph{Near-term (Q3).} A MOSS / JPlag bridge for coding submissions surfaces a "similarity flag" on the teacher's per-student results screen. Streaming Judge0 (the asynchronous mode rather than \texttt{wait=true}) drives a per-test live feedback channel during the exam, so a student sees test results as they complete rather than only at submission.
+
+\paragraph{Medium-term (Q4).} OAuth providers beyond Google (Microsoft, GitHub) cover the institutional identity providers that a department is most likely to be using. LMS imports of QTI 2.x packages let a teacher migrate an existing question bank without retyping.
+
+\paragraph{Longer-term (Y+1).} A mobile-friendly take screen wraps Monaco in a touch-friendly editor for tablet use. Class-level analytics surface per-question difficulty and discrimination. A non-invasive proctor mode records tab-blur and paste events into the audit log without enforcing.
+
+\Cref{fig:F11.2} sketches the architecture the longer-term items would converge on.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F11.2_future-arch.pdf}
+  \caption{Sketch of a longer-term architecture: a worker pool for analytics and plagiarism, a Redis pub/sub for grading events, a WebSocket channel for live test feedback during the take screen.}
+  \label{fig:F11.2}
+\end{figure}
+
+\section{Closing}
+
+APEX is the smallest system that takes mixed-format classroom assessment seriously. The book documents the design choices that kept it small, the security review that made it trustworthy, and the evaluation that suggests it is usable. The system is shipping; the roadmap describes how it grows from here.

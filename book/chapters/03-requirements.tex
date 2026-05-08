@@ -1,0 +1,232 @@
+\chapter{Requirements}
+\label{ch:requirements}
+
+This chapter records the functional and non-functional requirements that APEX was built to satisfy, together with the use-case decomposition that motivated them. The requirements are derived from the README's feature list, the issues that drove each phase of the bug-fix plan~\cite{sommerville-se}, and the field-test feedback that shaped the publishing-with-schedule rule and the autosave behaviour.
+
+\section{Stakeholders}
+
+Three stakeholder groups use APEX directly:
+
+\begin{itemize}
+  \item \textbf{Teacher} (course instructor or teaching assistant) creates classes, builds exams, assigns them, monitors attempts, and grades non-auto-gradable answers.
+  \item \textbf{Student} joins classes, takes exams, runs sample tests, and reviews graded results.
+  \item \textbf{Operator} (a system administrator or self-hosting instructor) installs and maintains the system; their requirements are mostly non-functional and live in \Cref{sec:nfr}.
+\end{itemize}
+
+A fourth, machine actor --- the \textbf{background scheduler} --- is documented separately because it owns time-driven behaviour (reminders, finalisation) that the human users never invoke directly.
+
+\section{Use cases}
+
+\Cref{fig:F3.2} is the top-level use-case diagram and links every stakeholder to the use cases they exercise. \Cref{fig:F3.3} and \Cref{fig:F3.4} expand the teacher and student roles respectively.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{F3.2_usecase-top.pdf}
+  \caption{Top-level use cases.}
+  \label{fig:F3.2}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{F3.3_usecase-teacher.pdf}
+  \caption{Teacher use cases.}
+  \label{fig:F3.3}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{F3.4_usecase-student.pdf}
+  \caption{Student use cases.}
+  \label{fig:F3.4}
+\end{figure}
+
+The activity diagrams in \Cref{fig:F3.5,fig:F3.6,fig:F3.7} expand the three operations that span more than one screen: creating an exam, taking an exam, and grading a written answer.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F3.5_activity-create-exam}
+  \caption{Activity: create exam.}
+  \label{fig:F3.5}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F3.6_activity-take-exam}
+  \caption{Activity: take exam (student).}
+  \label{fig:F3.6}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{F3.7_activity-grade-written}
+  \caption{Activity: grade a written answer (teacher).}
+  \label{fig:F3.7}
+\end{figure}
+
+\section{Functional requirements}
+
+The following list is enumerated for traceability: each requirement carries an identifier of the form \texttt{FR-X.Y}, mapped onto the implementation in \Cref{ch:implementation} and to the verification activity in \Cref{ch:testing}.
+
+\subsection{Authentication and identity (FR-1)}
+
+\begin{itemize}
+  \item \textbf{FR-1.1} A new user shall sign up with email, password, name, and role (\texttt{teacher} or \texttt{student}). The system stores the bcrypt hash of the password.
+  \item \textbf{FR-1.2} A returning user shall log in with email and password.
+  \item \textbf{FR-1.3} A user shall request a password reset by email; the reset link expires in 1 hour and may be used once.
+  \item \textbf{FR-1.4} A user shall sign in with Google Identity Services~\cite{gids}; existing email accounts shall be linked by \texttt{google\_id} on first Google sign-in.
+  \item \textbf{FR-1.5} A user shall delete their own account; the system shall cascade-delete dependent rows in a single transaction.
+  \item \textbf{FR-1.6} The system shall not leak whether a given email exists during login or password-reset flows.
+\end{itemize}
+
+\subsection{Class management (FR-2)}
+
+\begin{itemize}
+  \item \textbf{FR-2.1} A teacher shall create classes with a name, optional section, and an automatically-issued 8-character invite code.
+  \item \textbf{FR-2.2} A teacher shall list, edit, and delete their own classes.
+  \item \textbf{FR-2.3} A teacher shall remove an enrolled student from a class.
+  \item \textbf{FR-2.4} A teacher shall toggle \texttt{grades\_announced} per class and configure a passing threshold.
+  \item \textbf{FR-2.5} A student shall join a class by submitting an 8-character invite code.
+  \item \textbf{FR-2.6} A student shall leave a class.
+  \item \textbf{FR-2.7} A teacher shall post announcements with attachments; a notification fans out to enrolled students.
+\end{itemize}
+
+\subsection{Exam authoring (FR-3)}
+
+\begin{itemize}
+  \item \textbf{FR-3.1} A teacher shall create exams with title, description, duration, optional schedule, shuffle-questions toggle, show-results-after toggle, and passing score.
+  \item \textbf{FR-3.2} An exam shall start in draft state; publishing requires a non-null \texttt{start\_time}.
+  \item \textbf{FR-3.3} A teacher shall add coding, MCQ, and written problems to an exam, in any combination.
+  \item \textbf{FR-3.4} A teacher shall add per-problem hints, difficulty, points, time and memory limits, image attachments, and tags.
+  \item \textbf{FR-3.5} A teacher shall add per-problem test cases, marked sample or hidden, with optional points-per-case.
+  \item \textbf{FR-3.6} A teacher shall save problems to a question bank, organised by folders, for reuse across exams.
+  \item \textbf{FR-3.7} A teacher shall assign an exam to one or many classes; the system shall verify each class belongs to the calling teacher.
+  \item \textbf{FR-3.8} A teacher shall close or reopen an exam window.
+  \item \textbf{FR-3.9} A teacher shall preview an exam exactly as students see it before publishing.
+\end{itemize}
+
+\subsection{Taking an exam (FR-4)}
+
+\begin{itemize}
+  \item \textbf{FR-4.1} A student shall start a timed attempt for an assigned, published, in-window exam. The system shall reject attempts on draft exams, attempts before \texttt{start\_time}, and attempts after \texttt{end\_time}.
+  \item \textbf{FR-4.2} A student shall edit code in a Monaco editor, select MCQ options, or enter free text; switching question shall not lose answers.
+  \item \textbf{FR-4.3} A student shall run sample test cases against their code; sample runs do not persist as submissions.
+  \item \textbf{FR-4.4} The system shall autosave the in-progress draft to the server every 15 seconds.
+  \item \textbf{FR-4.5} A student shall resume an attempt on a different device or after a browser crash; the resume shall prefer the newer of the local and server snapshots.
+  \item \textbf{FR-4.6} A student shall submit the attempt; the system shall create one submission per answer and dispatch grading.
+  \item \textbf{FR-4.7} A submitted attempt shall not be re-submittable; a second submit shall return HTTP 409.
+\end{itemize}
+
+\subsection{Grading (FR-5)}
+
+\begin{itemize}
+  \item \textbf{FR-5.1} The system shall auto-grade coding submissions by running every test case in Judge0~\cite{judge0} and comparing normalised stdout against the normalised expected output.
+  \item \textbf{FR-5.2} The system shall auto-grade MCQ submissions by set equality of selected and correct option IDs.
+  \item \textbf{FR-5.3} An MCQ with no configured correct answers shall be marked \texttt{pending\_review} (the student cannot fail an unconfigured question).
+  \item \textbf{FR-5.4} The system shall mark written submissions \texttt{pending\_review} on submit.
+  \item \textbf{FR-5.5} A teacher shall grade pending-review submissions with a score, status, and optional textual feedback.
+  \item \textbf{FR-5.6} A teacher shall override the score on any submission; the override shall re-aggregate the attempt score.
+  \item \textbf{FR-5.7} The system shall fire a single "Exam Graded" notification per attempt once no submissions remain in \texttt{pending\_review}.
+\end{itemize}
+
+\subsection{Reminders and notifications (FR-6)}
+
+\begin{itemize}
+  \item \textbf{FR-6.1} The system shall send an in-app reminder for each upcoming exam in the next 60 minutes, deduplicated per exam.
+  \item \textbf{FR-6.2} The system shall send a "starts in about 1 hour" email to opted-in students.
+  \item \textbf{FR-6.3} The system shall send a "starting now" email to opted-in students.
+  \item \textbf{FR-6.4} The system shall fire an in-app notification on grade, on announcement, and on submission receipt.
+  \item \textbf{FR-6.5} A user shall toggle email vs.\ in-app notification preferences per channel.
+\end{itemize}
+
+\subsection{Results and review (FR-7)}
+
+\begin{itemize}
+  \item \textbf{FR-7.1} A student shall view a per-attempt review with per-test pass/fail tabs and teacher feedback, gated by \texttt{show\_results\_after} and class \texttt{grades\_announced}.
+  \item \textbf{FR-7.2} A teacher shall view per-student results with weighted per-question score, total score, and time taken.
+  \item \textbf{FR-7.3} A teacher shall view a pending-grading queue filtered by exam.
+\end{itemize}
+
+\section{Non-functional requirements}
+\label{sec:nfr}
+
+\subsection{Performance (NFR-P)}
+
+\begin{itemize}
+  \item \textbf{NFR-P.1} A coding submission's end-to-end latency shall be dominated by Judge0 compilation; APIs surrounding it shall add no more than 200 ms at the median for a typical 5-test problem.
+  \item \textbf{NFR-P.2} The exam-start endpoint shall complete in under 1 s at the 95th percentile.
+  \item \textbf{NFR-P.3} Autosave shall complete in under 500 ms at the 95th percentile.
+\end{itemize}
+
+\subsection{Security (NFR-S)}
+
+\begin{itemize}
+  \item \textbf{NFR-S.1} Passwords shall be stored as bcrypt hashes~\cite{provos1999bcrypt}, never plain text.
+  \item \textbf{NFR-S.2} The JWT~\cite{rfc7519} secret shall be at least 32 characters; the system shall fail to start otherwise.
+  \item \textbf{NFR-S.3} Every protected handler shall re-check per-resource ownership.
+  \item \textbf{NFR-S.4} User-authored fields rendered into another user's email shall be HTML-escaped.
+  \item \textbf{NFR-S.5} The Markdown renderer in the SPA shall not reparse raw HTML.
+  \item \textbf{NFR-S.6} Student code shall execute only inside Judge0's sandbox~\cite{isolate}.
+\end{itemize}
+
+\subsection{Reliability and availability (NFR-R)}
+
+\begin{itemize}
+  \item \textbf{NFR-R.1} Re-running schema migrations shall be a no-op (idempotency).
+  \item \textbf{NFR-R.2} A process restart inside the same minute shall not duplicate reminders.
+  \item \textbf{NFR-R.3} A failed grading goroutine shall not crash the server (the panic recovery in the reminder scheduler is the model).
+\end{itemize}
+
+\subsection{Maintainability and operability (NFR-M)}
+
+\begin{itemize}
+  \item \textbf{NFR-M.1} The system shall be operable as a single Go binary plus PostgreSQL.
+  \item \textbf{NFR-M.2} Configuration shall be by environment variables, with a documented \texttt{.env.example}.
+  \item \textbf{NFR-M.3} Schema changes shall use the idempotent SQL pattern documented in \texttt{ORM\_RULES.md}.
+  \item \textbf{NFR-M.4} Frontend and backend shall build and test independently (\texttt{go test} / \texttt{npm run test}).
+\end{itemize}
+
+\subsection{Usability (NFR-U)}
+
+\begin{itemize}
+  \item \textbf{NFR-U.1} The teacher exam builder shall surface "publish requires a start time" as a field-level error, not a generic toast.
+  \item \textbf{NFR-U.2} The student take screen shall display the remaining time prominently and the autosave timestamp unobtrusively.
+  \item \textbf{NFR-U.3} The student review screen shall not reveal hidden test case inputs or expected outputs.
+  \item \textbf{NFR-U.4} The system shall achieve a System Usability Scale score~\cite{brooke1996sus} of at least 70 in a small user study (\Cref{ch:results}).
+\end{itemize}
+
+\section{Constraints and assumptions}
+
+\begin{itemize}
+  \item APEX is single-tenant. A multi-tenant deployment would need additional class-of-classes scoping and is out of scope for this iteration.
+  \item APEX assumes a single backend instance. The reminder scheduler does not coordinate across processes; a multi-instance deployment would require a Postgres advisory lock or a Redis-backed lock.
+  \item Judge0 and SMTP are external dependencies; an outage of either degrades the corresponding feature but does not crash the system.
+  \item Browsers must support ES2020+ and \texttt{localStorage}; an older browser would not be able to run the SPA.
+\end{itemize}
+
+\section{Traceability}
+
+\Cref{tab:requirements-trace} maps a representative subset of requirements to their implementation site and verification activity. The full trace lives in \Cref{appendix:source-listings}.
+
+\begin{table}[H]
+  \centering
+  \caption{Sample requirements trace.}
+  \label{tab:requirements-trace}
+  \small
+  \begin{tabularx}{\linewidth}{p{4cm} X X}
+    \toprule
+    Req. & Implementation & Verification \\
+    \midrule
+    FR-3.2 publish requires schedule & \texttt{exam.UpdateExam:222--233}                        & integration test + manual \\
+    FR-4.4 autosave 15 s             & \texttt{exam.AutosaveAttempt} + \texttt{ExamTaking.tsx} & vitest stub + manual \\
+    FR-4.7 second submit returns 409 & \texttt{exam.SubmitAttempt:576--579}                    & \texttt{go test} \\
+    FR-5.1 normalised diff           & \texttt{judge0.normalizeOutput:366--374}                & \texttt{go test} \\
+    FR-5.7 single graded notification & \texttt{maybeFinalizeAttempt:308--327}                  & integration test \\
+    NFR-S.2 JWT secret minimum       & \texttt{config.Load}                                    & boot-time check \\
+    NFR-S.5 no raw HTML in MD        & \texttt{ExamTaking.tsx}, \texttt{ExamPreview.tsx}       & manual + repo grep \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Summary}
+
+The requirements above describe a system that is small enough for a single graduation project, but ambitious enough to integrate three distinct exam formats, two authentication paths, and a real sandboxed grader. The functional list is mostly orthogonal; the non-functional list is the gravitational centre. The next chapter shows how the design satisfies these requirements at the architectural level.

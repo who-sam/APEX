@@ -1,0 +1,32 @@
+@startuml
+skinparam shadowing false
+
+cloud "Internet" {
+  actor User
+}
+
+node "Reverse proxy\n(nginx / Caddy)" as RP
+
+node "App server" {
+  component "Go binary :8080" as Go
+}
+
+node "DB server" {
+  database "PostgreSQL 16" as PG
+}
+
+node "Sandbox cluster" {
+  component "Judge0 + isolate" as J0
+}
+
+cloud "SMTP relay (e.g. SES, Postfix)" as SMTP
+cloud "Google OAuth" as GOOG
+
+User --> RP : HTTPS 443\nHSTS, TLS cert
+RP --> Go : reverse proxy /api/*
+RP --> Static : /  static SPA build
+Go --> PG : libpq SSL
+Go --> J0 : POST /submissions?wait=true
+Go --> SMTP : 587 STARTTLS
+Go --> GOOG : idtoken.Validate
+@enduml

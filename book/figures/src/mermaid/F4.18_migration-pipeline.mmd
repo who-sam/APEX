@@ -1,0 +1,12 @@
+flowchart LR
+    A[main.go] --> B[config.Load]
+    B --> C[database.Connect]
+    C --> D{tableExists?}
+    D -->|yes| E[RunMigrations<br/>idempotent ALTER + UPDATE blocks<br/>per table]
+    D -->|first boot| F[skip blocks]
+    E --> G[GORM AutoMigrate<br/>creates new tables]
+    F --> G
+    G --> H[RunPostMigrations<br/>FK sweep on folders]
+    H --> I[auth.Init / email.Init / judge0.Init]
+    I --> J[reminder.Start ticker]
+    J --> K[gin.Run :8080]

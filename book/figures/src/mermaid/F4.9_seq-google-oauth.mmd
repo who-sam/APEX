@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant SPA as React SPA
+    participant GIS as Google Identity Services
+    participant API as Gin /api/auth/google
+    participant IT as idtoken.Validate
+    participant DB as Postgres
+
+    U->>SPA: click "Sign in with Google"
+    SPA->>GIS: prompt()
+    GIS-->>SPA: id_token (JWT)
+    SPA->>API: POST /auth/google {id_token, role?}
+    API->>IT: Validate(id_token, GOOGLE_CLIENT_ID)
+    IT-->>API: payload {sub, email, email_verified, name}
+    alt match google_id
+        API->>DB: SELECT WHERE google_id=sub
+        DB-->>API: user
+        API-->>SPA: 200 {token, user}
+    else match email (link)
+        API->>DB: SELECT WHERE email=...
+        DB-->>API: user
+        API->>DB: UPDATE user SET google_id=sub
+        API-->>SPA: 200 {token, user}
+    else new account
+        alt role missing
+            API-->>SPA: 200 {needs_role: true, email, name}
+            SPA-->>U: show role picker
+        else role provided
+            API->>DB: INSERT user (google_id, email, role)
+            API->>DB: INSERT profile
+            API-->>SPA: 200 {token, user}
+        end
+    end

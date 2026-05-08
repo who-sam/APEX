@@ -1,0 +1,25 @@
+\chapter{Project Gantt Chart}
+\label{appendix:gantt}
+
+\Cref{fig:FF.1} shows the project timeline as a Gantt chart, broken into the six phases that drove the implementation in \Cref{ch:implementation} and the writing of this book.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{FF.1_gantt}
+  \caption{APEX project Gantt chart.}
+  \label{fig:FF.1}
+\end{figure}
+
+\section{Phase notes}
+
+\paragraph{Phase A --- Foundations.} Project setup, Go module layout, database connection, JWT middleware, signup/login.
+
+\paragraph{Phase B --- Exam delivery.} Exam builder, problem and test-case editors, the take screen with Monaco, autosave, submit.
+
+\paragraph{Phase C --- Grading.} Judge0 integration, the three graders, the finalisation arithmetic, the manual-grading queue.
+
+\paragraph{Phase D --- Hardening.} Idempotent migrations, the autosave + reset-at workflow, the security review and the four patches in \Cref{ch:security}.
+
+\paragraph{Phase E --- Evaluation.} \texttt{go test} and Vitest fixtures, the latency benchmark, the SUS user study.
+
+\paragraph{Phase F --- Writing.} Producing this book and the defence presentation.

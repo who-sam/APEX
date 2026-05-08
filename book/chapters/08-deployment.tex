@@ -1,0 +1,110 @@
+\chapter{Deployment and Operations}
+\label{ch:deployment}
+
+This chapter documents the deployment story for APEX: how a developer brings up the system locally, how it is laid out in a production deployment, what environment variables it expects, and how releases are cut. The conventions here are conservative on purpose --- a self-hosting instructor cannot reasonably maintain a Kubernetes cluster, so the production path is a single Go binary plus a managed Postgres.
+
+\section{Local development}
+
+\Cref{fig:F8.1} draws the development topology. Two foreground processes run on the host: \texttt{go run main.go} on \texttt{:8080} and \texttt{vite} on \texttt{:5173}. A Docker Compose Postgres on \texttt{:5432} is the third. Judge0 is the public hosted instance (\texttt{ce.judge0.com}) by default; SMTP is off unless the operator opts in.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\linewidth]{F8.1_dev-topology.pdf}
+  \caption{Development topology. The Vite dev server proxies \texttt{/api} to the Go binary; the Go binary speaks to Postgres on the same host.}
+  \label{fig:F8.1}
+\end{figure}
+
+\paragraph{Bring-up via \texttt{start.sh}.} The repository ships a single bring-up script. Its responsibilities are:
+
+\begin{enumerate}
+  \item Copy \texttt{.env.example} to \texttt{.env} on first boot.
+  \item Bring up the Postgres service via Docker Compose (\texttt{docker compose up -d --wait}).
+  \item Start the Go backend in the background (\texttt{go run main.go \&}).
+  \item Wait up to 30 seconds for \texttt{:8080} to respond to \texttt{GET /api/auth/login}.
+  \item Start Vite on \texttt{:5173}.
+\end{enumerate}
+
+The script is intentionally readable rather than idempotent --- it is a way to bring up the system once, not a service supervisor. Running it twice without stopping the first run will clash on the ports.
+
+\paragraph{Manual bring-up.} The same effect can be achieved manually for developers who prefer split terminals: \texttt{docker compose up -d postgres}, \texttt{go run main.go} in one shell, \texttt{cd frontend \&\& npm install \&\& npm run dev} in another.
+
+\section{Configuration}
+
+\Cref{tab:env} lists every environment variable APEX recognises. Variables marked \emph{required} cause a fast fail at boot if missing; the rest carry sensible defaults.
+
+\begin{table}[H]
+  \centering
+  \caption{Environment variables read by the backend (\texttt{internal/config/config.go}).}
+  \label{tab:env}
+  \small
+  \begin{tabularx}{\linewidth}{>{\ttfamily}p{3.4cm} p{4.2cm} X}
+    \toprule
+    \normalfont Variable & Default / required & Purpose \\
+    \midrule
+    DB\_HOST             & \texttt{localhost}                 & Postgres host \\
+    DB\_PORT             & \texttt{5432}                      & Postgres port \\
+    DB\_USER             & \texttt{postgres}                  & Postgres user \\
+    DB\_PASSWORD         & \texttt{postgres}                  & Postgres password \\
+    DB\_NAME             & \texttt{apex}                      & Postgres database \\
+    JWT\_SECRET          & \normalfont\emph{required, $\geq$32 chars} & HMAC secret for JWT signing \\
+    JUDGE0\_URL          & \texttt{https://ce.judge0.com}     & Judge0 base URL \\
+    APP\_URL             & \texttt{http://localhost:5173}     & used in password-reset email links \\
+    GOOGLE\_CLIENT\_ID   & \normalfont\emph{empty disables OAuth} & Google OAuth audience \\
+    SMTP\_*              & \normalfont\emph{empty disables email} & SMTP relay credentials (\texttt{HOST}, \texttt{PORT}, \texttt{USER}, \texttt{PASSWORD}, \texttt{FROM}) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+The \texttt{JWT\_SECRET} validator is the only fast-fail; the rest of the variables degrade a feature gracefully when missing. With \texttt{SMTP\_HOST} unset, password-reset and exam-reminder emails are silently skipped (the in-app side still works). With \texttt{GOOGLE\_CLIENT\_ID} unset, the SPA still shows the Google button but the backend refuses the request with HTTP 503.
+
+The frontend reads only one variable, \texttt{VITE\_API\_URL}, which defaults to \texttt{/api}. The default works for both the dev proxy (Vite proxies \texttt{/api} to \texttt{:8080}) and a production single-origin deployment (the reverse proxy serves \texttt{/api} from the same host as the SPA).
+
+\section{Production topology}
+
+\Cref{fig:F8.2} draws the recommended production topology. The Go binary listens on a Unix socket or local TCP port; a reverse proxy (nginx or Caddy) terminates TLS, serves the built SPA at \texttt{/}, and proxies \texttt{/api/*} to the binary. Postgres lives on a separate host or a managed service; Judge0 lives on a third (self-hosted, since the public instance imposes rate limits unsuitable for a class taking an exam at the same time). SMTP is a relay (Amazon SES or a self-hosted Postfix is fine).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{F8.2_prod-topology.pdf}
+  \caption{Production topology. Single-origin: the SPA and the API share a hostname, so CORS is not the trust boundary.}
+  \label{fig:F8.2}
+\end{figure}
+
+\paragraph{Reverse proxy.} A minimal nginx \texttt{server} block routes \texttt{/api/*} to the backend (\texttt{proxy\_pass http://127.0.0.1:8080}) and serves the SPA's \texttt{dist/} as static files at \texttt{/}, with a SPA-friendly fallback to \texttt{index.html}. \texttt{HSTS} is on; the certificate is from Let's Encrypt.
+
+\paragraph{Process supervisor.} Run the Go binary under systemd (\texttt{Restart=on-failure}, \texttt{EnvironmentFile=/etc/apex/env}) or under Docker. The binary is statically linked CGO-free (\texttt{CGO\_ENABLED=0 go build -o apex .}) so the only runtime dependency is the Linux kernel.
+
+\paragraph{Database.} Postgres 16 with at least 1 GB of memory for a class of 100--200 students. The schema is small; the bottleneck for concurrent grading is Judge0, not the database. Daily \texttt{pg\_dump} backups suffice; the workload is at most write-heavy during exam start, not continuous.
+
+\paragraph{Judge0.} A self-hosted Judge0 with two or four worker containers handles a class of up to ~50 students submitting concurrently. The Judge0 deployment is documented upstream~\cite{judge0}; APEX speaks only \texttt{POST /submissions?wait=true}, which is the simplest synchronous mode.
+
+\paragraph{Mail.} \texttt{SMTP\_FROM} should be a domain you control. Reset emails are low-volume but high-trust: a misconfigured DKIM or SPF record will silently send users to spam. A staging deployment with a one-off relay is a sensible way to test before going live.
+
+\section{Release pipeline}
+
+\Cref{fig:F8.3} draws the proposed release pipeline. The current iteration is manual --- \texttt{git push}, run tests locally, \texttt{rsync} the binary, restart --- but every step is a small CI job and the next phase of operations work is wiring them into a CI provider.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F8.3_release-pipeline.pdf}
+  \caption{Release pipeline (target). Today this is manual; each box is a CI job that already exists locally.}
+  \label{fig:F8.3}
+\end{figure}
+
+\paragraph{Migration safety.} Schema changes are appended to \texttt{internal/database/migrations.go} following \texttt{ORM\_RULES.md}: idempotent SQL, gated on the table existing, run before \texttt{AutoMigrate}, no destructive statements without an \texttt{IF EXISTS} clause. Re-running the binary on a populated database is a no-op; rolling back means starting an older binary, not running a "down" migration.
+
+\paragraph{Zero-downtime deploys.} Out of scope for this iteration. The current model is a 5--10 second restart window. With a class actively taking an exam, the autosave guards against draft loss --- the SPA simply retries the autosave call when the backend is back.
+
+\section{Operability}
+
+\paragraph{Logging.} The server logs to stdout in Gin's default format. Errors that fall through Gin (\texttt{log.Printf}) reach the same stream. A production deployment redirects stdout to journald or a file under logrotate.
+
+\paragraph{Health checks.} There is no dedicated \texttt{/health} endpoint; \texttt{GET /api/auth/login} (which returns 405 because login is POST-only) is a useful liveness probe because it exercises the routing and middleware without touching the database. A future iteration should add \texttt{GET /api/health} that reports DB and Judge0 reachability.
+
+\paragraph{Metrics.} The system does not yet emit Prometheus metrics. The reminder scheduler is the most useful to instrument first: per-tick duration, per-sweep count, per-channel error rate.
+
+\paragraph{Backups.} \texttt{pg\_dump} nightly is sufficient. The schema is in source control via \texttt{internal/database/migrations.go}, so a restore is "create empty database, apply backup".
+
+\section{Summary}
+
+The deployment story is intentionally boring. One Go binary, one Postgres, one Judge0, one optional SMTP relay, one reverse proxy, one process supervisor. The most important operational invariant is the JWT-secret validator at startup: it makes "production booted with the dev secret" impossible. The next chapter shows the system from the user's perspective, against a freshly seeded local deployment.

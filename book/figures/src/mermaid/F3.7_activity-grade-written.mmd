@@ -1,0 +1,17 @@
+flowchart TD
+    A([Teacher opens Grading queue]) --> B[Filter status=pending_review]
+    B --> C{Any items?}
+    C -->|no| D([end])
+    C -->|yes| E[Open submission]
+    E --> F[Read student answer + rubric]
+    F --> G[Set score, feedback, status]
+    G --> H[PUT /submissions/:id/grade]
+    H --> I{Owner of exam?}
+    I -->|no| J[403]
+    I -->|yes| K[Update submission]
+    K --> L[FinalizeAttempt re-aggregates]
+    L --> M{All graded for attempt?}
+    M -->|yes| N[Send Exam Graded notification]
+    M -->|no| C
+    N --> C
+    J --> C

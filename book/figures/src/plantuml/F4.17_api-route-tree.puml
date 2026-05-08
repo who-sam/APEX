@@ -1,0 +1,61 @@
+@startuml
+skinparam shadowing false
+left to right direction
+
+rectangle "/api  (gin.RouterGroup)" as ROOT {
+  rectangle "public" as PUB {
+    [POST /auth/signup]
+    [POST /auth/login]
+    [POST /auth/google]
+    [POST /auth/forgot-password]
+    [POST /auth/reset-password]
+  }
+  rectangle "protected (middleware.Auth)" as PRO {
+    rectangle "common" {
+      [GET /profile]
+      [PUT /profile]
+      [PUT /profile/password]
+      [DELETE /auth/account]
+      [GET /notifications]
+      [PUT /notifications/:id/read]
+      [GET /notifications/unread-count]
+    }
+    rectangle "teacher (RequireRole)" as TR {
+      [POST/GET/PUT/DELETE /exams ...]
+      [POST /exams/:id/assign]
+      [POST /exams/:id/close|reopen|reset]
+      [GET /exams/:id/results]
+      [POST /exams/:id/problems]
+      [PUT/DELETE /problems/:id]
+      [POST /problems/bank]
+      [POST /problems/:id/test-cases]
+      [PUT/DELETE /test-cases/:id]
+      [POST/GET/PUT/DELETE /classes ...]
+      [DELETE /classes/:id/members/:userId]
+      [GET/PUT /classes/:id/announcements]
+      [PUT /submissions/:id/grade]
+      [GET /teacher/dashboard]
+      [GET/POST/PUT/DELETE /folders]
+    }
+    rectangle "student (RequireRole)" as ST {
+      [GET /student/exams]
+      [GET /student/exams/:id]
+      [POST /student/exams/:id/start]
+      [POST /student/exams/:id/submit]
+      [PUT /student/exams/:id/autosave]
+      [GET /attempts/mine]
+      [GET /student/classes]
+      [POST /student/classes/join]
+      [DELETE /student/classes/:id]
+      [GET /student/submissions]
+      [GET /student/stats]
+      [GET /student/performance]
+    }
+    rectangle "shared protected" {
+      [POST /submissions/run]
+      [GET /submissions/:id]
+      [POST /execute]
+    }
+  }
+}
+@enduml
