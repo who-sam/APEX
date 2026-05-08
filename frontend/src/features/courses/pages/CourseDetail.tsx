@@ -21,9 +21,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { useExams, useExamResults } from "@/hooks/useExams";
+import { useExams, useExamResults, useUpdateExam } from "@/hooks/useExams";
 import { getExamPhase } from "@/features/exams/lib/examStatus";
 import { format } from "date-fns";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 
 import { useAnnouncements, useCreateAnnouncement, useUpdateAnnouncement, useDeleteAnnouncement } from "@/hooks/useAnnouncements";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +38,7 @@ import {
   BookOpen, ArrowLeft, Clock, FileText, Megaphone, Trophy,
   Users, Copy, Check, Upload, Plus, Search, MoreHorizontal,
   Trash2, Eye, Download, Send, BarChart3, Pencil, Lock, AlertCircle, Paperclip, ChevronLeft, ChevronRight,
+  Settings, Calendar as CalendarIcon,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import {
@@ -332,6 +336,77 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
   const [blockMessage, setBlockMessage] = useState<string | null>(null);
   const [passingThreshold, setPassingThreshold] = useState(classData.passing_threshold ?? 60);
   const qc = useQueryClient();
+
+  // Exam settings dialog state
+  const updateExamMutation = useUpdateExam();
+  const [examSettingsOpen, setExamSettingsOpen] = useState(false);
+  const [settingsExam, setSettingsExam] = useState<any>(null);
+  const [settingsDuration, setSettingsDuration] = useState(60);
+  const [settingsStartDate, setSettingsStartDate] = useState<Date | undefined>(undefined);
+  const [settingsStartTime, setSettingsStartTime] = useState("");
+  const [settingsClosesDate, setSettingsClosesDate] = useState<Date | undefined>(undefined);
+  const [settingsClosesTime, setSettingsClosesTime] = useState("");
+  const [settingsShuffle, setSettingsShuffle] = useState(false);
+  const [settingsShowResults, setSettingsShowResults] = useState(true);
+  const [settingsIsDraft, setSettingsIsDraft] = useState(false);
+  const [settingsPassingScore, setSettingsPassingScore] = useState(50);
+
+  const openExamSettings = (exam: any) => {
+    setSettingsExam(exam);
+    setSettingsDuration(exam.duration_minutes ?? 60);
+    setSettingsPassingScore(exam.passing_score ?? 50);
+    setSettingsShuffle(exam.shuffle_questions ?? false);
+    setSettingsShowResults(exam.show_results_after ?? true);
+    setSettingsIsDraft(exam.is_draft ?? false);
+    if (exam.start_time) {
+      const d = new Date(exam.start_time);
+      setSettingsStartDate(d);
+      setSettingsStartTime(format(d, "HH:mm"));
+    } else {
+      setSettingsStartDate(undefined);
+      setSettingsStartTime("");
+    }
+    if (exam.end_time) {
+      const d = new Date(exam.end_time);
+      setSettingsClosesDate(d);
+      setSettingsClosesTime(format(d, "HH:mm"));
+    } else {
+      setSettingsClosesDate(undefined);
+      setSettingsClosesTime("");
+    }
+    setExamSettingsOpen(true);
+  };
+
+  const saveExamSettings = async () => {
+    if (!settingsExam) return;
+    const buildDateTime = (date: Date | undefined, time: string) => {
+      if (!date) return null;
+      const [h, m] = time ? time.split(":").map(Number) : [0, 0];
+      const d = new Date(date);
+      d.setHours(h ?? 0, m ?? 0, 0, 0);
+      return d.toISOString();
+    };
+    try {
+      await updateExamMutation.mutateAsync({
+        id: settingsExam.id,
+        data: {
+          duration_minutes: settingsDuration,
+          passing_score: settingsPassingScore,
+          shuffle_questions: settingsShuffle,
+          show_results_after: settingsShowResults,
+          is_draft: settingsIsDraft,
+          start_time: buildDateTime(settingsStartDate, settingsStartTime),
+          end_time: buildDateTime(settingsClosesDate, settingsClosesTime),
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["class", classData.id] });
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      toast({ title: "Exam settings saved" });
+      setExamSettingsOpen(false);
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
+  };
   const removeMemberMutation = useMutation({
     mutationFn: (userId: number) => removeClassMember(classData.id, userId),
     onSuccess: () => {
@@ -545,9 +620,6 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Search students..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
-            <Button variant="outline" className="gap-1.5">
-              <Upload className="h-4 w-4" /> Enroll via CSV
-            </Button>
           </div>
 
           <Card className="border-border/50 bg-card/80 backdrop-blur-sm">
@@ -654,6 +726,9 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
                         </DropdownMenuItem>
                         <DropdownMenuItem className="gap-2" onClick={() => navigate("/dashboard/results")}>
                           <BarChart3 className="h-4 w-4" /> Results
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2" onClick={() => openExamSettings(exam)}>
+                          <Settings className="h-4 w-4" /> Settings
                         </DropdownMenuItem>
                         <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive">
                           <Trash2 className="h-4 w-4" /> Delete
@@ -932,6 +1007,105 @@ function TeacherCourseDetail({ classData }: { classData: any }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Exam Settings Dialog */}
+      <Dialog open={examSettingsOpen} onOpenChange={setExamSettingsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Exam Settings{settingsExam ? ` — ${settingsExam.title || settingsExam.name}` : ""}
+            </DialogTitle>
+            <DialogDescription>Adjust scheduling, duration, and behavior for this exam.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Duration (min)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={settingsDuration}
+                  onChange={(e) => setSettingsDuration(Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Passing Score (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={settingsPassingScore}
+                  onChange={(e) => setSettingsPassingScore(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Start Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !settingsStartDate && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {settingsStartDate ? format(settingsStartDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={settingsStartDate} onSelect={setSettingsStartDate} initialFocus className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Start Time</Label>
+                <Input type="time" value={settingsStartTime} onChange={(e) => setSettingsStartTime(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Closes Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !settingsClosesDate && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {settingsClosesDate ? format(settingsClosesDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={settingsClosesDate} onSelect={setSettingsClosesDate} initialFocus className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Closes Time</Label>
+                <Input type="time" value={settingsClosesTime} onChange={(e) => setSettingsClosesTime(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border/50 p-3">
+              <div className="flex items-center justify-between">
+                <Label className="font-normal">Shuffle Questions</Label>
+                <Switch checked={settingsShuffle} onCheckedChange={setSettingsShuffle} />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="font-normal">Show Results After Submission</Label>
+                <Switch checked={settingsShowResults} onCheckedChange={setSettingsShowResults} />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="font-normal">Published</Label>
+                <Switch checked={!settingsIsDraft} onCheckedChange={(v) => setSettingsIsDraft(!v)} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExamSettingsOpen(false)}>Cancel</Button>
+            <Button onClick={saveExamSettings} disabled={updateExamMutation.isPending}>
+              {updateExamMutation.isPending ? "Saving..." : "Save Settings"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
