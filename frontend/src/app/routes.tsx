@@ -1,6 +1,8 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import Index from "@/pages/Index";
 import NotFound from "@/pages/NotFound";
+
+const Index = lazy(() => import("@/pages/Index"));
 import AuthPage from "@/features/auth/pages/AuthPage";
 import Unauthorized from "@/features/auth/pages/Unauthorized";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -43,6 +45,7 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
 
 export default function AppRoutes() {
   return (
+    <Suspense fallback={null}>
     <Routes>
       <Route path="/" element={<Index />} />
       <Route path="/auth" element={<AuthPage />} />
@@ -69,5 +72,6 @@ export default function AppRoutes() {
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 }
