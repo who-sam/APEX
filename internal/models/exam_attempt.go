@@ -16,7 +16,7 @@ type ExamAttempt struct {
 	// DraftAnswers holds an in-progress JSON payload from the autosave
 	// endpoint so a student can resume on a fresh device or after a crash.
 	// Cleared once the attempt is submitted.
-	DraftAnswers   string  `gorm:"type:jsonb" json:"draft_answers,omitempty"`
+	DraftAnswers   *string  `gorm:"type:jsonb" json:"draft_answers,omitempty"`
 	DraftSavedAt   *time.Time `json:"draft_saved_at,omitempty"`
 
 	Submissions []Submission `gorm:"foreignKey:ExamAttemptID" json:"submissions,omitempty"`
