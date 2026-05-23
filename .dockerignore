@@ -1,0 +1,28 @@
+.git
+.github
+.vscode
+.idea
+**/.DS_Store
+
+# Frontend build artifacts (built inside its own image)
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Local data / artifacts
+apex.db
+*.db
+*.exe
+*.binary
+*.mp4
+seed/data
+photos
+book
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Plans / docs noise
+BUG_FIX_PLAN.md

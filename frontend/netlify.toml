@@ -1,0 +1,27 @@
+# Netlify config — https://docs.netlify.com/configure-builds/file-based-configuration/
+#
+# When this repo is linked to a Netlify site with base = "frontend", the
+# settings below are auto-applied. Set VITE_* secrets in the Netlify UI under
+# Site settings → Environment variables (NOT here — this file is committed).
+
+[build]
+  base    = "frontend"
+  command = "bun install --frozen-lockfile && bun run build"
+  publish = "dist"
+
+[build.environment]
+  # Pin bun version so CI and Netlify build the same way.
+  BUN_VERSION = "1.1.38"
+  NODE_VERSION = "20"
+
+# SPA fallback — every unknown path serves index.html so React Router works.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Long-cache hashed Vite assets.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

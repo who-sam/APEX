@@ -66,6 +66,21 @@ Keep `gorm:"default:false"` in struct tags — it tells GORM what value to use o
 ---
 
 ## File Locations
-- Migrations: `internal/database/migrations.go`
-- Database init: `internal/database/database.go` (calls `RunMigrations` then `AutoMigrate`)
+- Migrations (legacy, Go SQL): `internal/database/migrations.go`
+- Migrations (new, versioned SQL): `internal/database/migrations/sql/NNNN_*.up.sql` / `.down.sql`
+- Migrate CLI: `cmd/migrate` (`go run ./cmd/migrate up|down|version|force <n>`)
+- Database init: `internal/database/database.go` (calls `RunMigrations` then `AutoMigrate`, gated by `SKIP_AUTOMIGRATE`)
 - Models: `internal/models/*.go`
+
+---
+
+## Migrations policy (versioned SQL)
+
+`cmd/migrate` runs `golang-migrate` against `DATABASE_URL` (Railway) or the discrete `DB_*` vars (local). GORM `AutoMigrate` still owns the schema baseline today; new schema changes are layered on top via numbered SQL files.
+
+**Rules:**
+1. **New schema changes go in `internal/database/migrations/sql/`** as paired `NNNN_name.up.sql` / `NNNN_name.down.sql`. Number them sequentially.
+2. Migrations must be **idempotent** (`IF EXISTS` / `IF NOT EXISTS`) and **forward-and-backward** valid — every `up` needs a working `down`.
+3. **Production sets `SKIP_AUTOMIGRATE=true`**. Schema is created/updated exclusively by `apex-migrate up` (Railway pre-deploy command). AutoMigrate stays on locally for now.
+4. After adding a migration: run `go run ./cmd/migrate up`, verify with `go run ./cmd/migrate version`, and confirm the row counts per Rule 4 of the parent ruleset.
+5. The Rules 1–6 above still apply to the SQL you put inside these migration files (no surprise defaults, audit query filters, etc.).

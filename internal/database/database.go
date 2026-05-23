@@ -28,6 +28,13 @@ func Connect(cfg config.Config) {
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
+	if cfg.SkipAutoMigrate {
+		log.Println("SKIP_AUTOMIGRATE=true — running versioned SQL migrations instead of GORM AutoMigrate.")
+		RunSQLMigrations(cfg)
+		log.Println("Database connected and SQL-migrated")
+		return
+	}
+
 	// Explicit SQL migrations BEFORE AutoMigrate — see /ORM_RULES.md
 	RunMigrations(DB)
 

@@ -36,10 +36,21 @@ for i in $(seq 1 30); do
 done
 log "Backend ready (PID $BACKEND_PID)"
 
-# Start frontend
+# Start frontend (prefer bun; fall back to npm if bun missing)
 log "Starting frontend on :5173..."
 cd frontend
-npm run dev &
+if [ ! -d node_modules ]; then
+    if command -v bun >/dev/null 2>&1; then
+        bun install
+    else
+        npm install
+    fi
+fi
+if command -v bun >/dev/null 2>&1; then
+    bun run dev &
+else
+    npm run dev &
+fi
 FRONTEND_PID=$!
 cd ..
 

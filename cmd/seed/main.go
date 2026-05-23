@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -435,7 +436,11 @@ func main() {
 	fmt.Println()
 	fmt.Println("============================================================")
 	fmt.Println("APEX demo data seeded.")
-	fmt.Println("Login URL: http://localhost:5173")
+	loginURL := os.Getenv("APP_URL")
+	if loginURL == "" {
+		loginURL = "http://localhost:5173"
+	}
+	fmt.Println("Login URL: " + loginURL)
 	fmt.Println()
 	fmt.Println("Teacher:")
 	fmt.Printf("  %s  /  %s   (Dr. Sara Ahmed)\n", teacherEmail, demoPassword)

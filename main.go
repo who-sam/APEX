@@ -1,6 +1,10 @@
 package main
 
 import (
+	"net/http"
+	"os"
+	"time"
+
 	"apex/internal/announcement"
 	"apex/internal/auth"
 	"apex/internal/class"
@@ -25,6 +29,20 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--healthcheck" {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
+		client := &http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		_ = resp.Body.Close()
+		os.Exit(0)
+	}
+
 	cfg := config.Load()
 	database.Connect(cfg)
 	auth.Init(cfg)
@@ -33,7 +51,11 @@ func main() {
 	reminder.Start()
 
 	r := gin.Default()
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(cfg.AllowedOrigins))
+
+	r.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	public := r.Group("/api")
 	protected := r.Group("/api")
@@ -53,5 +75,5 @@ func main() {
 	announcement.RegisterRoutes(public, protected)
 	folder.RegisterRoutes(public, protected)
 
-	r.Run(":8080")
+	_ = r.Run(":" + cfg.Port)
 }
