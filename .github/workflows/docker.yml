@@ -3,14 +3,9 @@ name: Docker build smoke test
 on:
   push:
     branches: [main]
+  # Run on every PR — narrow path filters miss lockfile drift and Go module
+  # changes that break the image build.
   pull_request:
-    paths:
-      - "Dockerfile"
-      - ".dockerignore"
-      - "frontend/Dockerfile"
-      - "frontend/nginx.conf"
-      - "docker-compose.yml"
-      - ".github/workflows/docker.yml"
 
 jobs:
   build-backend:
