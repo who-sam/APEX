@@ -4,40 +4,11 @@
 
 % --- Project metadata (filled by user before submission) -------------
 \newcommand{\bookTitle}{APEX: A Classroom Portal for Mixed-Format Exams, Auto-Grading, and Live Coding}
-\newcommand{\bookAuthor}{[Author Name]}
-\newcommand{\bookSupervisor}{[Supervisor Name]}
-\newcommand{\bookDept}{[Department]}
-\newcommand{\bookUniversity}{[University]}
+\newcommand{\bookSupervisor}{Prof. Dr. Ayman El-Sayed Omera}
+\newcommand{\bookDept}{Electrical and Computer Engineering Department}
+\newcommand{\bookFaculty}{Faculty of Engineering}
+\newcommand{\bookUniversity}{Menoufia University}
 \newcommand{\bookDate}{\today}
-
-% --- Acronyms ---------------------------------------------------------
-\makeglossaries
-\newacronym{api}{API}{Application Programming Interface}
-\newacronym{cors}{CORS}{Cross-Origin Resource Sharing}
-\newacronym{crud}{CRUD}{Create, Read, Update, Delete}
-\newacronym{csrf}{CSRF}{Cross-Site Request Forgery}
-\newacronym{dom}{DOM}{Document Object Model}
-\newacronym{er}{ER}{Entity-Relationship}
-\newacronym{gids}{GIS}{Google Identity Services}
-\newacronym{gorm}{GORM}{Go Object-Relational Mapper}
-\newacronym{idor}{IDOR}{Insecure Direct Object Reference}
-\newacronym{jwt}{JWT}{JSON Web Token}
-\newacronym{mcq}{MCQ}{Multiple-Choice Question}
-\newacronym{oauth}{OAuth}{Open Authorization}
-\newacronym{oidc}{OIDC}{OpenID Connect}
-\newacronym{orm}{ORM}{Object-Relational Mapper}
-\newacronym{owasp}{OWASP}{Open Worldwide Application Security Project}
-\newacronym{rbac}{RBAC}{Role-Based Access Control}
-\newacronym{rest}{REST}{Representational State Transfer}
-\newacronym{spa}{SPA}{Single-Page Application}
-\newacronym{sus}{SUS}{System Usability Scale}
-\newacronym{ts}{TS}{TypeScript}
-\newacronym{ui}{UI}{User Interface}
-\newacronym{ux}{UX}{User Experience}
-\newacronym{xss}{XSS}{Cross-Site Scripting}
-\newacronym{tle}{TLE}{Time Limit Exceeded}
-\newacronym{mle}{MLE}{Memory Limit Exceeded}
-\newacronym{ce}{CE}{Compilation Error}
 
 \begin{document}
 
@@ -45,13 +16,13 @@
 \frontmatter
 \pagenumbering{roman}
 \input{frontmatter/titlepage}
-\input{frontmatter/approval}
+% \input{frontmatter/approval}  % re-enable before defense once examiners assigned
 \input{frontmatter/acknowledgements}
 \input{frontmatter/abstract}
 \tableofcontents
 \listoffigures
 \listoftables
-\printglossary[type=\acronymtype,title={List of Abbreviations}]
+\input{frontmatter/abbreviations}
 
 % --- Body ------------------------------------------------------------
 \mainmatter

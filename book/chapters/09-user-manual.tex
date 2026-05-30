@@ -92,7 +92,7 @@ Adding a coding question (\Cref{fig:F9.8}) requires a title, a Markdown descript
   \label{fig:F9.10}
 \end{figure}
 
-When the exam has at least one question and a non-empty \texttt{start\_time}, the \emph{Publish} toggle is enabled (\Cref{fig:F9.11}). Toggling it without a start time produces a field-level error (\Cref{fig:F9.12}) --- this is the user-facing surface of the rule in \texttt{exam.UpdateExam:222--233}.
+When the exam has at least one question and a non-empty \texttt{start\_time}, the \emph{Publish} toggle is enabled (\Cref{fig:F9.11}). The rule lives in \texttt{exam.UpdateExam:222--233}.
 
 \begin{figure}[H]
   \centering
@@ -101,21 +101,7 @@ When the exam has at least one question and a non-empty \texttt{start\_time}, th
   \label{fig:F9.11}
 \end{figure}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\linewidth]{F9.12_publish-needs-start.png}
-  \caption{Publishing without a start time is rejected with a field-level error.}
-  \label{fig:F9.12}
-\end{figure}
-
-\emph{Assign to classes} (\Cref{fig:F9.13}) opens a multi-select dialog of the teacher's classes. \emph{Preview} (\Cref{fig:F9.14}) opens \texttt{/dashboard/exam-preview/:id}, which renders the exam exactly as a student would see it.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\linewidth]{F9.13_assign-classes.png}
-  \caption{Assigning the exam to one or more classes.}
-  \label{fig:F9.13}
-\end{figure}
+\emph{Preview} (\Cref{fig:F9.14}) opens \texttt{/dashboard/exam-preview/:id}, which renders the exam exactly as a student would see it.
 
 \begin{figure}[H]
   \centering
@@ -144,23 +130,9 @@ Clicking \emph{Start exam} on an in-window exam opens \texttt{/dashboard/exam/:i
   \label{fig:F9.16}
 \end{figure}
 
-\paragraph{Running sample tests.} A coding question's \emph{Run samples} button calls \texttt{POST /submissions/run} and renders per-test results inline (\Cref{fig:F9.17}). Hidden test cases are not run on this path --- they are reserved for the actual submission.
+\paragraph{Running sample tests.} A coding question's \emph{Run samples} button calls \texttt{POST /submissions/run} and renders per-test results inline. Hidden test cases are not run on this path --- they are reserved for the actual submission.
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\linewidth]{F9.17_take-coding-run.png}
-  \caption{Sample test results.}
-  \label{fig:F9.17}
-\end{figure}
-
-\paragraph{Autosave.} A subtle "saved 4s ago" indicator near the timer reflects \texttt{draft\_saved\_at} from the server (\Cref{fig:F9.18}). If the browser crashes or the student switches device, opening the exam again restores the same answers from the server-side draft.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\linewidth]{F9.18_autosave-indicator.png}
-  \caption{The autosave indicator next to the countdown timer.}
-  \label{fig:F9.18}
-\end{figure}
+\paragraph{Autosave.} The client posts the draft to the server every 15 seconds; \texttt{draft\_saved\_at} on \texttt{ExamAttempt} tracks the latest write. If the browser crashes or the student switches device, opening the exam again restores the same answers from the server-side draft.
 
 \paragraph{Submitting.} \emph{Submit} pops a confirmation dialog (\Cref{fig:F9.19}). On confirm, the SPA posts to \texttt{POST /student/exams/:id/submit} and shows the post-submit success screen (\Cref{fig:F9.20}).
 
