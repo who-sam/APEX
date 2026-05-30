@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>APEX — Graduation Defense</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:        hsl(240 21% 12%);
+      --bg-2:      hsl(237 16% 17%);
+      --bg-3:      hsl(237 16% 22%);
+      --fg:        hsl(226 64% 92%);
+      --fg-muted:  hsl(227 25% 68%);
+      --primary:   hsl(217 92% 70%);
+      --primary-2: hsl(217 92% 56%);
+      --accent:    hsl(280 80% 72%);
+      --good:      hsl(150 70% 60%);
+      --warn:      hsl(35 90% 65%);
+      --bad:       hsl(0 80% 65%);
+      --border:    hsla(226 30% 60% / 0.18);
+      --grad:      linear-gradient(135deg, hsl(217 92% 70%), hsl(280 80% 72%));
+    }
+
+    html, body, .reveal { background: var(--bg); }
+    .reveal { font-family: 'Inter', system-ui, sans-serif; color: var(--fg); font-size: 26px; }
+    .reveal .slides { text-align: left; }
+    .reveal .slides section { padding: 0 2.2rem; }
+
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+      font-family: 'Inter', sans-serif;
+      color: var(--fg);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      text-transform: none;
+      margin: 0 0 0.6em 0;
+      line-height: 1.15;
+    }
+    .reveal h1 { font-size: 2.6em; }
+    .reveal h2 { font-size: 1.9em; }
+    .reveal h3 { font-size: 1.35em; color: var(--primary); }
+    .reveal h4 { font-size: 1.05em; color: var(--fg-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .reveal p, .reveal li { line-height: 1.55; color: var(--fg); }
+    .reveal ul { list-style: none; padding-left: 0; }
+    .reveal ul li {
+      position: relative;
+      padding-left: 1.4rem;
+      margin: 0.35em 0;
+    }
+    .reveal ul li::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0.7em;
+      width: 0.5rem; height: 0.5rem;
+      background: var(--grad);
+      border-radius: 2px;
+      transform: rotate(45deg);
+    }
+    .reveal ul ul li::before { background: var(--fg-muted); }
+
+    .reveal a { color: var(--primary); text-decoration: none; }
+    .reveal strong { color: var(--primary); font-weight: 600; }
+    .reveal em { color: var(--accent); font-style: normal; font-weight: 500; }
+
+    .reveal code {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-3);
+      color: var(--primary);
+      padding: 0.12em 0.4em;
+      border-radius: 4px;
+      font-size: 0.88em;
+    }
+    .reveal pre {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+      font-size: 0.7em;
+    }
+    .reveal pre code {
+      background: transparent;
+      color: var(--fg);
+      padding: 1.2em 1.4em;
+      max-height: none;
+    }
+
+    /* Eyebrow tag on each slide */
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.35rem 0.9rem;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.7em;
+      font-weight: 600;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.2rem;
+    }
+    .eyebrow .dot {
+      width: 8px; height: 8px;
+      background: var(--grad);
+      border-radius: 50%;
+    }
+
+    /* Title slide */
+    .title-slide {
+      text-align: center !important;
+      padding-top: 2rem !important;
+    }
+    .title-slide .logo {
+      width: 96px; height: 96px;
+      margin: 0 auto 1.5rem;
+      background: var(--grad);
+      border-radius: 22px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 48px; color: var(--bg);
+      box-shadow: 0 20px 60px hsla(217 92% 70% / 0.35);
+    }
+    .title-slide h1 {
+      font-size: 3em;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 0.3em;
+    }
+    .title-slide .subtitle {
+      font-size: 1.1em;
+      color: var(--fg-muted);
+      max-width: 720px;
+      margin: 0 auto 2rem;
+    }
+    .title-slide .meta {
+      margin-top: 2.5rem;
+      font-size: 0.8em;
+      color: var(--fg-muted);
+      line-height: 1.7;
+    }
+    .title-slide .meta strong { color: var(--fg); font-weight: 600; }
+
+    /* Two-column layout */
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .cols-2-1 { grid-template-columns: 2fr 1fr; }
+
+    /* Card */
+    .card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.2rem 1.4rem;
+    }
+    .card.accent { border-color: hsla(217 92% 70% / 0.4); }
+    .card.warn { border-color: hsla(35 90% 65% / 0.4); background: hsla(35 90% 65% / 0.06); }
+    .card.bad { border-color: hsla(0 80% 65% / 0.4); background: hsla(0 80% 65% / 0.06); }
+    .card.good { border-color: hsla(150 70% 60% / 0.4); background: hsla(150 70% 60% / 0.06); }
+    .card h4 { color: var(--primary); margin: 0 0 0.5rem 0; }
+    .card.warn h4 { color: var(--warn); }
+    .card.bad h4 { color: var(--bad); }
+    .card.good h4 { color: var(--good); }
+
+    /* Speaker chip */
+    .speaker {
+      position: fixed;
+      bottom: 16px; left: 18px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.4rem 0.8rem;
+      font-size: 13px;
+      color: var(--fg-muted);
+      z-index: 50;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+    .speaker strong { color: var(--primary); font-weight: 600; margin-right: 0.4rem; }
+    .speaker .time { color: var(--accent); margin-left: 0.4rem; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+    /* Stats grid */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .stat {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .stat .num {
+      font-size: 1.8em;
+      font-weight: 800;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      line-height: 1;
+    }
+    .stat .lbl {
+      font-size: 0.7em;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-top: 0.4em;
+    }
+
+    /* Architecture box */
+    .arch {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0.8rem;
+      align-items: center;
+      margin: 1rem 0;
+    }
+    .arch-node {
+      background: var(--bg-2);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .arch-node.primary { border-color: var(--primary); background: hsla(217 92% 70% / 0.08); }
+    .arch-node .ic { font-size: 1.6em; margin-bottom: 0.3em; }
+    .arch-node .nm { font-weight: 600; font-size: 0.9em; }
+    .arch-node .sub { font-size: 0.7em; color: var(--fg-muted); margin-top: 0.2em; }
+    .arch-arrow { color: var(--fg-muted); font-size: 1.4em; }
+
+    /* Pill row */
+    .pills { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0; }
+    .pill {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.3rem 0.8rem;
+      font-size: 0.72em;
+      color: var(--fg);
+    }
+    .pill.primary { background: hsla(217 92% 70% / 0.15); border-color: var(--primary); color: var(--primary); }
+    .pill.accent { background: hsla(280 80% 72% / 0.15); border-color: var(--accent); color: var(--accent); }
+
+    /* Table */
+    .reveal table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78em;
+      margin: 0.8rem 0;
+    }
+    .reveal table th, .reveal table td {
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .reveal table th {
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      font-size: 0.85em;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    /* Section divider slide */
+    .section-slide {
+      text-align: center !important;
+      padding-top: 4rem !important;
+    }
+    .section-slide .section-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+      color: var(--fg-muted);
+      letter-spacing: 0.3em;
+      margin-bottom: 0.5rem;
+    }
+    .section-slide h1 {
+      font-size: 3.2em;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .section-slide .who {
+      margin-top: 1.5rem;
+      color: var(--fg-muted);
+      font-size: 0.9em;
+    }
+
+    /* Progress bar override */
+    .reveal .progress {
+      color: var(--primary);
+      height: 3px;
+    }
+
+    /* Slide footer */
+    .footer-tag {
+      position: fixed;
+      bottom: 16px; right: 18px;
+      font-size: 12px;
+      color: var(--fg-muted);
+      opacity: 0.6;
+      font-family: 'JetBrains Mono', monospace;
+      z-index: 50;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .compare .col {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+    }
+    .compare .col h4 { margin: 0 0 0.6rem 0; }
+
+    .quote {
+      font-size: 1.5em;
+      line-height: 1.4;
+      color: var(--fg);
+      font-weight: 500;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+      padding: 1rem 0;
+    }
+    .quote .mark {
+      font-size: 2em;
+      color: var(--primary);
+      line-height: 0;
+      vertical-align: -0.3em;
+      margin: 0 0.2em;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="footer-tag">APEX · Menoufia University · 2026</div>
+
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- ============== 1. TITLE ============== -->
+      <section class="title-slide" data-state="no-speaker">
+        <div class="logo">A</div>
+        <h1>APEX</h1>
+        <div class="subtitle">
+          A Classroom Portal for Mixed-Format Exams,<br/>
+          Auto-Grading, and Live Coding
+        </div>
+        <div class="meta">
+          <strong>Amr Samy</strong> · Team Leader<br/>
+          <strong>[Member 2]</strong> · <strong>[Member 3]</strong> · <strong>[Member 4]</strong> · <strong>[Member 5]</strong><br/><br/>
+          Supervised by <strong>Prof. Dr. Ayman El-Sayed Omera</strong><br/>
+          Electrical &amp; Computer Engineering · Faculty of Engineering<br/>
+          Menoufia University · 2026
+        </div>
+        <aside class="notes">
+          Welcome committee. Introduce team. Project name = APEX. Set tone: 20-minute walkthrough, five speakers, demo screenshots included. Hand attention to next slide.
+        </aside>
+      </section>
+
+      <!-- ============== 2. WHAT IS APEX ============== -->
+      <section data-speaker="Amr (Leader)" data-time="0:30 – 2:00">
+        <span class="eyebrow"><span class="dot"></span>What is APEX</span>
+        <h2>One portal. Three question types. Real sandbox.</h2>
+        <div class="cols">
+          <div>
+            <ul>
+              <li>Teachers build <strong>coding + MCQ + written</strong> exams in one builder.</li>
+              <li>Assign to classes via 8-char invite codes.</li>
+              <li>Students take timed attempts in a <strong>Monaco editor</strong>.</li>
+              <li>Code grades automatically against test cases in a <strong>Judge0 sandbox</strong>.</li>
+              <li>Written answers go to a manual grading queue.</li>
+              <li>Live feedback, server-side autosave, results review.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="card accent">
+              <h4>Built end-to-end</h4>
+              <ul>
+                <li>Backend API (Go + Gin)</li>
+                <li>Auth, RBAC, JWT</li>
+                <li>Postgres schema + migrations</li>
+                <li>Judge0 integration + grader</li>
+                <li>React SPA with Monaco</li>
+                <li>Docker + CI/CD pipeline</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Hook: most exam tools force trade-offs — Google Classroom can't run code, HackerRank has no classroom layer, Moodle's code sandbox is painful. APEX merges the three into one product. Mention demo screenshots will appear throughout.
+        </aside>
+      </section>
+
+      <!-- ============== 3. PROBLEM WE SOLVE ============== -->
+      <section data-speaker="Amr (Leader)" data-time="2:00 – 3:00">
+        <span class="eyebrow"><span class="dot"></span>Problem</span>
+        <h2>The market is fragmented.</h2>
+        <table>
+          <thead>
+            <tr><th>Tool</th><th>Classroom</th><th>Code sandbox</th><th>Mixed exams</th><th>Auto-grade</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Google Classroom</td><td>✓</td><td>✗</td><td>✗</td><td>partial</td></tr>
+            <tr><td>HackerRank</td><td>✗</td><td>✓</td><td>✗</td><td>✓</td></tr>
+            <tr><td>Moodle</td><td>✓</td><td>weak</td><td>partial</td><td>partial</td></tr>
+            <tr><td><strong>APEX</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td></tr>
+          </tbody>
+        </table>
+        <p style="margin-top: 1rem; color: var(--fg-muted);">
+          Egyptian universities default to fragmented stacks: paper for written, manual code review, hand-graded MCQs. APEX collapses the workflow into one timed attempt.
+        </p>
+        <aside class="notes">
+          Don't just list — frame it as a real classroom pain. Mention you can survey faculty if asked. Teachers waste hours on grading; students wait days for results. APEX = same-second grading for code, queue for written, one transcript per student.
+        </aside>
+      </section>
+
+      <!-- ============== 4. AI RATIONALE ============== -->
+      <section data-speaker="Amr (Leader)" data-time="3:00 – 4:30">
+        <span class="eyebrow"><span class="dot"></span>How we built it</span>
+        <h2>AI as a power tool, not a crutch.</h2>
+        <div class="cols">
+          <div>
+            <div class="card warn">
+              <h4>The market reality</h4>
+              <p>Engineers who refuse AI tooling are already falling behind. Junior roles increasingly expect AI-augmented productivity from day one.</p>
+            </div>
+            <div class="card good" style="margin-top: 1rem;">
+              <h4>How we used it</h4>
+              <ul>
+                <li>AI for scaffolding, boilerplate, UI iteration.</li>
+                <li>Architecture, schema, security — decided by humans.</li>
+                <li>Every line reviewed before merge.</li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <div class="card accent">
+              <h4>The payoff</h4>
+              <ul>
+                <li>Shipped a <strong>6-month scope</strong> in one semester.</li>
+                <li>30+ pages, 50+ API endpoints, full Docker pipeline.</li>
+                <li>Frontend "vibe-coded" with AI under our spec.</li>
+                <li>Backend logic, schema, security — written and audited by us.</li>
+              </ul>
+            </div>
+            <p style="margin-top: 1rem; font-size: 0.85em; color: var(--fg-muted);">
+              The interesting engineering happens where AI <em>can't</em> help: data-integrity invariants, IDOR audits, schema migration safety.
+            </p>
+          </div>
+        </div>
+        <aside class="notes">
+          This is the values slide. Be direct: refusing AI is a career mistake. We treated it like a senior dev treats Stack Overflow — useful, but you verify. Then frame the next sections: each member will show you the parts where the real engineering happened.
+        </aside>
+      </section>
+
+      <!-- ============== 5. WHAT SETS US APART ============== -->
+      <section data-speaker="Amr (Leader)" data-time="4:30 – 5:30">
+        <span class="eyebrow"><span class="dot"></span>Differentiation</span>
+        <h2>What sets APEX apart</h2>
+        <div class="cols">
+          <div>
+            <div class="card accent">
+              <h4>1. Real compiler sandbox</h4>
+              <p>Judge0 CE per submission. Not regex matching. Output normalization, per-test scoring, TLE/MLE/CE detection.</p>
+            </div>
+            <div class="card" style="margin-top: 0.8rem;">
+              <h4>2. Mixed-format in one attempt</h4>
+              <p>Coding + MCQ + written interleaved in a single timed session. Aggregated scoring with manual-grade gating.</p>
+            </div>
+            <div class="card" style="margin-top: 0.8rem;">
+              <h4>3. Server-side autosave</h4>
+              <p>Survives browser crash and device switch. JSON blob on the attempt row, cleared on submit.</p>
+            </div>
+          </div>
+          <div>
+            <div class="card" style="margin-top: 0;">
+              <h4>4. Schema-safe migrations</h4>
+              <p>Hard rules after surviving a real data-loss incident. Two-pass: explicit SQL → AutoMigrate.</p>
+            </div>
+            <div class="card" style="margin-top: 0.8rem;">
+              <h4>5. Reset-aware attempts</h4>
+              <p>Teacher edits invalidate cached student state automatically. No silent grade corruption.</p>
+            </div>
+            <div class="card" style="margin-top: 0.8rem;">
+              <h4>6. Defense-in-depth security</h4>
+              <p>JWT + bcrypt + RBAC. Every teacher query scoped by <code>teacher_id</code> — IDOR by design.</p>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Tee up the compiler section heavily — that's the centerpiece. Items 4 and 5 will reappear in the DB section as the "incident" story.
+        </aside>
+      </section>
+
+      <!-- ============== 6. ARCHITECTURE ============== -->
+      <section data-speaker="Amr (Leader)" data-time="5:30 – 6:00">
+        <span class="eyebrow"><span class="dot"></span>Architecture</span>
+        <h2>High-level architecture</h2>
+        <div class="arch" style="margin-top: 2rem;">
+          <div class="arch-node">
+            <div class="ic">🖥️</div>
+            <div class="nm">React + Vite SPA</div>
+            <div class="sub">Monaco · shadcn · React Query</div>
+          </div>
+          <div class="arch-arrow">⇄ HTTPS / JSON ⇄</div>
+          <div class="arch-node primary">
+            <div class="ic">⚙️</div>
+            <div class="nm">Gin REST API (Go 1.25)</div>
+            <div class="sub">/api/* · JWT · RBAC</div>
+          </div>
+        </div>
+        <div class="cols-3" style="margin-top: 1rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+          <div class="arch-node"><div class="ic">🐘</div><div class="nm">PostgreSQL 16</div><div class="sub">GORM + versioned SQL</div></div>
+          <div class="arch-node"><div class="ic">🧪</div><div class="nm">Judge0 CE</div><div class="sub">Sandboxed code execution</div></div>
+          <div class="arch-node"><div class="ic">📬</div><div class="nm">SMTP (optional)</div><div class="sub">Password reset · reminders</div></div>
+        </div>
+        <p style="margin-top: 1.2rem; color: var(--fg-muted); font-size: 0.85em;">
+          Single Gin process. Background goroutine ticks every minute for exam reminders. Stateless API — horizontally scalable.
+        </p>
+        <aside class="notes">
+          Hand off after this slide: "Now let me bring up [Member 2] to walk you through the heart of the system — the compiler and grading pipeline."
+        </aside>
+      </section>
+
+      <!-- ============== SECTION: COMPILER ============== -->
+      <section class="section-slide" data-state="no-speaker">
+        <div class="section-num">PART 02 / 05</div>
+        <h1>Compiler &amp; Grader</h1>
+        <div class="who">Speaker: <strong>[Member 2]</strong> · ~4 minutes</div>
+      </section>
+
+      <!-- ============== 7. WHY A SANDBOX ============== -->
+      <section data-speaker="[Member 2] · Compiler" data-time="6:30 – 7:30">
+        <span class="eyebrow"><span class="dot"></span>Compiler · Why</span>
+        <h2>Why we run student code in a sandbox.</h2>
+        <div class="cols">
+          <div>
+            <div class="card bad">
+              <h4>The naive approach</h4>
+              <p>Run student Python with <code>exec()</code> in the server process. Instant RCE — they can read your DB credentials, your secrets, the OS.</p>
+            </div>
+            <div class="card warn" style="margin-top: 1rem;">
+              <h4>The compromise approach</h4>
+              <p>Compare student output to expected output by string match. Works for trivial cases. Falls apart on whitespace, newlines, locale, runtime errors.</p>
+            </div>
+          </div>
+          <div>
+            <div class="card good">
+              <h4>What we did</h4>
+              <ul>
+                <li><strong>Judge0 CE</strong> — open-source code sandbox.</li>
+                <li>Isolated Linux container per submission.</li>
+                <li>Resource limits: CPU time, wall time, memory, output size.</li>
+                <li>Returns structured status: <em>Accepted, WA, TLE, MLE, CE, Runtime Error</em>.</li>
+                <li>6 languages supported: Python, JS, TS, Java, C, C++.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Frame it as a security choice first, then a correctness choice. Mention you can self-host Judge0 for production. The public ce.judge0.com is rate-limited and only fine for demo.
+        </aside>
+      </section>
+
+      <!-- ============== 8. LANGUAGE PIPELINE ============== -->
+      <section data-speaker="[Member 2] · Compiler" data-time="7:30 – 8:30">
+        <span class="eyebrow"><span class="dot"></span>Compiler · Pipeline</span>
+        <h2>Submission pipeline</h2>
+<pre><code class="language-go">// internal/judge0/client.go
+var LanguageMap = map[string]int{
+    "python": 100, "javascript": 102, "typescript": 101,
+    "java": 91, "c": 103, "cpp": 105,
+}
+
+func RunCode(code, language, stdin string) CodeResult {
+    langID := LanguageMap[language]
+    body, _ := json.Marshal(request{LanguageID: langID, SourceCode: code, Stdin: stdin})
+    resp, _ := http.Post(BaseURL+"/submissions?wait=true&base64_encoded=false", ...)
+    // returns {stdout, stderr, status, time, memory}
+}</code></pre>
+        <div class="cols" style="margin-top: 1rem;">
+          <div>
+            <h4>Per submission</h4>
+            <ul>
+              <li>Marshal source + stdin to JSON.</li>
+              <li>POST to Judge0 with <code>wait=true</code> — synchronous.</li>
+              <li>Parse <code>time</code> (seconds → ms), <code>memory</code> (KB).</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Status mapping</h4>
+            <div class="pills">
+              <span class="pill">3 = Accepted</span>
+              <span class="pill">4 = Wrong Answer</span>
+              <span class="pill">5 = TLE</span>
+              <span class="pill">6 = CE</span>
+              <span class="pill">11 = Runtime Error</span>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Walk through one round-trip. Mention the choice of synchronous wait — simpler than polling, fine for our scale. Async/queue would be next step for production.
+        </aside>
+      </section>
+
+      <!-- ============== 9. GRADING LOGIC ============== -->
+      <section data-speaker="[Member 2] · Compiler" data-time="8:30 – 9:30">
+        <span class="eyebrow"><span class="dot"></span>Compiler · Grading</span>
+        <h2>Per-test grading with output normalization</h2>
+<pre><code class="language-go">// internal/judge0/grader.go
+for _, tc := range testCases {
+    result := RunCode(submission.Code, submission.Language, tc.Input)
+    actual   := normalizeOutput(result.Stdout)
+    expected := normalizeOutput(tc.ExpectedOutput)
+    isPassed := (result.StatusID == 3 || result.StatusID == 4) && actual == expected
+    if isPassed { passed++ }
+    // ... persist TestResult
+}
+score := float64(passed) / float64(total) * 100.0
+</code></pre>
+        <div class="cols" style="margin-top: 1rem;">
+          <div class="card accent">
+            <h4>Output normalization</h4>
+            <ul>
+              <li><code>\r\n → \n</code> (CRLF strip)</li>
+              <li>Trim trailing whitespace per line</li>
+              <li>Trim leading/trailing newlines</li>
+            </ul>
+            <p style="font-size: 0.85em; color: var(--fg-muted); margin-top: 0.5em;">
+              Without this: 80% of "wrong answers" are formatting differences.
+            </p>
+          </div>
+          <div class="card">
+            <h4>Three grading paths</h4>
+            <ul>
+              <li><strong>Coding</strong> → Judge0 per test case</li>
+              <li><strong>MCQ</strong> → set-equality on correct_option_ids</li>
+              <li><strong>Written</strong> → <em>pending_review</em>, teacher grades manually</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">
+          Normalization story is worth telling — we hit it the first time we tested with a Windows-saved file. \r\n broke everything. Now part of the standard pipeline.
+        </aside>
+      </section>
+
+      <!-- ============== 10. AGGREGATION ============== -->
+      <section data-speaker="[Member 2] · Compiler" data-time="9:30 – 10:30">
+        <span class="eyebrow"><span class="dot"></span>Compiler · Aggregation</span>
+        <h2>The pending-review aggregation problem</h2>
+        <div class="card bad">
+          <h4>Naive aggregation breaks the display</h4>
+          <p>Student answers 3 coding (auto-graded) + 1 written (pending). If we average across all 4, written = 0 → score looks like 75% until teacher grades. Student panics.</p>
+        </div>
+        <div class="card good" style="margin-top: 1rem;">
+          <h4>Our fix: exclude pending_review from <em>both</em> numerator and denominator</h4>
+<pre style="margin-top: 0.6rem;"><code class="language-go">for _, p := range problems {
+    s, hasSub := subByProblem[p.ID]
+    if hasSub && s.Status == "pending_review" { continue }
+    totalPoints += float64(p.Points)
+    if hasSub { earnedPoints += s.Score / 100.0 * float64(p.Points) }
+}</code></pre>
+          <p style="margin-top: 0.6rem; font-size: 0.85em;">
+            Skipped questions still count as 0/total. Pending-review = invisible until graded.
+            Re-aggregates automatically when teacher submits the grade.
+          </p>
+        </div>
+        <aside class="notes">
+          This is the kind of bug you only catch by actually using the product. Mention: idempotent notification via graded_notified column means students get exactly one "Exam Graded" notification, even if re-aggregation fires multiple times.
+        </aside>
+      </section>
+
+      <!-- ============== SECTION: DATABASE ============== -->
+      <section class="section-slide" data-state="no-speaker">
+        <div class="section-num">PART 03 / 05</div>
+        <h1>Database</h1>
+        <div class="who">Speaker: <strong>[Member 3]</strong> · ~3 minutes</div>
+      </section>
+
+      <!-- ============== 11. SCHEMA OVERVIEW ============== -->
+      <section data-speaker="[Member 3] · Database" data-time="11:00 – 11:45">
+        <span class="eyebrow"><span class="dot"></span>Database · Schema</span>
+        <h2>15 tables, three logical clusters</h2>
+        <div class="cols-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+          <div class="card">
+            <h4>Identity</h4>
+            <ul style="font-size: 0.85em;">
+              <li>users</li>
+              <li>user_profiles</li>
+              <li>password_reset_tokens</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Classroom</h4>
+            <ul style="font-size: 0.85em;">
+              <li>classes</li>
+              <li>class_members</li>
+              <li>announcements</li>
+              <li>notifications</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Exam &amp; grading</h4>
+            <ul style="font-size: 0.85em;">
+              <li>exams · exam_classes</li>
+              <li>problems · test_cases</li>
+              <li>folders <em>(question bank)</em></li>
+              <li>exam_attempts</li>
+              <li>submissions · test_results</li>
+            </ul>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="num">15</div><div class="lbl">Tables</div></div>
+          <div class="stat"><div class="num">3</div><div class="lbl">Question types</div></div>
+          <div class="stat"><div class="num">JSONB</div><div class="lbl">for options, tags, attachments</div></div>
+          <div class="stat"><div class="num">UTC</div><div class="lbl">All timestamps</div></div>
+        </div>
+        <aside class="notes">
+          Mention GORM as the ORM, but emphasise schema is hand-designed. ER diagram available if asked. JSONB columns where shape is variable (MCQ options, attachments, autosave draft).
+        </aside>
+      </section>
+
+      <!-- ============== 12. THE INCIDENT ============== -->
+      <section data-speaker="[Member 3] · Database" data-time="11:45 – 12:45">
+        <span class="eyebrow"><span class="dot"></span>Database · Incident</span>
+        <h2>The day every exam disappeared</h2>
+        <div class="cols-2-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+          <div>
+<pre><code class="language-go">// What we added
+type Exam struct {
+    // ...
+    IsDraft bool `gorm:"default:true"`  // ← seemed harmless
+}</code></pre>
+            <div class="card bad" style="margin-top: 0.8rem;">
+              <h4>What actually happened</h4>
+              <ul>
+                <li>GORM AutoMigrate added the column.</li>
+                <li><strong>Set every existing row to <code>is_draft = true</code></strong> based on the default.</li>
+                <li>Student queries filter <code>WHERE is_draft = false</code>.</li>
+                <li>Every exam vanished from every student dashboard. <em>Silently.</em></li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <div class="card good">
+              <h4>Lesson learned</h4>
+              <p style="font-size: 0.9em;">ORMs make schema look like code. But schema is <em>state</em>. You can't refactor state with a struct tag.</p>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Be honest about it — we hit this in prod-ish demo with seeded data. Wrote ORM_RULES.md the same day. The incident drove the whole migration policy.
+        </aside>
+      </section>
+
+      <!-- ============== 13. MIGRATION POLICY ============== -->
+      <section data-speaker="[Member 3] · Database" data-time="12:45 – 14:00">
+        <span class="eyebrow"><span class="dot"></span>Database · Policy</span>
+        <h2>Two-pass migrations · explicit then automatic</h2>
+        <div class="cols">
+          <div>
+            <h4>The pattern: add → backfill → constrain</h4>
+<pre><code class="language-sql">-- 1. Add nullable
+ALTER TABLE exams ADD COLUMN IF NOT EXISTS
+  is_draft BOOLEAN;
+
+-- 2. Backfill with the CORRECT value
+UPDATE exams SET is_draft = false
+  WHERE is_draft IS NULL;
+
+-- 3. Constrain
+ALTER TABLE exams ALTER COLUMN is_draft
+  SET NOT NULL;
+ALTER TABLE exams ALTER COLUMN is_draft
+  SET DEFAULT false;</code></pre>
+          </div>
+          <div>
+            <h4>Two execution paths</h4>
+            <div class="card">
+              <p><strong>Local dev</strong> → <code>migrations.go</code> runs explicit SQL <em>before</em> AutoMigrate.</p>
+            </div>
+            <div class="card" style="margin-top: 0.8rem;">
+              <p><strong>Production</strong> → <code>SKIP_AUTOMIGRATE=true</code>. Versioned SQL files in <code>migrations/sql/NNNN_*.up.sql</code> via <code>golang-migrate</code>.</p>
+            </div>
+            <div class="pills" style="margin-top: 1rem;">
+              <span class="pill primary">Idempotent</span>
+              <span class="pill primary">Forward + backward</span>
+              <span class="pill accent">No surprise defaults</span>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Hand off: "Schema safety only matters if it survives deployment. [Member 4] will walk through how we ship this thing."
+        </aside>
+      </section>
+
+      <!-- ============== SECTION: DEVOPS ============== -->
+      <section class="section-slide" data-state="no-speaker">
+        <div class="section-num">PART 04 / 05</div>
+        <h1>DevOps</h1>
+        <div class="who">Speaker: <strong>[Member 4]</strong> · ~3 minutes</div>
+      </section>
+
+      <!-- ============== 14. LOCAL MODE ============== -->
+      <section data-speaker="[Member 4] · DevOps" data-time="14:00 – 15:00">
+        <span class="eyebrow"><span class="dot"></span>DevOps · Local</span>
+        <h2>Local mode · one command, hot reload</h2>
+<pre><code class="language-bash">$ ./start.sh
+[APEX] Created .env from .env.example
+[APEX] Starting PostgreSQL via docker compose...
+[APEX] Backend ready on :8080
+[APEX] Frontend ready on :5173</code></pre>
+        <div class="cols" style="margin-top: 1rem;">
+          <div class="card">
+            <h4>What runs</h4>
+            <ul>
+              <li>Postgres 16 (Docker)</li>
+              <li><code>go run main.go</code> on <code>:8080</code></li>
+              <li>Vite dev server on <code>:5173</code> with HMR</li>
+              <li>Ctrl+C traps and tears down cleanly</li>
+            </ul>
+          </div>
+          <div class="card accent">
+            <h4>Local quirks worth knowing</h4>
+            <ul>
+              <li>Host port <strong>5433 → 5432</strong> (avoids clashing with system Postgres)</li>
+              <li><strong>No landing page in local mode</strong> — Vite serves the SPA root directly into the auth flow</li>
+              <li>Password-reset links log to stdout when SMTP empty</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">
+          Mention the landing-page distinction up front — easy thing for the committee to ask about. In dev, you're never not logged in.
+        </aside>
+      </section>
+
+      <!-- ============== 15. DEPLOYED MODE ============== -->
+      <section data-speaker="[Member 4] · DevOps" data-time="15:00 – 16:00">
+        <span class="eyebrow"><span class="dot"></span>DevOps · Deployed</span>
+        <h2>Deployed mode · four containers, one compose file</h2>
+        <div class="arch" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.6rem; margin-top: 1rem;">
+          <div class="arch-node"><div class="ic">🐘</div><div class="nm">postgres:16</div><div class="sub">healthcheck</div></div>
+          <div class="arch-node"><div class="ic">🔁</div><div class="nm">migrate</div><div class="sub">runs once, exits 0</div></div>
+          <div class="arch-node primary"><div class="ic">⚙️</div><div class="nm">backend</div><div class="sub">distroless</div></div>
+          <div class="arch-node"><div class="ic">🌐</div><div class="nm">frontend</div><div class="sub">nginx</div></div>
+        </div>
+        <div class="cols" style="margin-top: 1.5rem;">
+          <div>
+            <h4>Backend image</h4>
+            <ul style="font-size: 0.9em;">
+              <li>Multi-stage: <code>golang:1.25-alpine</code> → <code>distroless/static</code></li>
+              <li>Three binaries: <code>apex</code> · <code>migrate</code> · <code>seed</code></li>
+              <li>Runs as <code>nonroot</code> user</li>
+              <li>Health probe via <code>--healthcheck</code> flag</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Frontend image</h4>
+            <ul style="font-size: 0.9em;">
+              <li><code>oven/bun:1-alpine</code> build → <code>nginx:1.27-alpine</code> serve</li>
+              <li>Vite bundle, immutable asset caching</li>
+              <li>Nginx proxies <code>/api/</code> to backend container</li>
+              <li>SPA fallback to <code>index.html</code></li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">
+          Mention the dependency ordering: migrate must complete successfully before backend starts. Backend healthcheck must pass before considered up. This is the difference between dev "it works" and prod "it stays up."
+        </aside>
+      </section>
+
+      <!-- ============== 16. CI/CD ============== -->
+      <section data-speaker="[Member 4] · DevOps" data-time="16:00 – 17:00">
+        <span class="eyebrow"><span class="dot"></span>DevOps · CI/CD</span>
+        <h2>CI runs on every push and PR</h2>
+        <div class="cols">
+          <div>
+            <div class="card">
+              <h4>backend-test</h4>
+              <p style="font-size: 0.85em;"><code>go vet ./...</code> · <code>go test ./... -race -count=1</code> against a real Postgres 16 service container.</p>
+            </div>
+            <div class="card" style="margin-top: 0.6rem;">
+              <h4>backend-lint</h4>
+              <p style="font-size: 0.85em;"><code>golangci-lint</code> with project rules.</p>
+            </div>
+            <div class="card" style="margin-top: 0.6rem;">
+              <h4>frontend-build + frontend-test</h4>
+              <p style="font-size: 0.85em;">Bun 1.1.38 pinned. ESLint, Vite build, Vitest run.</p>
+            </div>
+          </div>
+          <div>
+            <div class="card accent">
+              <h4>docker-smoke</h4>
+              <p style="font-size: 0.85em;">Both Dockerfiles must build cleanly with GHA cache. Catches lockfile drift, missing files in <code>.dockerignore</code>, broken multi-stage builds.</p>
+            </div>
+            <div class="card" style="margin-top: 0.6rem;">
+              <h4>Dependabot</h4>
+              <p style="font-size: 0.85em;">Watches Go modules, npm/bun, GitHub Actions, and Docker base images.</p>
+            </div>
+            <div class="pills" style="margin-top: 1rem;">
+              <span class="pill primary">5 jobs</span>
+              <span class="pill primary">Parallel</span>
+              <span class="pill accent">~3 min p95</span>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Hand off: "Last but not least — security. [Member 5] will close out."
+        </aside>
+      </section>
+
+      <!-- ============== SECTION: SECURITY ============== -->
+      <section class="section-slide" data-state="no-speaker">
+        <div class="section-num">PART 05 / 05</div>
+        <h1>Security</h1>
+        <div class="who">Speaker: <strong>[Member 5]</strong> · ~4 minutes</div>
+      </section>
+
+      <!-- ============== 17. AUTHN ============== -->
+      <section data-speaker="[Member 5] · Security" data-time="17:00 – 18:00">
+        <span class="eyebrow"><span class="dot"></span>Security · Authentication</span>
+        <h2>JWT + bcrypt + Google Identity</h2>
+        <div class="cols">
+          <div>
+            <div class="card">
+              <h4>Password sign-in</h4>
+              <ul>
+                <li><strong>bcrypt</strong> at default cost</li>
+                <li>HS256 JWT, 24-hour expiry</li>
+                <li>Claims: <code>user_id</code> · <code>email</code> · <code>role</code> · <code>name</code> · <code>exp</code></li>
+              </ul>
+            </div>
+            <div class="card accent" style="margin-top: 0.8rem;">
+              <h4>Fail-fast secret check</h4>
+<pre style="margin-top: 0.5rem;"><code class="language-go">if jwtSecret == "" ||
+   jwtSecret == "dev-secret-change-in-prod" ||
+   len(jwtSecret) < 32 {
+    log.Fatal("JWT_SECRET must be set ≥32 chars")
+}</code></pre>
+              <p style="font-size: 0.85em; margin-top: 0.4rem;">
+                Server <em>refuses to start</em> with a weak secret. Cannot accidentally deploy to prod with dev defaults.
+              </p>
+            </div>
+          </div>
+          <div>
+            <div class="card good">
+              <h4>Google Identity Services</h4>
+              <ul>
+                <li>Server-side <code>idtoken.Validate</code> against Google's public certs</li>
+                <li>Links by <code>google_id</code>, falls back to email</li>
+                <li>Only verified emails accepted</li>
+              </ul>
+            </div>
+            <div class="card warn" style="margin-top: 0.8rem;">
+              <h4>Password reset</h4>
+              <ul>
+                <li>32-byte random token, <strong>SHA-256 hashed</strong> at rest</li>
+                <li>1-hour expiry, single-use</li>
+                <li>"If account exists" response — no email enumeration</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Lead with the fail-fast — it's the strongest one-liner. Most projects let dev secrets leak into prod. We made it impossible.
+        </aside>
+      </section>
+
+      <!-- ============== 18. AUTHZ + RBAC ============== -->
+      <section data-speaker="[Member 5] · Security" data-time="18:00 – 19:00">
+        <span class="eyebrow"><span class="dot"></span>Security · Authorization</span>
+        <h2>Two-layer RBAC. Server is authoritative.</h2>
+<pre><code class="language-go">// Layer 1: middleware extracts JWT, sets user_id and role on context
+protected.Use(middleware.Auth(cfg.JWTSecret))
+
+// Layer 2: route groups gate by role
+exams := protected.Group("/exams")
+exams.Use(middleware.RequireRole("teacher"))   // returns 403 otherwise
+exams.PUT("/:id", UpdateExam)</code></pre>
+        <div class="cols" style="margin-top: 1rem;">
+          <div class="card">
+            <h4>Frontend mirrors, but never owns</h4>
+            <p style="font-size: 0.9em;">
+              <code>TeacherRoute</code> / <code>StudentRoute</code> redirect on role mismatch — UX only.
+              Tamper with localStorage, browse to a teacher route → API still returns 403.
+            </p>
+          </div>
+          <div class="card accent">
+            <h4>Three role checkpoints</h4>
+            <ul style="font-size: 0.9em;">
+              <li>JWT signature → who you are</li>
+              <li>JWT role claim → what you are</li>
+              <li>Query <code>WHERE</code> clause → what you own</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">
+          Frontend route guards are UX. Backend role middleware is security. Don't conflate them.
+        </aside>
+      </section>
+
+      <!-- ============== 19. IDOR DEFENSE ============== -->
+      <section data-speaker="[Member 5] · Security" data-time="19:00 – 20:00">
+        <span class="eyebrow"><span class="dot"></span>Security · IDOR</span>
+        <h2>IDOR by design · ownership in the WHERE clause</h2>
+        <div class="compare">
+          <div class="col">
+            <h4 style="color: var(--bad);">❌ Vulnerable pattern</h4>
+<pre><code class="language-go">var exam models.Exam
+db.First(&exam, examID)  // any ID works
+db.Model(&exam).Updates(updates)
+// Teacher A can edit Teacher B's exam.</code></pre>
+          </div>
+          <div class="col">
+            <h4 style="color: var(--good);">✓ Our pattern (everywhere)</h4>
+<pre><code class="language-go">var exam models.Exam
+db.Where("id = ? AND teacher_id = ?",
+        examID, teacherID).First(&exam)
+// Returns 404 if not owner. Single query.</code></pre>
+          </div>
+        </div>
+        <div class="card good" style="margin-top: 1.2rem;">
+          <h4>Cross-resource ownership: AssignExam</h4>
+<pre style="margin-top: 0.5rem;"><code class="language-go">// Before linking exam → classes, verify EVERY class_id belongs to caller
+db.Model(&models.Class{}).
+   Where("id IN ? AND teacher_id = ?", req.ClassIDs, teacherID).
+   Count(&ownedCount)
+if int(ownedCount) != len(req.ClassIDs) {
+    c.JSON(403, gin.H{"error": "one or more classes do not belong to you"})
+}</code></pre>
+        </div>
+        <aside class="notes">
+          IDOR = Insecure Direct Object Reference, top-5 OWASP. We never trust an ID from the client — every fetch is scoped to the caller's ownership in the same query.
+        </aside>
+      </section>
+
+      <!-- ============== 20. DEFENSE IN DEPTH ============== -->
+      <section data-speaker="[Member 5] · Security" data-time="20:00 – 21:00">
+        <span class="eyebrow"><span class="dot"></span>Security · Defense in depth</span>
+        <h2>Hardening across the stack</h2>
+        <div class="cols">
+          <div>
+            <div class="card">
+              <h4>Transport &amp; origin</h4>
+              <ul style="font-size: 0.88em;">
+                <li>CORS allowlist from <code>APP_URL</code> + <code>ALLOWED_ORIGINS</code>, never <code>*</code></li>
+                <li>Credentials disabled in CORS config</li>
+                <li>HTTPS terminated at reverse proxy in prod</li>
+              </ul>
+            </div>
+            <div class="card" style="margin-top: 0.8rem;">
+              <h4>Code execution</h4>
+              <ul style="font-size: 0.88em;">
+                <li>Student code <strong>never</strong> runs in our process</li>
+                <li>Judge0 isolated container per submission</li>
+                <li>CPU + memory + wall-time limits enforced</li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <div class="card accent">
+              <h4>Data integrity = security</h4>
+              <ul style="font-size: 0.88em;">
+                <li>Schema migration rules prevent silent state corruption</li>
+                <li>Account deletion is a transaction with explicit cascade</li>
+                <li>Reset tokens invalidated on new request</li>
+                <li>Idempotent notifications prevent spam-on-retry</li>
+              </ul>
+            </div>
+            <div class="card good" style="margin-top: 0.8rem;">
+              <h4>No secrets in repo</h4>
+              <ul style="font-size: 0.88em;">
+                <li><code>.env.example</code> only, real <code>.env</code> in <code>.gitignore</code></li>
+                <li>CI uses GitHub Actions secrets</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          Close strong: "We treated data integrity as a security concern — because it is. A corrupted schema is a vulnerability." Hand back to Amr.
+        </aside>
+      </section>
+
+      <!-- ============== 21. CLOSE ============== -->
+      <section class="title-slide" data-speaker="Amr (Leader)" data-time="21:00 – end">
+        <div class="logo">A</div>
+        <h1 style="font-size: 2.5em;">Thank you.</h1>
+        <div class="quote" style="margin-top: 1.5rem;">
+          <span class="mark">"</span>We built APEX in a semester by using AI like a power tool —<br/>
+          and by writing the parts AI couldn't safely write ourselves.<span class="mark">"</span>
+        </div>
+        <div class="stats" style="margin-top: 2rem;">
+          <div class="stat"><div class="num">50+</div><div class="lbl">API endpoints</div></div>
+          <div class="stat"><div class="num">15</div><div class="lbl">Tables</div></div>
+          <div class="stat"><div class="num">6</div><div class="lbl">Languages graded</div></div>
+          <div class="stat"><div class="num">5</div><div class="lbl">Engineers</div></div>
+        </div>
+        <div class="meta" style="margin-top: 2rem;">
+          <strong>Questions?</strong>
+        </div>
+        <aside class="notes">
+          Open the floor. If demo is requested: switch to live tab with seeded data (demo.teacher@apex.test / demo1234). Prep three flows in advance: build exam, take exam, grade written.
+        </aside>
+      </section>
+
+    </div>
+  </div>
+
+  <div id="speaker-chip" class="speaker"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+
+  <script>
+    const deck = new Reveal({
+      hash: true,
+      slideNumber: 'c/t',
+      transition: 'fade',
+      transitionSpeed: 'fast',
+      controls: true,
+      controlsLayout: 'edges',
+      progress: true,
+      center: false,
+      width: 1280,
+      height: 800,
+      margin: 0.04,
+      plugins: [ RevealNotes, RevealHighlight ],
+    });
+    deck.initialize();
+
+    const chip = document.getElementById('speaker-chip');
+    function updateChip() {
+      const slide = deck.getCurrentSlide();
+      if (!slide || slide.dataset.state === 'no-speaker') {
+        chip.style.display = 'none';
+        return;
+      }
+      const who = slide.dataset.speaker;
+      const time = slide.dataset.time;
+      if (!who) { chip.style.display = 'none'; return; }
+      chip.style.display = 'block';
+      chip.innerHTML = `<strong>${who}</strong>${time ? `<span class="time">${time}</span>` : ''}`;
+    }
+    deck.on('slidechanged', updateChip);
+    deck.on('ready', updateChip);
+  </script>
+</body>
+</html>
