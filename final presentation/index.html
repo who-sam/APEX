@@ -1,0 +1,1771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APEX — An Online Coding-Exam Platform · Graduation Project Defense</title>
+<!-- Optional webfonts. Deck is fully functional offline via the fallback stacks below. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============ TOKENS ============ */
+:root{
+  --bg:#0f172a; --panel:#16213c; --panel2:#1b2947;
+  --ink:#e5e8ee; --dim:#8b96ad;
+  --a1:#2563eb; --a2:#7c3aed;
+  --grad:linear-gradient(90deg,#2563eb,#7c3aed);
+  --grad135:linear-gradient(135deg,#2563eb,#7c3aed);
+  --line:rgba(255,255,255,.08);
+  --sans:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,"Liberation Mono",monospace;
+  --type-title:64px; --type-subtitle:40px; --type-body:31px; --type-small:26px; --type-tiny:24px;
+  --pad-top:88px; --pad-bottom:76px; --pad-x:100px; --gap-title:44px; --gap-item:26px;
+  --ok:#34d399; --bad:#f87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased}
+a{color:#7ea4f5;text-decoration:none} a:hover{color:#a78bfa}
+img{max-width:100%;display:block}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+
+/* ============ STAGE & CHROME ============ */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale(1);transform-origin:center center;background:var(--bg)}
+#progress{position:fixed;top:0;left:0;height:5px;width:0%;background:var(--grad);z-index:60;transition:width .35s ease}
+#hud{position:fixed;right:18px;bottom:14px;z-index:60;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:14px;color:var(--dim)}
+#hud button{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:rgba(22,33,60,.85);color:var(--dim);font-size:16px;line-height:1}
+#hud button:hover{color:var(--ink);border-color:rgba(124,58,237,.5)}
+#counter{background:rgba(22,33,60,.85);border:1px solid var(--line);border-radius:9px;padding:7px 12px}
+#notes{position:fixed;left:18px;right:18px;bottom:60px;z-index:70;background:rgba(11,17,32,.94);border:1px solid rgba(124,58,237,.45);border-radius:14px;padding:16px 22px;font-size:17px;line-height:1.55;color:#c9d2e3;display:none;max-height:32vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+body.show-notes #notes{display:block}
+#notes .nlabel{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:#a78bfa;display:block;margin-bottom:6px}
+
+/* ============ SLIDES ============ */
+.slide{position:absolute;inset:0;padding:var(--pad-top) var(--pad-x) var(--pad-bottom);display:flex;flex-direction:column;opacity:0;visibility:hidden;transition:opacity .4s ease,visibility .4s}
+.slide.active{opacity:1;visibility:visible;z-index:5}
+.chip{position:absolute;top:34px;right:var(--pad-x);font-family:var(--mono);font-size:19px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 20px 9px 14px;display:flex;align-items:center;gap:10px;z-index:6}
+.chip::before{content:"";width:12px;height:12px;border-radius:50%;background:var(--grad135)}
+.s-head{margin-bottom:var(--gap-title)}
+.s-head h2{font-size:var(--type-title);font-weight:800;letter-spacing:-.02em}
+.s-sub{font-size:var(--type-small);color:var(--dim);margin-top:12px;max-width:1350px;text-wrap:pretty}
+.handoff{position:absolute;left:var(--pad-x);bottom:30px;font-family:var(--mono);font-size:19px;color:var(--dim)}
+.handoff b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:600}
+
+/* entrance */
+@keyframes rise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+.slide.active .rise{opacity:0}
+.slide.active .rise.shown{opacity:1;transition:opacity .5s ease}
+.slide.divider .rise.shown,.slide.title-slide .rise.shown{transition-delay:var(--d,0s)}
+/* a whole diagram revealed as one build step */
+.slide.active .build-once{opacity:0}
+.slide.active .build-once.shown{opacity:1;transition:opacity .55s ease}
+.slide.active .build-once .rise{opacity:1}
+@keyframes drawx{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes drawy{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes popin{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+
+/* ============ CARDS / GENERIC ============ */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:34px 38px;box-shadow:0 10px 30px rgba(0,0,0,.28)}
+.card h3{font-size:var(--type-subtitle);font-weight:700;letter-spacing:-.01em}
+.card p{font-size:var(--type-small);color:var(--dim);line-height:1.5;margin-top:12px;text-wrap:pretty}
+.k{font-family:var(--mono)}
+/* spotlight (team): fixed-width text blocks so cards resize WITHOUT reflowing/rewrapping text -> smooth */
+.slide[data-spotlight] .spot{flex:1 1 0;min-width:250px;padding:26px 22px;transition:flex-grow .5s cubic-bezier(.22,.61,.36,1),box-shadow .45s ease,border-color .45s ease,background .45s ease}
+.slide[data-spotlight] .spot h3,.slide[data-spotlight] .spot p{width:200px}
+.slide[data-spotlight] .spot .badge{white-space:normal;max-width:200px;font-weight:600;transition:font-size .42s cubic-bezier(.22,.61,.36,1),padding .42s ease}
+.slide[data-spotlight] .spot.spot-on{flex-grow:3.2;background:var(--panel2);border-color:rgba(124,58,237,.5);box-shadow:0 16px 40px rgba(0,0,0,.45);z-index:4}
+.slide[data-spotlight] .spot.spot-on .badge{max-width:none;white-space:nowrap;font-size:24px !important;font-weight:700;padding:10px 22px;background:var(--grad135);border-color:transparent;color:#fff}
+@media (prefers-reduced-motion:reduce){.slide[data-spotlight] .spot,.slide[data-spotlight] .spot .badge{transition:none}}
+.gt{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+/* global ER-diagram overlay (press O anywhere) */
+#erdOverlay{position:fixed;inset:0;z-index:95;display:none;flex-direction:column;padding:54px 60px 40px;background:rgba(8,12,24,.94)}
+#erdOverlay.erd-open{display:flex}
+#erdOverlay .erd-badge{font-family:var(--mono);font-size:18px;color:var(--ink);align-self:center;margin-bottom:18px}
+#erdOverlay .erd-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+#erdOverlay .erd-stage svg{width:100%;height:100%}
+#erdClose{position:fixed;top:24px;right:28px;width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:rgba(22,33,60,.9);color:var(--ink);font-size:20px;line-height:1;z-index:96}
+#erdClose:hover{border-color:rgba(124,58,237,.5)}
+.row{display:flex;gap:var(--gap-item)}
+.badge{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:var(--type-tiny);color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:10px 22px}
+
+/* ============ BROWSER CHROME MOCKUP ============ */
+.chrome{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.4);transition:transform .25s ease,box-shadow .25s ease;display:flex;flex-direction:column;min-height:0}
+.chrome:hover{transform:translateY(-6px);box-shadow:0 24px 56px rgba(0,0,0,.5)}
+.chrome-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--panel2);border-bottom:1px solid var(--line);flex:none}
+.tl{width:13px;height:13px;border-radius:50%;background:#ff5f57;flex:none}
+.tl.y{background:#febc2e}.tl.g{background:#28c840}
+.addr{font-family:var(--mono);font-size:16px;color:var(--dim);background:rgba(15,23,42,.7);border:1px solid var(--line);border-radius:8px;padding:5px 14px;margin-left:10px;flex:1;min-width:0;white-space:nowrap;overflow:hidden}
+.chrome img,.chrome video{width:100%;height:100%;object-fit:contain;object-position:center;flex:1;min-height:0;background:#0b1226}
+.chrome figcaption{flex:none;font-family:var(--mono);font-size:17px;color:var(--dim);padding:10px 16px;border-top:1px solid var(--line);background:var(--panel2)}
+.chrome.zoomable{cursor:zoom-in}
+
+/* ============ LIGHTBOX (click a framed screenshot to enlarge) ============ */
+#lightbox{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:40px;background:rgba(8,12,24,.9)}
+#lightbox.open{display:flex}
+#lightbox .lb-chrome{display:inline-flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 40px 90px rgba(0,0,0,.65);max-width:94vw;cursor:zoom-out}
+#lightbox .chrome-bar{flex:none}
+#lightbox #lb-img{display:block;width:auto;height:auto;max-width:94vw;max-height:calc(94vh - 110px);object-fit:contain;background:#0b1226}
+#lightbox figcaption{flex:none;font-family:var(--mono);font-size:17px;color:var(--dim);padding:12px 18px;border-top:1px solid var(--line);background:var(--panel2)}
+#lbclose{position:fixed;top:22px;right:26px;z-index:101;width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:rgba(22,33,60,.92);color:var(--ink);font-size:20px;line-height:1}
+#lbclose:hover{border-color:rgba(124,58,237,.5)}
+@media (prefers-reduced-motion:no-preference){#lightbox.open .lb-chrome{animation:lbin .22s ease-out both}}
+@keyframes lbin{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+
+/* ============ TITLE SLIDE ============ */
+.title-slide{align-items:center;justify-content:center;text-align:center;gap:0}
+.glow{position:absolute;left:50%;top:38%;width:1100px;height:700px;transform:translate(-50%,-50%);background:radial-gradient(closest-side,rgba(59,90,235,.22),rgba(124,58,237,.10),transparent 70%);pointer-events:none}
+.kicker{font-family:var(--mono);font-size:24px;color:var(--dim);letter-spacing:.08em}
+.wordmark{font-size:220px;font-weight:900;letter-spacing:.02em;line-height:1;margin:26px 0 10px;background:linear-gradient(100deg,#2563eb 0%,#7c3aed 28%,#c4b5fd 50%,#7c3aed 72%,#2563eb 100%);background-size:200% 100%;background-position:0% 0;-webkit-background-clip:text;background-clip:text;color:transparent}
+@keyframes shimmer{to{background-position:-200% 0}}
+.wordmark.solid{background:none;-webkit-background-clip:border-box;background-clip:border-box;-webkit-text-fill-color:#8b7bf7;color:#8b7bf7}
+.slide.active .wordmark.solid{animation:wordin .7s cubic-bezier(.2,.7,.2,1) both}
+@keyframes wordin{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+.slide.active .wordmark{animation:wordin .7s cubic-bezier(.2,.7,.2,1) both,shimmer 7s linear infinite}
+@media (prefers-reduced-motion:reduce){.slide.active .wordmark{animation:wordin .01ms both}}
+.t-title{font-size:52px;font-weight:700;letter-spacing:-.01em}
+.t-tag{font-size:30px;color:var(--dim);margin-top:16px}
+.t-meta{font-size:24px;color:var(--dim);margin-top:34px;line-height:1.7}
+.t-meta .k{color:var(--ink)}
+.member-row{display:flex;gap:18px;margin-top:44px}
+.member{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 24px;text-align:center;min-width:250px}
+.member .mid{font-family:var(--mono);font-size:19px;color:#8b7bf7;font-weight:600}
+.member .mrole{font-size:20px;color:var(--dim);margin-top:6px}
+.helphint{position:absolute;left:var(--pad-x);bottom:28px;font-family:var(--mono);font-size:17px;color:var(--dim)}
+.helphint b{color:var(--ink);font-weight:600}
+
+/* ============ DIVIDERS ============ */
+.divider{background:var(--grad135);align-items:flex-start;justify-content:center}
+.divider::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 80% 10%,rgba(255,255,255,.14),transparent 55%),radial-gradient(90% 80% at 10% 95%,rgba(15,23,42,.45),transparent 60%);pointer-events:none}
+.div-kicker{font-family:var(--mono);font-size:28px;color:rgba(255,255,255,.75);letter-spacing:.22em;text-transform:uppercase}
+.div-title{font-size:120px;font-weight:900;letter-spacing:-.02em;color:#fff;margin-top:24px;line-height:1.04;max-width:1500px}
+.div-speaker{margin-top:44px;font-family:var(--mono);font-size:30px;color:#fff;background:rgba(15,23,42,.35);border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:14px 34px;display:inline-flex;align-items:center;gap:14px}
+.div-speaker::before{content:"";width:14px;height:14px;border-radius:50%;background:#fff}
+.divider .rise{position:relative;z-index:2}
+
+/* ============ ARCH DIAGRAM (B) ============ */
+.arch{position:relative;flex:1;min-height:0}
+.anode{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px 28px;box-shadow:0 12px 32px rgba(0,0,0,.3)}
+.anode h4{font-size:30px;font-weight:700}
+.anode .sub{font-family:var(--mono);font-size:20px;color:var(--dim);margin-top:8px}
+.anode.live{border-color:rgba(124,58,237,.45);box-shadow:0 0 0 1px rgba(37,99,235,.25),0 12px 40px rgba(37,99,235,.15)}
+.anode.quarantine{border:2px dashed rgba(124,58,237,.65);background:rgba(124,58,237,.07)}
+.slide.active .anode.quarantine{animation:qpulse 3.2s ease-in-out 1.4s infinite}
+@keyframes qpulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,0)}50%{box-shadow:0 0 0 8px rgba(124,58,237,.12)}}
+.pillgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.pill{font-family:var(--mono);font-size:15px;color:#b9c3d8;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 4px;text-align:center;white-space:nowrap;overflow:hidden}
+.conn{position:absolute;background:linear-gradient(90deg,rgba(37,99,235,.8),rgba(124,58,237,.8));border-radius:3px;transform-origin:left center}
+.conn.v{transform-origin:center top;background:linear-gradient(180deg,rgba(37,99,235,.8),rgba(124,58,237,.8))}
+.slide.active .conn{animation:drawx .7s ease-out both;animation-delay:var(--d,0s)}
+.slide.active .conn.v{animation-name:drawy}
+.dot{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--grad135);box-shadow:0 0 12px rgba(124,58,237,.8);opacity:0}
+@keyframes flowA{0%{opacity:0;transform:translateX(0)}10%{opacity:1}90%{opacity:1}100%{opacity:0;transform:translateX(var(--dx,220px))}}
+.slide.active .dot.flow{animation:flowA var(--t,2.4s) linear var(--d,1s) infinite}
+@keyframes flowV{0%{opacity:0;transform:translateY(0)}12%{opacity:1}88%{opacity:1}100%{opacity:0;transform:translateY(var(--dy,80px))}}
+.slide.active .dot.flowv{animation:flowV var(--t,2s) linear var(--d,1s) infinite}
+.legend{position:absolute;left:0;bottom:0;display:flex;gap:24px;font-family:var(--mono);font-size:17px;color:var(--dim);align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 22px}
+.legend .llabel{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:#a78bfa;margin-right:4px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:50%;margin-right:8px;vertical-align:-1px}
+.legend .li1 i{background:var(--grad135)} .legend .li2 i{background:#3a465e} .legend .li3 i{width:22px;height:0;border-top:2px dashed rgba(124,58,237,.8);border-radius:0}
+
+/* ============ PIPELINE (C) ============ */
+.pipe-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+.pipe{position:relative;display:flex;align-items:stretch;gap:0}
+.stage-box{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 10px;text-align:center;position:relative;z-index:2}
+.stage-box .sname{font-size:25px;font-weight:700}
+.stage-box .sdesc{font-family:var(--mono);font-size:15px;color:var(--dim);margin-top:8px}
+.stage-box.mw{border-color:rgba(124,58,237,.55);background:rgba(124,58,237,.08)}
+.pipe-arrow{align-self:center;color:#3a465e;font-size:26px;padding:0 6px;flex:none}
+@keyframes stagelite{0%,4%{box-shadow:0 0 0 0 rgba(124,58,237,0)}6%,10%{box-shadow:0 0 0 4px rgba(124,58,237,.35),0 0 24px rgba(37,99,235,.4)}16%,100%{box-shadow:0 0 0 0 rgba(124,58,237,0)}}
+.slide.active .stage-box{animation:stagelite 7s linear var(--d,0s) infinite}
+.token{position:absolute;top:50%;left:0;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:var(--grad135);box-shadow:0 0 16px rgba(124,58,237,.9);z-index:3;opacity:0}
+@keyframes tokenrun{0%{opacity:0;transform:translateX(0)}3%{opacity:1}92%{opacity:1;transform:translateX(1688px)}100%{opacity:0;transform:translateX(1688px)}}
+.slide.active .token{animation:tokenrun 7s linear .9s infinite}
+.mw-label{position:absolute;top:-58px;left:0;right:0;text-align:center;font-family:var(--mono);font-size:19px;color:#a78bfa}
+.mw-bracket{position:absolute;top:-24px;left:4px;right:4px;height:14px;border:2px solid rgba(124,58,237,.55);border-bottom:none;border-radius:10px 10px 0 0}
+.rbranch{position:absolute;left:0;top:0}
+.rbranch .rline{position:absolute;width:2px;height:46px;background:rgba(248,113,113,.55)}
+.rbranch .rchip{position:absolute;font-family:var(--mono);font-size:19px;color:#f0a5a5;background:rgba(248,113,113,.09);border:1px solid rgba(248,113,113,.35);border-radius:12px;padding:12px 22px;white-space:nowrap}
+.rbranch .rdot{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--bad);opacity:0}
+@keyframes rdrop{0%,44%{opacity:0;transform:translateY(0)}48%{opacity:1}56%{opacity:1;transform:translateY(42px)}62%,100%{opacity:0;transform:translateY(42px)}}
+.slide.active .rbranch .rdot{animation:rdrop 7s linear .9s infinite}
+
+/* ============ EXAM RUNNER (E) ============ */
+.callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid;border-image:linear-gradient(180deg,#2563eb,#7c3aed) 1;border-radius:0 14px 14px 0;padding:18px 22px}
+.callout h5{font-size:24px;font-weight:700}
+.callout p{font-family:var(--mono);font-size:17px;color:var(--dim);margin-top:6px;line-height:1.45}
+.savepill{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:18px;color:var(--dim);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:8px 18px}
+.savepill i{width:10px;height:10px;border-radius:50%;background:var(--ok);display:inline-block}
+@keyframes savecycle{0%,45%{opacity:.35}50%,95%{opacity:1}100%{opacity:.35}}
+.slide.active .savepill i{animation:savecycle 3s ease-in-out infinite}
+
+/* ============ GRADING (H) ============ */
+.grade{position:relative;flex:1;min-height:0}
+.gnode{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 24px;text-align:center;box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.gnode h5{font-size:26px;font-weight:700}
+.gnode .gs{font-family:var(--mono);font-size:16px;color:var(--dim);margin-top:6px}
+.qbox{position:absolute;width:410px;padding:26px 30px 22px;border:2px dashed rgba(124,58,237,.55);border-radius:20px;background:rgba(124,58,237,.05);display:flex;flex-direction:column;gap:20px}
+.qlabel{text-align:center;font-family:var(--mono);font-size:16px;color:#a78bfa;margin-top:2px}
+.worker{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:20px}
+.worker .st{font-size:16px;color:var(--dim)}
+@keyframes wpass{to{border-color:rgba(52,211,153,.6);background:rgba(52,211,153,.08)}}
+@keyframes wfail{to{border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.07)}}
+.slide.active .worker.pass{animation:wpass .4s ease var(--d,2.6s) both}
+.slide.active .worker.fail{animation:wfail .4s ease var(--d,2.6s) both}
+.worker .st::after{content:"queued";color:var(--dim)}
+.slide.active .worker.pass .st::after{content:"pass ✓";color:var(--ok);transition:none}
+.slide.active .worker.fail .st::after{content:"fail ✗";color:var(--bad)}
+@keyframes finpulse{0%,52%{box-shadow:0 10px 26px rgba(0,0,0,.3)}58%,66%{box-shadow:0 0 0 6px rgba(124,58,237,.3),0 0 30px rgba(37,99,235,.5)}74%,100%{box-shadow:0 10px 26px rgba(0,0,0,.3)}}
+.slide.active .gnode.fin{animation:finpulse 8s linear infinite}
+.scorebar{position:relative;height:26px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.scorebar .fill{height:100%;width:0;background:var(--grad);border-radius:999px}
+@keyframes fillbar{to{width:80%}}
+.slide.active .build-once.shown .scorebar .fill{animation:fillbar 1.2s ease-out .5s both}
+.glabel{font-family:var(--mono);font-size:17px;color:var(--dim)}
+
+/* ============ SECURITY RINGS (I) ============ */
+.ringwrap{position:relative}
+.ring{fill:none;stroke:#3a465e;stroke-width:2}
+.ring.dashed{stroke-dasharray:10 8}
+svg .rl{transform-box:fill-box;transform-origin:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.slide.active .rot{animation:spin 40s linear infinite}
+.slide.active .rot.rev{animation-duration:55s;animation-direction:reverse}
+@keyframes ringin{from{opacity:0;transform:scale(1.12)}to{opacity:1;transform:scale(1)}}
+.slide.active .rl{animation:ringin .7s ease-out both;animation-delay:var(--d,0s)}
+.ringlabel{font-family:var(--mono);font-size:19px;fill:var(--dim)}
+@keyframes attack{0%,62%{opacity:0;transform:translateY(-120px)}66%{opacity:1;transform:translateY(-120px)}78%{opacity:1;transform:translateY(0)}86%{opacity:0;transform:translateY(0) scale(2.4)}100%{opacity:0}}
+.slide.active .attackdot{animation:attack 6s linear 2s infinite;transform-box:fill-box;transform-origin:center}
+.seclist{display:flex;flex-direction:column;gap:16px}
+.secitem{display:flex;gap:16px;align-items:baseline;font-size:24px}
+.secitem .sn{font-family:var(--mono);font-size:17px;color:#a78bfa;flex:none;width:80px}
+.secitem span{color:var(--dim);font-size:20px}
+
+/* ============ DEVOPS (J) ============ */
+.boot{display:flex;align-items:center;gap:0}
+.bnode{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 24px;display:flex;align-items:center;gap:16px}
+.bnode .bname{font-family:var(--mono);font-size:23px;font-weight:600}
+.bnode .bsub{font-family:var(--mono);font-size:15px;color:var(--dim);margin-top:4px}
+.check{width:34px;height:34px;border-radius:50%;border:2px solid #3a465e;color:transparent;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;flex:none;transition:color .3s ease,border-color .3s ease,background .3s ease}
+@keyframes checkpop{0%{transform:scale(1)}45%{transform:scale(1.28)}100%{transform:scale(1)}}
+.check.shown{border-color:var(--ok);color:var(--ok);background:rgba(52,211,153,.1);animation:checkpop .38s ease}
+@media (prefers-reduced-motion:reduce){.check.shown{animation:none}}
+.cichip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 24px;display:flex;align-items:center;gap:16px;font-family:var(--mono);font-size:21px}
+/* ============ PLAYGROUND (Act 3 opener) ============ */
+.pg-editor{background:#0b1226;border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 16px 40px rgba(0,0,0,.35)}
+.pg-nav{display:flex;gap:6px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--panel2);flex-wrap:wrap}
+.pg-navitem{font-family:var(--mono);font-size:13px;color:var(--dim);padding:5px 11px;border-radius:8px}
+.pg-navitem.active{color:#fff;background:var(--grad135)}
+.pg-toolbar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pg-lang{font-family:var(--mono);font-size:15px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 14px}
+.pg-langpill{font-family:var(--mono);font-size:13px;color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 11px}
+.pg-run{margin-left:auto;font-family:var(--mono);font-size:15px;font-weight:600;color:#fff;background:var(--grad135);border-radius:9px;padding:8px 20px}
+.pg-code{font-family:var(--mono);font-size:16px;line-height:1.8;padding:20px 22px;color:#c9d2e3;flex:1;min-height:0}
+.pg-code .ln{color:#3a465e;margin-right:18px}
+.pg-strip{display:flex;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--line);background:var(--panel2)}
+.pg-strip .lbl{font-family:var(--mono);font-size:13px;color:#7c8aa8;letter-spacing:.1em;text-transform:uppercase}
+.pg-strip input{flex:1;background:#0b1226;border:1px solid var(--line);border-radius:7px;padding:7px 12px;font-family:var(--mono);font-size:14px;color:var(--ink)}
+.pg-out{border-top:1px solid var(--line);background:#0b1226;padding:16px 22px}
+.pg-out .olabel{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#5b6a87;margin-bottom:8px}
+.pg-out .oval{font-family:var(--mono);font-size:20px;color:#e5e8ee}
+.pg-status{margin-top:12px;font-family:var(--mono);font-size:14px;color:var(--ok)}
+.pg-chip{font-family:var(--mono);font-size:19px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:9px 20px}
+#pgsvg .engine,#pgsvg .branch{opacity:0;transform-box:fill-box;transform-origin:center}
+.slide.active #pgsvg .engine{animation:popin .5s ease-out both;animation-delay:.15s}
+.slide.active #pgsvg .branch{animation:popin .5s ease-out both;animation-delay:var(--d,.55s)}
+#pgsvg .pgline{stroke:url(#pgGrad);stroke-width:3;fill:none;stroke-dasharray:300;stroke-dashoffset:300}
+.slide.active #pgsvg .pgline{animation:pgdraw .7s ease-out forwards;animation-delay:.5s}
+@keyframes pgdraw{to{stroke-dashoffset:0}}
+#pgsvg .pk{opacity:0}
+@keyframes pgpk1{0%{opacity:0;transform:translate(0,0)}14%{opacity:1}86%{opacity:1}100%{opacity:0;transform:translate(226px,-54px)}}
+@keyframes pgpk2{0%{opacity:0;transform:translate(0,0)}14%{opacity:1}86%{opacity:1}100%{opacity:0;transform:translate(226px,96px)}}
+.slide.active #pgsvg .pk1{animation:pgpk1 2.6s ease-in-out 1.2s infinite}
+.slide.active #pgsvg .pk2{animation:pgpk2 2.6s ease-in-out 1.45s infinite}
+@media (prefers-reduced-motion:reduce){#pgsvg .engine,#pgsvg .branch{opacity:1}#pgsvg .pgline{stroke-dashoffset:0}#pgsvg .pk{display:none}}
+
+/* ============ METRICS (K) ============ */
+.metric{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 16px;text-align:center}
+.metricgrid.shown .metric{animation:rise .45s cubic-bezier(.2,.7,.2,1) both;animation-delay:var(--sd,0s)}
+@media (prefers-reduced-motion:reduce){.metricgrid.shown .metric{animation:none}}
+.metric .mv{font-family:var(--mono);font-size:56px;font-weight:700;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:-.02em}
+.metric .ml{font-size:19px;color:var(--dim);margin-top:8px}
+
+/* ============ MISC ============ */
+.codebox{font-family:var(--mono);font-size:22px;line-height:1.7;background:#0b1226;border:1px solid var(--line);border-radius:14px;padding:26px 32px;overflow-x:auto;color:#c9d2e3}
+.codebox .c{color:#5b6a87}.codebox .g{color:var(--ok)}.codebox .r{color:var(--bad)}.codebox .b{color:#7ea4f5}
+table.score{border-collapse:collapse;font-size:24px;width:100%}
+table.score th{font-family:var(--mono);font-size:18px;color:var(--dim);text-align:left;padding:10px 18px;border-bottom:1px solid var(--line);font-weight:500}
+table.score td{padding:12px 18px;border-bottom:1px solid var(--line)}
+table.score td.k{font-size:21px}
+.ticker{font-family:var(--mono);font-size:20px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:8px 18px;display:inline-flex;gap:8px;align-items:center}
+.ticker i{width:10px;height:10px;border-radius:50%;background:var(--grad135);display:inline-block}
+
+/* ============ REDUCED MOTION ============ */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-delay:0s !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  .dot,.token,.gdot,.attackdot,.rdot{display:none !important}
+  .chrome:hover{transform:none}
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+<div id="stage">
+
+<!-- ============================== 1 · TITLE ============================== -->
+<section class="slide title-slide">
+  <div class="kicker rise" style="--d:.05s">Menoufia University · Electrical &amp; Computer Engineering · Graduation Project Defense</div>
+  <div class="logomark rise" style="--d:.08s;margin:18px auto 0">
+    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="APEX logo" style="height:112px;width:112px;display:block;margin:0 auto">
+      <defs>
+        <linearGradient id="apexLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#2563eb"/>
+          <stop offset="100%" stop-color="#7c3aed"/>
+        </linearGradient>
+      </defs>
+      <path d="M50 20C28 20 10 50 10 50s18 30 40 30 40-30 40-30S72 20 50 20z" fill="#8b7bf7"/>
+      <circle cx="50" cy="50" r="16" fill="#0f172a"/>
+      <path d="M50 38 C52 46 54 48 62 50 C54 52 52 54 50 62 C48 54 46 52 38 50 C46 48 48 46 50 38z" fill="#8b7bf7"/>
+    </svg>
+  </div>
+  <h1 class="wordmark solid">APEX</h1>
+  <div class="t-title rise" style="--d:.15s">An Online Coding-Exam Platform</div>
+  <div class="t-tag rise" style="--d:.2s">Build, run, and auto-grade coding exams in the browser.</div>
+  <div class="t-meta rise" style="--d:.25s">Supervisor: <span class="k">Prof. Dr. Ayman El-Sayed Omera</span> &nbsp;·&nbsp; <span class="k">14 July 2026</span></div>
+  <div class="member-row">
+    <div class="member rise" style="--d:.3s"><div class="mid">Hossam Rashed</div><div class="mrole">Team Lead · Full-Stack</div></div>
+    <div class="member rise" style="--d:.34s"><div class="mid">Mohamed Abdelfattah</div><div class="mrole">Data &amp; Persistence</div></div>
+    <div class="member rise" style="--d:.38s"><div class="mid">Ahmed Abdelfattah</div><div class="mrole">Grading Engine</div></div>
+    <div class="member rise" style="--d:.42s"><div class="mid">Mohamed Ibrahim</div><div class="mrole">Security</div></div>
+    <div class="member rise" style="--d:.46s"><div class="mid">Adham Basem</div><div class="mrole">DevOps &amp; Deployment</div></div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>أهلاً بحضراتكم وشكراً إنكم معانا النهارده</li><li>APEX منصة امتحانات: المدرّس يعمل امتحانات برمجة وMCQ ومقالي، والطالب يمتحن في المتصفح بوقت محدّد</li><li>إجابات الكود بتشتغل فعلاً جوه sandbox معزول عن طريق Judge0 وبتتصحّح أوتوماتيك</li><li>احنا خمسة، كل واحد هيشرح الجزء اللي بناه — وأنا هبدأ بالصورة الكبيرة</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 2 · TEAM & RUN OF SHOW ============================== -->
+<section class="slide" data-spotlight>
+  <header class="s-head"><h2>Team &amp; Run of Show</h2><p class="s-sub">Five speakers, one system — each presents the part they built. ~20 minutes.</p></header>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div class="card spot" style="--d:.08s;display:flex;flex-direction:column">
+      <div class="badge" style="align-self:flex-start;font-size:16px;padding:7px 15px;background:rgba(37,99,235,.2);border-color:rgba(59,130,246,.55);color:#dce7ff">1 · Hossam Rashed</div>
+      <h3 style="margin-top:18px;font-size:30px">Team Lead</h3>
+      <p style="font-size:22px">Problem &amp; solution · architecture · backend · frontend · exam runner · <b style="color:var(--ink)">drives the live demo</b></p>
+    </div>
+    <div class="card spot" style="--d:.14s">
+      <div class="badge" style="font-size:16px;padding:7px 15px;background:rgba(37,99,235,.2);border-color:rgba(59,130,246,.55);color:#dce7ff">2 · Mohamed Abdelfattah</div>
+      <h3 style="margin-top:18px;font-size:30px">Data &amp; Persistence</h3>
+      <p style="font-size:22px">The data model — PostgreSQL 16, 15 tables</p>
+    </div>
+    <div class="card spot" style="--d:.2s">
+      <div class="badge" style="font-size:16px;padding:7px 15px;background:rgba(37,99,235,.2);border-color:rgba(59,130,246,.55);color:#dce7ff">3 · Ahmed Abdelfattah</div>
+      <h3 style="margin-top:18px;font-size:30px">Grading Engine</h3>
+      <p style="font-size:22px">Judge0 code execution · scoring &amp; question types</p>
+    </div>
+    <div class="card spot" style="--d:.26s">
+      <div class="badge" style="font-size:16px;padding:7px 15px;background:rgba(37,99,235,.2);border-color:rgba(59,130,246,.55);color:#dce7ff">4 · Mohamed Ibrahim</div>
+      <h3 style="margin-top:18px;font-size:30px">Security</h3>
+      <p style="font-size:22px">Defense in depth · fail-closed design</p>
+    </div>
+    <div class="card spot" style="--d:.32s">
+      <div class="badge" style="font-size:16px;padding:7px 15px;background:rgba(37,99,235,.2);border-color:rgba(59,130,246,.55);color:#dce7ff">5 · Adham Basem</div>
+      <h3 style="margin-top:18px;font-size:30px">DevOps</h3>
+      <p style="font-size:22px">Packaging · CI · results · closes the talk</p>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>الترتيب: أنا (التصميم والـarchitecture) ← M2 داتا ← M3 تشغيل وتصحيح ← M4 أمان ← M5 الـDevOps والنتايج</li><li>بنقفل بديمو حي أنا اللي هشغّله قدام حضراتكم</li><li>منظومة واحدة اشتغلنا عليها كفريق، كل واحد مسؤول عن جزئه</li><li>الوقت في حدود عشرين دقيقة — يلا نبدأ: بنحل مشكلة إيه؟</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 3 · DIVIDER: PROBLEM ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Act 1</div>
+  <h2 class="div-title rise" style="--d:.08s">The Problem &amp;<br>Our Solution</h2>
+  <div class="div-speaker rise" style="--d:.16s">M1 · Team Lead</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال: قبل ما نوريكم بنينا إيه، ليه امتحانات البرمجة صعبة بالطرق الحالية؟</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 4 · THE PROBLEM ============================== -->
+<section class="slide" data-cascade data-chip="M1 · Team Lead">
+  <header class="s-head rise"><h2>The Problem</h2><p class="s-sub">Assessing programming skill with paper and general-purpose tools breaks down in three ways.</p></header>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div class="card rise" style="--d:.08s;flex:1">
+      <div class="k gt" style="font-size:64px;font-weight:700">01</div>
+      <h3 style="margin-top:20px">Code that never runs</h3>
+      <p>Paper exams and generic form tools can't execute a student's program — correctness is judged by reading, not by running.</p>
+    </div>
+    <div class="card rise" style="--d:.16s;flex:1">
+      <div class="k gt" style="font-size:64px;font-weight:700">02</div>
+      <h3 style="margin-top:20px">Slow, inconsistent grading</h3>
+      <p>Hand-grading code for a full class takes days, and two graders rarely score the same answer the same way.</p>
+    </div>
+    <div class="card rise" style="--d:.24s;flex:1">
+      <div class="k gt" style="font-size:64px;font-weight:700">03</div>
+      <h3 style="margin-top:20px">Fragile timed attempts</h3>
+      <p>In the browser, a refresh or crash can wipe answers or reset a timer — a timed exam has to survive failure.</p>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>امتحان البرمجة محتاج تلات حاجات مش موجودة في الورق والأدوات العامة</li><li>الكود لازم يشتغل فعلاً، مش بس يتكتب</li><li>التصحيح لازم يبقى موحّد وعادل، مش مزاجي وبطيء</li><li>الوقت لازم يفضل آمن حتى لو النت وقع من الطالب</li><li>كل وجع فيهم بيتحل في جزء من APEX هنوريه</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 4b · EXISTING TOOLS ============================== -->
+<section class="slide" data-chip="M1 · Team Lead">
+  <header class="s-head rise"><div class="k" style="font-size:22px;letter-spacing:.22em;color:#3b82f6;margin-bottom:16px">THE PROBLEM</div><h2>Existing tools each solve half</h2></header>
+  <div style="flex:1;display:flex;align-items:stretch;gap:40px">
+    <div class="card rise" style="--d:.08s;flex:1;display:flex;flex-direction:column;justify-content:center;padding:48px 56px">
+      <h3>Quiz apps</h3>
+      <p style="font-size:28px;margin-top:18px"><span style="color:var(--bad)">✕</span> No code execution — a coding question is just a text box.</p>
+    </div>
+    <div class="rise" style="--d:.14s;align-self:center;font-size:52px;font-weight:800;flex:none"><span class="gt">vs.</span></div>
+    <div class="card rise" style="--d:.2s;flex:1;display:flex;flex-direction:column;justify-content:center;padding:48px 56px">
+      <h3>Raw online judges</h3>
+      <p style="font-size:28px;margin-top:18px"><span style="color:var(--bad)">✕</span> No classroom or exam workflow — no classes, timing, or grades.</p>
+    </div>
+  </div>
+  <div class="rise" style="--d:.3s;text-align:center;font-size:44px;font-weight:800;margin-top:var(--gap-item)"><span style="color:var(--ok)">✓</span> APEX = <span class="gt">both</span></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>كل أداة موجودة بتحل نص المشكلة بس</li><li>تطبيقات الكويز: شكلها حلو بس مبتشغّلش كود</li><li>الـonline judges الخام: بتشغّل كود بس مفيش workflow للفصل (لا كلاسات ولا توقيت ولا درجات)</li><li>APEX هو نقطة التقاطع اللي بتجمع الاتنين</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 5 · THE SOLUTION ============================== -->
+<section class="slide" data-cascade data-chip="M1 · Team Lead">
+  <header class="s-head rise"><h2>The Solution</h2><p class="s-sub">APEX — a full-stack classroom exam platform. Build, run, and auto-grade coding exams in the browser.</p></header>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div class="card rise" style="--d:.08s;flex:1">
+      <div class="badge">Teachers build</div>
+      <h3 style="margin-top:20px">Three question types</h3>
+      <p>Coding, MCQ, and written questions, assembled into exams and assigned to classes.</p>
+    </div>
+    <div class="card rise" style="--d:.16s;flex:1">
+      <div class="badge">Students take</div>
+      <h3 style="margin-top:20px">Timed attempts, in the browser</h3>
+      <p>Code is written in a Monaco editor — VS Code's engine — inside a crash-safe, autosaving runner.</p>
+    </div>
+    <div class="card rise" style="--d:.24s;flex:1">
+      <div class="badge">APEX grades</div>
+      <h3 style="margin-top:20px">Isolated auto-grading</h3>
+      <p>Coding answers execute in a Judge0 sandbox against hidden test cases. MCQ is auto-graded; written is graded manually.</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;margin-top:var(--gap-item)" class="rise">
+    <span class="badge">Go 1.25 · Gin · GORM</span><span class="badge">React 18 · Vite · TypeScript</span><span class="badge">PostgreSQL 16</span><span class="badge">Judge0</span><span class="badge">Docker Compose</span><span class="badge">JWT auth</span>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>APEX منصة full-stack كاملة: تبني وتشغّل وتصحّح الامتحانات في المتصفح</li><li>التلات ركايز بتقابل التلات مشاكل اللي قلنا عليهم</li><li>اخترنا الأدوات بوعي: Gin وMonaco وJudge0 دمجناها جوه نظام صمّمناه وبنيناه بنفسنا</li><li>انتقال: يلا نبص على الـarchitecture</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 6 · DIVIDER: ARCHITECTURE ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Act 1 · continued</div>
+  <h2 class="div-title rise" style="--d:.08s">Architecture &amp;<br>Core Engineering</h2>
+  <div class="div-speaker rise" style="--d:.16s">M1 · Team Lead</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للنظام نفسه: صورة الـarchitecture، بعدها backend، وfrontend، وأخيراً الـexam runner</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 7 · ARCHITECTURE ============================== -->
+<section class="slide" data-chip="M1 · Team Lead">
+  <header class="s-head rise" style="margin-bottom:24px"><h2>System Architecture</h2><p class="s-sub">A modular monolith behind a React SPA — with untrusted code quarantined in Judge0, off our server.</p></header>
+  <div class="arch build-once">
+    <!-- connectors -->
+    <div class="conn" id="arch-conn1" style="--d:.2s;left:400px;top:296px;width:210px;height:4px"></div>
+    <div class="conn" id="arch-conn2" style="--d:.45s;left:1300px;top:296px;width:140px;height:4px"></div>
+    <div class="conn v" id="arch-connv" style="--d:.7s;left:953px;top:400px;width:4px;height:210px"></div>
+    <!-- packets -->
+    <div class="dot flow" id="arch-dot1" style="--d:1.2s;--t:2.6s;--dx:206px;left:402px;top:291px"></div>
+    <div class="dot flow" id="arch-dot2" style="--d:2.1s;--t:2.6s;--dx:136px;left:1302px;top:291px"></div>
+    <div class="dot flowv" id="arch-dotdown" style="--d:1.6s;--t:2s;--dy:190px;left:948px;top:412px"></div>
+    <div class="dot flowv" id="arch-dotup" style="--d:2.7s;--t:2s;--dy:-190px;left:948px;top:600px"></div>
+    <!-- nodes -->
+    <div class="anode rise" id="arch-browser" style="--d:.05s;left:0;top:170px;width:400px">
+      <h4>Browser · React SPA</h4>
+      <div class="sub">React 18 · 22 routes</div>
+      <div class="sub" style="margin-top:14px;color:#b9c3d8">Vite · TypeScript · Tailwind<br>shadcn/Radix · Monaco</div>
+    </div>
+    <div class="anode live rise" id="arch-gin" style="--d:.12s;left:610px;top:70px;width:690px">
+      <h4 style="white-space:nowrap">Gin API · <span class="gt" style="display:inline-block">modular monolith</span></h4>
+      <div class="sub">Go 1.25 · ~65 REST endpoints · one 79-line main.go mounts ~20 feature packages</div>
+      <div class="pillgrid" style="grid-template-columns:repeat(5,1fr)">
+        <span class="pill">auth</span><span class="pill">users</span><span class="pill">roles</span><span class="pill">classes</span><span class="pill">enroll</span>
+        <span class="pill">exams</span><span class="pill">questions</span><span class="pill">testcases</span><span class="pill">attempts</span><span class="pill">answers</span>
+        <span class="pill">grading</span><span class="pill">submit</span><span class="pill">scores</span><span class="pill">results</span><span class="pill">analytics</span>
+        <span class="pill">middleware</span><span class="pill">config</span><span class="pill">health</span><span class="pill">migrate</span><span class="pill">…</span>
+      </div>
+    </div>
+    <div class="anode rise" id="arch-pg" style="--d:.2s;left:1440px;top:170px;width:280px">
+      <h4 style="white-space:nowrap">PostgreSQL 16</h4>
+      <div class="sub">15 tables</div>
+    </div>
+    <div class="anode quarantine rise" id="arch-judge" style="--d:.28s;left:700px;top:610px;width:510px">
+      <h4>Judge0 sandbox <span style="font-size:20px;color:#a78bfa">· isolated</span></h4>
+      <div class="sub">untrusted student code runs here — never on our server</div>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>من الشمال لليمين: React SPA ← Gin API ← PostgreSQL</li><li>المربع المنقّط هو المفتاح: كود الطالب بيتبعت لـJudge0 ويتنفّذ هناك، بعيد عن السيرفر والداتا</li><li>جوه الـAPI ~20 feature package متركّبين بـmain.go من 79 سطر</li><li>deployment واحد monolith، بس الكود مقسّم ومنظّم</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 8 · BACKEND ============================== -->
+<section class="slide" data-chip="M1 · Team Lead">
+  <header class="s-head rise"><h2>Backend &amp; Request Lifecycle</h2><p class="s-sub">Every request crosses the same two-tier middleware chain before any handler runs: <span class="k" style="color:var(--ink)">Auth</span> first, then <span class="k" style="color:var(--ink)">RequireRole</span>.</p></header>
+  <div class="pipe-wrap">
+    <div class="build-once">
+      <div class="pipe" id="pipe-row">
+      <div class="token"></div>
+      <div class="stage-box" style="--d:.9s"><div class="sname">Request</div><div class="sdesc">HTTPS in</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box" style="--d:1.7s"><div class="sname">CORS</div><div class="sdesc">strict origin</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box mw" style="--d:2.5s;position:relative"><div class="mw-bracket"></div><div class="mw-label" style="left:0;right:-220px">two-tier middleware chain</div><div class="sname">Auth</div><div class="sdesc">JWT verify</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box mw" id="pipe-rr" style="--d:3.3s;position:relative"><div class="mw-bracket"></div><div class="sname">RequireRole</div><div class="sdesc">teacher / student</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box" style="--d:4.1s"><div class="sname">Handler</div><div class="sdesc">feature package</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box" style="--d:4.9s"><div class="sname">GORM</div><div class="sdesc">parameterized</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box" style="--d:5.7s"><div class="sname">Postgres</div><div class="sdesc">owner-scoped</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="stage-box" style="--d:6.4s"><div class="sname">Response</div><div class="sdesc">JSON</div></div>
+    </div>
+    <div class="rbranch">
+      <div class="rline" id="pipe-rline"></div>
+      <div class="rdot" id="pipe-rdot"></div>
+      <div class="rchip" id="pipe-rchip">wrong role → rejected at RequireRole · 403 — handler never runs</div>
+    </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:160px" class="rise">
+      <span class="badge">Go 1.25 · Gin · GORM</span><span class="badge">~65 REST endpoints</span><span class="badge">~6,100 lines of Go</span><span class="badge">stateless JWT</span>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>كل request بيعدي على نفس السلسلة قبل أي handler</li><li>الـauthentication والـauthorization منفصلين ومترتبين</li><li>token صح بس دور غلط ← بيموت عند RequireRole قبل ما يوصل للكود</li><li>الحجم: ~6,100 سطر Go على ~65 endpoint</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 9 · FRONTEND ============================== -->
+<section class="slide" data-cascade data-chip="M1 · Team Lead">
+  <header class="s-head rise" style="margin-bottom:30px"><h2>Frontend &amp; Role-Based UI</h2><p class="s-sub">One SPA, 22 routes, three faces — routing keys off the JWT role.</p></header>
+  <div class="row" style="flex:1;min-height:0;align-items:stretch">
+    <figure class="chrome rise" style="--d:.06s;flex:1">
+      <div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/login</span></div>
+      <img src="./screenshots/auth-signin.png" alt="APEX sign-in page">
+      <figcaption>Auth — sign in</figcaption>
+    </figure>
+    <figure class="chrome rise" style="--d:.12s;flex:1">
+      <div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/teacher</span></div>
+      <img src="./screenshots/teacher-dashboard.png" alt="Teacher dashboard">
+      <figcaption>Teacher — classes, exams, grading</figcaption>
+    </figure>
+    <figure class="chrome rise" style="--d:.18s;flex:1">
+      <div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/student</span></div>
+      <img src="./screenshots/student-dashboard.png" alt="Student dashboard">
+      <figcaption>Student — enrolled classes &amp; attempts</figcaption>
+    </figure>
+  </div>
+  <div style="display:flex;gap:16px;margin-top:var(--gap-item)" class="rise">
+    <span class="badge">React 18 + Vite + TypeScript</span><span class="badge">Tailwind · shadcn/Radix</span><span class="badge">Monaco editor</span><span class="badge">~17,400 lines · 22 routes</span>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>تلات screenshots حقيقية: login، شاشة المدرّس، شاشة الطالب</li><li>نفس الـSPA — الدور اللي جوه الـJWT بيحدد إنت تشوف أنهي routes</li><li>~17,400 سطر TypeScript على 22 route</li><li>مبني على shadcn وRadix، وMonaco لكتابة الكود</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 10 · EXAM RUNNER ============================== -->
+<section class="slide" data-cascade data-chip="M1 · Team Lead">
+  <header class="s-head rise" style="margin-bottom:30px"><h2>The Crash-Safe Exam Runner</h2><p class="s-sub">~1,170 lines built around one promise: a refresh, crash, or dropped connection cannot cost a student their exam.</p></header>
+  <div class="row" style="flex:1;min-height:0;align-items:stretch">
+    <figure class="chrome rise" style="--d:.06s;flex:1.5">
+      <div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/exam/attempt</span>
+        <span class="ticker" style="flex:none"><i></i><span id="runner-timer">42:17</span></span>
+      </div>
+      <img src="./screenshots/exam-runner-monaco.png" alt="Exam runner with Monaco editor">
+      <figcaption style="display:flex;justify-content:space-between;align-items:center">Attempt view — Monaco editor <span class="savepill"><i></i>saving… saved</span></figcaption>
+    </figure>
+    <div style="flex:1;display:flex;flex-direction:column;gap:20px;justify-content:center">
+      <div class="callout rise" style="--d:.15s"><h5>Monaco editor</h5><p>VS Code's editor engine — syntax highlighting and a real coding surface in the browser.</p></div>
+      <div class="callout rise" style="--d:.22s"><h5>Derived timer</h5><p>Remaining time is computed from <b style="color:var(--ink)">startedAt</b> — a refresh cannot reset the clock.</p></div>
+      <div class="callout rise" style="--d:.29s"><h5>Dual-layer autosave</h5><p>localStorage on every keystroke + a 1.5s debounced PUT to the server.</p></div>
+      <div class="callout rise" style="--d:.36s"><h5>~1,170-line crash-safe runner</h5><p>Reload mid-exam → answers and clock restore exactly where you were.</p></div>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>أعمق شغل في الـfrontend، وعده: refresh أو نت واقع أو هنج ما يخسّرش الطالب امتحانه</li><li>الوقت بيتحسب من الـstartedAt على السيرفر — مفيش حاجة في المتصفح تصفّر العداد</li><li>الإجابة بتتحفظ مرتين: محلياً مع كل حرف، وعلى السيرفر كل 1.5 ثانية بالـdebounce</li><li>في الديمو: هنعمل refresh وسط الامتحان ومش هيضيع حاجة</li><li>تسليم: M2 هيوريكم الداتا بتتخزن فين وإزاي</li></ul></div></div></div>
+</section>
+
+<!-- ============================== DIVIDER: DATA ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Act 2</div>
+  <h2 class="div-title rise" style="--d:.08s">Data &amp;<br>Persistence</h2>
+  <div class="div-speaker rise" style="--d:.16s">M2 · Data &amp; Persistence</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>شكراً يا زميلي</li><li>الجداول دي الأساس اللي كل اللي شفتوه واقف عليه — سلايد واحد على شكلها وعلاقاتها</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 14b · ERD crow's-foot (physical) ============================== -->
+<section class="slide" data-chip="M2 · Data &amp; Persistence">
+  <header class="s-head rise" style="margin-bottom:14px"><h2>Data Model — crow's-foot view</h2><p class="s-sub">The same <span class="k" style="color:var(--ink)">9 core tables</span> with their key columns · crow's-foot marks the “many” end; the grading chain runs exam_attempts → submissions → test_results.</p></header>
+  <div style="flex:1;min-height:0" class="erd3wrap build-once">
+  <svg viewBox="0 0 1720 720" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="display:block" id="erd3">
+    <defs>
+      <linearGradient id="gband3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb" stop-opacity=".35"/><stop offset="1" stop-color="#7c3aed" stop-opacity=".35"/></linearGradient>
+      <linearGradient id="gline3" gradientUnits="userSpaceOnUse" x1="960" y1="120" x2="1500" y2="440"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+      <marker id="crow3" markerWidth="22" markerHeight="22" refX="17" refY="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M17,11 L2,3 M17,11 L2,11 M17,11 L2,19" stroke="#6b7a99" stroke-width="1.8" fill="none"/></marker>
+      <marker id="one3" markerWidth="16" markerHeight="22" refX="8" refY="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,3 L8,19" stroke="#6b7a99" stroke-width="2"/></marker>
+    </defs>
+    <style>
+      #erd3 .body{fill:#16213c;stroke:rgba(255,255,255,.08)}
+      #erd3 .ent:hover .body{stroke:rgba(124,58,237,.7)}
+      #erd3 .ent{cursor:default;transform-box:fill-box;transform-origin:center}
+      #erd3 .etitle{font-family:var(--sans);font-size:21px;font-weight:700;fill:#e5e8ee}
+      #erd3 .jtitle{font-family:var(--sans);font-size:16px;font-weight:700;fill:#e5e8ee}
+      #erd3 .ecol{font-family:var(--mono);font-size:15px;fill:#8b96ad}
+      #erd3 .ecol.pk{fill:#a78bfa}
+      #erd3 .ecol.fk{fill:#7ea4f5}
+      #erd3 .jcol{font-family:var(--mono);font-size:13px;fill:#93a0ba}
+      #erd3 .note{font-family:var(--mono);font-size:12px;fill:#6b7a99}
+      #erd3 .badge-t{font-family:var(--mono);font-size:14px;font-weight:600;fill:#c4b5fd}
+      #erd3 .jpill{font-family:var(--mono);font-size:12px;fill:#a78bfa}
+      #erd3 .polyent .body{stroke:rgba(124,58,237,.6)}
+      #erd3 .spineent .body{stroke:rgba(124,58,237,.55);stroke-width:2}
+      #erd3 .jent .body{stroke:rgba(124,58,237,.5);stroke-dasharray:7 5;fill:rgba(124,58,237,.06)}
+      #erd3 .rel{stroke:#3a465e;stroke-width:2;fill:none;stroke-dasharray:1700;stroke-dashoffset:1700}
+      #erd3 .rel.spine{stroke:#3a465e;stroke-width:3.5}
+      #erd3 .rel.hot{stroke:#7c5cf5;stroke-width:3.5}
+      #erd3 .rlab{font-family:var(--mono);font-size:14px;fill:#5b6a87}
+      #erd3 .clab{font-family:var(--mono);font-size:15px;font-weight:600;fill:#a78bfa}
+      .erd3wrap.shown #erd3 .ent{animation:popin .5s ease-out both;animation-delay:var(--d,0s)}
+      .erd3wrap.shown #erd3 .rel{animation:reldraw .7s ease-out both;animation-delay:var(--d,.55s)}
+      .erd3wrap.shown #erd3 .rel.spine{animation:reldraw .6s ease-out both;animation-delay:1.2s}
+    </style>
+
+    <!-- ===== relationships (one -> many, crow's-foot on the many end) ===== -->
+    <path class="rel" data-e="erd-user erd-class"          style="--d:.5s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M80,234 V410"/>
+    <path class="rel" data-e="erd-user erd-exam"           style="--d:.55s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M290,120 H615"/>
+    <path class="rel" data-e="erd-user erd-classmember"    style="--d:.6s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M290,150 H313 V320 H340"/>
+    <path class="rel" data-e="erd-class erd-classmember"   style="--d:.65s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M290,470 H313 V360 H340"/>
+    <path class="rel" data-e="erd-exam erd-examclass"      style="--d:.7s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M615,180 H580 V456 H545"/>
+    <path class="rel" data-e="erd-class erd-examclass"     style="--d:.75s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M290,500 H313 V495 H340"/>
+    <path class="rel" data-e="erd-exam erd-problem"        style="--d:.6s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M740,262 V410"/>
+    <path class="rel" data-e="erd-exam erd-attempt"        style="--d:.65s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M865,150 H965"/>
+    <path class="rel" data-e="erd-problem erd-testcase"    style="--d:.7s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M865,505 H965"/>
+    <path class="rel" data-e="erd-problem erd-submission"  style="--d:.85s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M760,615 V665 H1610 V150 H1565"/>
+    <path class="rel" data-e="erd-testcase erd-testresult" style="--d:.8s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M1215,505 H1265 V490 H1315"/>
+    <path class="rel spine" data-e="erd-attempt erd-submission"    marker-start="url(#one3)" marker-end="url(#crow3)" d="M1215,150 H1315"/>
+    <path class="rel spine" data-e="erd-submission erd-testresult" marker-start="url(#one3)" marker-end="url(#crow3)" d="M1440,262 V410"/>
+    <path class="rel" data-e="erd-user erd-attempt"        style="--d:.9s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M210,62 V40 H1090 V62"/>
+
+    <!-- relationship labels -->
+    <text class="rlab" x="442" y="260" text-anchor="middle">M:N</text>
+    <text class="rlab" x="442" y="422" text-anchor="middle">M:N</text>
+    <text class="clab" x="1265" y="48" text-anchor="middle">grading chain</text>
+
+    <!-- ===== entities ===== -->
+    <g class="ent" id="e-erd-user" style="--d:.05s">
+      <rect class="body" x="40" y="62" width="250" height="172" rx="12"/><rect x="40" y="62" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="62" y="90">users</text>
+      <text class="ecol pk" x="62" y="138">id</text><text class="ecol" x="62" y="165">email</text><text class="ecol" x="62" y="192">role · teacher/student</text><text class="ecol" x="62" y="219">name</text>
+    </g>
+    <g class="ent" id="e-erd-exam" style="--d:.1s">
+      <rect class="body" x="615" y="62" width="250" height="200" rx="12"/><rect x="615" y="62" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="637" y="90">exams</text>
+      <text class="ecol pk" x="637" y="138">id</text><text class="ecol fk" x="637" y="165">teacher_id → users</text><text class="ecol" x="637" y="192">title</text><text class="ecol" x="637" y="219">duration_minutes</text><text class="ecol" x="637" y="246">is_draft</text>
+    </g>
+    <g class="ent spineent" id="e-erd-attempt" style="--d:.15s">
+      <rect class="body" x="965" y="62" width="250" height="190" rx="12"/><rect x="965" y="62" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="987" y="90">exam_attempts</text>
+      <text class="ecol pk" x="987" y="138">id</text><text class="ecol fk" x="987" y="165">user_id → users</text><text class="ecol fk" x="987" y="192">exam_id → exams</text><text class="ecol" x="987" y="219">status · score</text>
+      <rect x="955" y="264" width="270" height="52" rx="11" fill="rgba(124,58,237,.12)" stroke="rgba(124,58,237,.55)" stroke-dasharray="7 5"/>
+      <text class="badge-t" x="1090" y="289" text-anchor="middle">unique(user_id, exam_id)</text>
+      <text class="note" x="1090" y="307" text-anchor="middle">one attempt per student per exam</text>
+    </g>
+    <g class="ent spineent" id="e-erd-submission" style="--d:.2s">
+      <rect class="body" x="1315" y="62" width="250" height="200" rx="12"/><rect x="1315" y="62" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="1337" y="90">submissions</text>
+      <text class="ecol pk" x="1337" y="138">id</text><text class="ecol fk" x="1337" y="165">exam_attempt_id →</text><text class="ecol fk" x="1337" y="192">problem_id → problems</text><text class="ecol fk" x="1337" y="219">user_id → users</text><text class="ecol" x="1337" y="246">status · score</text>
+    </g>
+    <g class="ent" id="e-erd-class" style="--d:.25s">
+      <rect class="body" x="40" y="410" width="250" height="168" rx="12"/><rect x="40" y="410" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="62" y="438">classes</text>
+      <text class="ecol pk" x="62" y="486">id</text><text class="ecol fk" x="62" y="513">teacher_id → users</text><text class="ecol" x="62" y="540">name</text><text class="ecol" x="62" y="567">invite_code</text>
+    </g>
+    <g class="ent polyent" id="e-erd-problem" style="--d:.3s">
+      <rect class="body" x="615" y="410" width="250" height="205" rx="12"/><rect x="615" y="410" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="637" y="438">problems</text>
+      <rect x="627" y="458" width="205" height="28" rx="9" fill="rgba(124,58,237,.18)" stroke="rgba(124,58,237,.5)"/>
+      <text class="badge-t" x="638" y="478">polymorphic · Type</text>
+      <text class="ecol pk" x="637" y="512">id</text><text class="ecol" x="637" y="539">type · coding/mcq/written</text><text class="ecol fk" x="637" y="566">exam_id → exams · null</text><text class="ecol" x="637" y="593">title · points</text>
+    </g>
+    <g class="ent" id="e-erd-testcase" style="--d:.35s">
+      <rect class="body" x="965" y="410" width="250" height="190" rx="12"/><rect x="965" y="410" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="987" y="438">test_cases</text>
+      <text class="ecol pk" x="987" y="486">id</text><text class="ecol fk" x="987" y="513">problem_id → problems</text><text class="ecol" x="987" y="540">input · expected_output</text><text class="ecol" x="987" y="567">is_sample</text>
+    </g>
+    <g class="ent spineent" id="e-erd-testresult" style="--d:.4s">
+      <rect class="body" x="1315" y="410" width="250" height="168" rx="12"/><rect x="1315" y="410" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <text class="etitle" x="1337" y="438">test_results</text>
+      <text class="ecol pk" x="1337" y="486">id</text><text class="ecol fk" x="1337" y="513">submission_id →</text><text class="ecol fk" x="1337" y="540">test_case_id →</text><text class="ecol" x="1337" y="567">passed</text>
+    </g>
+
+    <!-- ===== join tables ===== -->
+    <g class="ent jent" id="e-erd-classmember" style="--d:.45s">
+      <rect class="body" x="340" y="270" width="205" height="126" rx="11"/>
+      <text class="jtitle" x="354" y="296">class_members</text>
+      <rect x="487" y="278" width="46" height="21" rx="7" fill="rgba(124,58,237,.2)"/><text class="jpill" x="510" y="293" text-anchor="middle">join</text>
+      <text class="jcol" x="354" y="336">class_id → classes</text><text class="jcol" x="354" y="360">user_id → users</text>
+      <text class="note" x="354" y="382">unique(class_id, user_id)</text>
+    </g>
+    <g class="ent jent" id="e-erd-examclass" style="--d:.5s">
+      <rect class="body" x="340" y="430" width="205" height="126" rx="11"/>
+      <text class="jtitle" x="354" y="456">exam_classes</text>
+      <rect x="487" y="438" width="46" height="21" rx="7" fill="rgba(124,58,237,.2)"/><text class="jpill" x="510" y="453" text-anchor="middle">join</text>
+      <text class="jcol" x="354" y="496">exam_id → exams</text><text class="jcol" x="354" y="520">class_id → classes</text>
+      <text class="note" x="354" y="542">unique(exam_id, class_id)</text>
+    </g>
+
+    <!-- crow's-foot legend -->
+    <line x1="1440" y1="675" x2="1512" y2="675" stroke="#5b6a87" stroke-width="2" marker-start="url(#one3)" marker-end="url(#crow3)"/>
+    <text class="rlab" x="1432" y="680" text-anchor="end">1</text>
+    <text class="rlab" x="1520" y="680">many</text>
+
+    <!-- honesty caption -->
+    <text class="note" x="800" y="705" text-anchor="middle" style="font-size:15px">Core of 15 tables — peripheral tables (UserProfile, Notification, Announcement, Folder, PasswordResetToken) omitted for clarity.</text>
+  </svg>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>نفس الـ9 جداول الأساسية بمنظور فيزيكال: الأعمدة والـforeign keys</li><li>اليوزر عنده كذا class وكذا exam</li><li>التسجيل وتوزيع الامتحان جدولين M:N بيربطوا</li><li>المسألة البرمجية ليها كذا test case مخفي</li><li>العمود المميّز = سلسلة التصحيح: attempt ← submissions ← نتايج test</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 14b · WRITE PATH ============================== -->
+<section class="slide" data-cascade data-chip="M2 · Data &amp; Persistence">
+  <header class="s-head rise"><h2>The Write Path</h2><p class="s-sub">Where a student's work lands — one row at a time, from keystroke to final score.</p></header>
+  <div class="pipe-wrap">
+    <div class="row" style="align-items:stretch;gap:0">
+      <div class="card rise" style="--d:.08s;flex:1;display:flex;flex-direction:column">
+        <div class="badge" style="align-self:flex-start"><span class="k">1 · autosave</span></div>
+        <h3 style="font-size:30px;margin-top:18px">→ <span class="k gt">answers</span></h3>
+        <p style="font-size:21px">Every keystroke mirrors to <span class="k" style="color:var(--ink)">localStorage</span>; a 1.5s debounced PUT writes the row — <span class="k" style="color:var(--ink)">payload</span> + <span class="k" style="color:var(--ink)">saved_at</span>.</p>
+      </div>
+      <div class="pipe-arrow" style="align-self:center">→</div>
+      <div class="card rise" style="--d:.16s;flex:1;display:flex;flex-direction:column">
+        <div class="badge" style="align-self:flex-start"><span class="k">2 · submit</span></div>
+        <h3 style="font-size:30px;margin-top:18px">→ <span class="k gt">submissions</span></h3>
+        <p style="font-size:21px">On submit, a row captures the <span class="k" style="color:var(--ink)">judge0_token</span>, <span class="k" style="color:var(--ink)">verdict</span>, and <span class="k" style="color:var(--ink)">passed / total</span>.</p>
+      </div>
+      <div class="pipe-arrow" style="align-self:center">→</div>
+      <div class="card rise" style="--d:.24s;flex:1;display:flex;flex-direction:column">
+        <div class="badge" style="align-self:flex-start"><span class="k">3 · finalize</span></div>
+        <h3 style="font-size:30px;margin-top:18px">→ <span class="k gt">scores</span></h3>
+        <p style="font-size:21px">The finalizer writes one row: <span class="k" style="color:var(--ink)">weighted_total</span> + a per-problem <span class="k" style="color:var(--ink)">detail</span> breakdown.</p>
+      </div>
+    </div>
+    <div class="row rise" style="--d:.34s;gap:20px;margin-top:44px;align-items:stretch">
+      <div class="card" style="flex:1;padding:26px 32px">
+        <h3 style="font-size:26px">Managed by GORM</h3>
+        <p style="font-size:20px;margin-top:10px">Schema is created and evolved by a one-shot <span class="k" style="color:var(--ink)">migrate</span> service before the API ever accepts traffic.</p>
+      </div>
+      <div class="card" style="flex:1;padding:26px 32px">
+        <h3 style="font-size:26px">Scoped &amp; parameterized</h3>
+        <p style="font-size:20px;margin-top:10px">Every write is owner-scoped and parameterized — a student can only ever touch rows on their own attempt.</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:36px" class="rise">
+      <span class="badge">PostgreSQL 16 · 15 tables</span><span class="badge">GORM</span><span class="badge">dual-layer autosave</span>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>تتبّع محاولة واحدة جوه الجداول:</li><li>answers: بيتكتب على طول من الـautosave</li><li>submissions: بتتعمل لحظة التسليم ومعاها Judge0 token والـverdict</li><li>scores: الصف الواحد النهائي بالدرجة</li><li>التلاتة بيتعملوا بخدمة الـmigrate، وأي كتابة owner-scoped</li><li>تسليم: M3 هيوريكم الكود بيتشغّل وبيتصحّح إزاي</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 15 · DIVIDER: GRADING ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Act 3</div>
+  <h2 class="div-title rise" style="--d:.08s">Code Execution<br>&amp; Grading</h2>
+  <div class="div-speaker rise" style="--d:.16s">M3 · Grading Engine</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>خلصنا الداتا — دلوقتي قلب المشروع: إزاي الكود بيشتغل وإزاي بنحسب الدرجة</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 15b · PLAYGROUND ============================== -->
+<section class="slide" data-allvisible data-chip="M3 · Grading Engine">
+  <header class="s-head rise" style="margin-bottom:20px"><h2>The Playground — a general code runner</h2><p class="s-sub">The same sandbox engine, without an exam.</p></header>
+  <div class="row" style="flex:1;min-height:0;align-items:stretch;gap:32px">
+    <!-- LEFT: mock playground editor -->
+    <div class="pg-editor rise" style="--d:.06s;flex:1">
+      <div class="pg-nav"><span class="pg-navitem">Dashboard</span><span class="pg-navitem">Exams</span><span class="pg-navitem">Question Bank</span><span class="pg-navitem">Results</span><span class="pg-navitem active">Playground</span></div>
+      <div class="pg-toolbar">
+        <span class="pg-lang">Python <span style="color:var(--dim)">▾</span></span>
+        <span class="pg-langpill">JS</span><span class="pg-langpill">TS</span><span class="pg-langpill">Java</span><span class="pg-langpill">C</span><span class="pg-langpill">C++</span>
+        <span class="pg-run">▶ Run</span>
+      </div>
+      <div class="pg-code">
+        <div><span class="ln">1</span>data = input().split()</div>
+        <div><span class="ln">2</span>nums = [<span style="color:#7ea4f5">int</span>(x) <span style="color:#c4b5fd">for</span> x <span style="color:#c4b5fd">in</span> data]</div>
+        <div><span class="ln">3</span><span style="color:#7ea4f5">print</span>(<span style="color:#7ea4f5">sum</span>(nums))</div>
+      </div>
+      <div class="pg-strip"><span class="lbl">stdin</span><input value="13 20 9" readonly></div>
+      <div class="pg-out">
+        <div class="olabel">stdout</div>
+        <div class="oval">42</div>
+        <div class="pg-status">exit 0 · 42 ms · 3.2 MB</div>
+      </div>
+    </div>
+    <!-- RIGHT: facts + diagram -->
+    <div style="flex:1.15;display:flex;flex-direction:column;gap:16px;min-height:0">
+      <p class="s-sub rise" style="--d:.1s;margin:0;max-width:none;font-size:24px">A standalone Playground: write code, provide your own input, and run it — <span style="color:var(--ink)">no exam, no test cases required.</span></p>
+      <div class="rise" style="--d:.16s;display:flex;flex-wrap:wrap;gap:10px">
+        <span class="pg-chip">Python</span><span class="pg-chip">JavaScript</span><span class="pg-chip">TypeScript</span><span class="pg-chip">Java</span><span class="pg-chip">C</span><span class="pg-chip">C++</span>
+      </div>
+      <div class="codebox rise" style="--d:.22s;font-size:15px;padding:15px 18px;line-height:1.7"><span class="b">POST</span> /api/execute&nbsp;&nbsp;{ language, code, stdin }&nbsp;&nbsp;<span class="c">→</span>&nbsp;&nbsp;{ stdout, stderr, status, time_ms, memory_kb }</div>
+      <p class="rise" style="--d:.28s;font-size:18px;color:var(--dim);margin:0;line-height:1.5">Runs in the <span style="color:var(--ink)">same isolated Judge0 sandbox</span> — untrusted code never executes on our server; a <span class="k" style="color:var(--ink)">30s timeout</span> bounds runaway code.</p>
+      <div style="flex:1;min-height:0;margin-top:2px">
+        <svg viewBox="0 0 860 380" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="display:block" id="pgsvg">
+          <defs><linearGradient id="pgGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
+          <line class="pgline" x1="274" y1="150" x2="500" y2="96"/>
+          <line class="pgline" x1="274" y1="190" x2="500" y2="286"/>
+          <circle class="pk pk1" cx="274" cy="150" r="6" fill="url(#pgGrad)"/>
+          <circle class="pk pk2" cx="274" cy="190" r="6" fill="url(#pgGrad)"/>
+          <g class="engine">
+            <rect x="24" y="120" width="250" height="110" rx="16" fill="url(#pgGrad)"/>
+            <text x="149" y="158" text-anchor="middle" style="font-family:var(--sans);font-size:19px;font-weight:700" fill="#fff">Execution engine</text>
+            <text x="149" y="184" text-anchor="middle" style="font-family:var(--mono);font-size:14px" fill="rgba(255,255,255,.85)">Judge0</text>
+            <text x="149" y="208" text-anchor="middle" style="font-family:var(--mono);font-size:12px" fill="rgba(255,255,255,.82)">RunCode(code, language, stdin)</text>
+          </g>
+          <g class="branch" style="--d:.55s">
+            <rect x="500" y="40" width="336" height="112" rx="14" fill="#1b2947" stroke="rgba(124,58,237,.45)"/>
+            <text x="522" y="78" style="font-family:var(--sans);font-size:18px;font-weight:700" fill="#9db8f5">Playground</text>
+            <text x="522" y="106" style="font-family:var(--mono);font-size:13px" fill="#8b96ad">your code + your stdin</text>
+            <text x="522" y="130" style="font-family:var(--mono);font-size:13px" fill="#cdd6ea">→ stdout / stderr / time / memory</text>
+          </g>
+          <g class="branch" style="--d:.68s">
+            <rect x="500" y="230" width="336" height="112" rx="14" fill="#1b2947" stroke="rgba(124,58,237,.45)"/>
+            <text x="522" y="268" style="font-family:var(--sans);font-size:18px;font-weight:700" fill="#9db8f5">Exam grading</text>
+            <text x="522" y="296" style="font-family:var(--mono);font-size:13px" fill="#8b96ad">your code vs <tspan fill="#c4b5fd">HIDDEN</tspan> test cases</text>
+            <text x="522" y="320" style="font-family:var(--mono);font-size:13px" fill="#cdd6ea">→ pass/fail per case → weighted score</text>
+          </g>
+        </svg>
+      </div>
+      <p class="rise" style="--d:.34s;font-size:16px;color:#7c8aa8;margin:0;text-align:center">One engine, two consumers — the compiler is general; test-case grading is just one use of it.</p>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>قبل التصحيح: المحرك اللي تحته — Playground = compiler أونلاين عادي</li><li>تختار لغة، تكتب في Monaco، تحط input، تدوس Run، يرجّعلك stdout/stderr والوقت والذاكرة</li><li>ست لغات (Python, JavaScript, TypeScript, Java, C, C++) من endpoint واحد POST /api/execute</li><li>كله جوه Judge0 sandbox بـtimeout 30 ثانية</li><li>محرك التصحيح بيستخدم نفس الـengine — بس بيغذّيه بالـtest cases المخفية ويقارن الـoutput</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 16 · RUNNING UNTRUSTED CODE ============================== -->
+<section class="slide" data-chip="M3 · Grading Engine">
+  <header class="s-head rise" style="margin-bottom:20px"><h2>Running Untrusted Code Safely</h2><p class="s-sub">Submissions fan out to parallel Judge0 workers — <span style="color:var(--ink)">untrusted code runs in Judge0, never on our server</span> — then fan in to an idempotent finalizer.</p></header>
+  <div class="grade build-once" id="gradeWrap">
+    <svg id="gradeSvg" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>
+    <!-- left: submit -> api (vertically centered) -->
+    <div id="g-left" style="position:absolute;left:0;display:flex;align-items:center;gap:130px">
+      <div class="gnode rise" id="g-submit" style="--d:.05s;width:190px"><h5>Submit</h5><div class="gs">student code</div></div>
+      <div class="gnode rise" id="g-api" style="--d:.1s;width:250px"><h5>Gin API</h5><div class="gs">async goroutine fan-out</div></div>
+    </div>
+    <!-- middle: isolated Judge0 workers -->
+    <div class="qbox rise" id="q-box" style="--d:.15s">
+      <div class="worker pass" id="w-0" style="--d:2.4s"><span>TC-1</span><span class="st"></span></div>
+      <div class="worker pass" id="w-1" style="--d:2.55s"><span>TC-2</span><span class="st"></span></div>
+      <div class="worker pass" id="w-2" style="--d:2.7s"><span>TC-3</span><span class="st"></span></div>
+      <div class="worker fail" id="w-3" style="--d:2.85s"><span>TC-4</span><span class="st"></span></div>
+      <div class="worker pass" id="w-4" style="--d:3s"><span>TC-5</span><span class="st"></span></div>
+      <div class="qlabel">Judge0 sandbox · isolated · never on our server</div>
+    </div>
+    <!-- right: finalizer (centered) + score stack (placed below it by JS) -->
+    <div class="gnode fin rise" id="g-fin" style="--d:.2s;position:absolute;right:0;width:360px;top:34%"><h5>Idempotent finalizer</h5><div class="gs">safe to re-run · one result</div></div>
+    <div id="g-score" style="position:absolute;right:0;width:360px;top:64%">
+      <div class="scorebar rise" style="--d:.3s"><div class="fill"></div></div>
+      <div class="glabel rise" style="--d:.35s;margin-top:16px">4 / 5 test cases passed → <span class="k" id="gscore" data-target="80" data-suffix="%" style="color:var(--ink)">80%</span> on this problem</div>
+      <div class="glabel rise" style="--d:.4s;margin-top:22px;line-height:1.7">coding = auto · MCQ = auto · written = manual<br>each worker runs one test case<br>staggered finishes = truly concurrent</div>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>لما الطالب يسلّم: بنفرّع goroutines على التوازي — واحدة لكل test case مخفي</li><li>كل واحدة بتتنفّذ جوه Judge0 — السيرفر بتاعنا عمره ما بيشغّل كود الطالب</li><li>النتايج بتتجمّع في finalizer idempotent: retry أو callback متكرر مستحيل يصحّح مرتين</li><li>المثال: 4 من 5 نجحوا ← 80% على المسألة</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 17 · SCORING ============================== -->
+<section class="slide" data-cascade data-chip="M3 · Grading Engine">
+  <header class="s-head rise"><h2>Scoring &amp; Question Types</h2><p class="s-sub">Weighted scoring over the <span style="color:var(--ink)">full</span> problem list — a skipped problem counts as 0 in the denominator.</p></header>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div style="flex:1;display:flex;flex-direction:column;gap:20px">
+      <div class="card rise" style="--d:.08s;padding:26px 32px"><h3 style="font-size:30px">Coding <span class="k" style="font-size:20px;color:var(--ok)">auto</span></h3><p style="font-size:21px;margin-top:8px">Judge0 runs hidden test cases; score = fraction passed × weight.</p></div>
+      <div class="card rise" style="--d:.15s;padding:26px 32px"><h3 style="font-size:30px">MCQ <span class="k" style="font-size:20px;color:var(--ok)">auto</span></h3><p style="font-size:21px;margin-top:8px">Graded instantly against the key.</p></div>
+      <div class="card rise" style="--d:.22s;padding:26px 32px"><h3 style="font-size:30px">Written <span class="k" style="font-size:20px;color:#a78bfa">manual</span></h3><p style="font-size:21px;margin-top:8px">Teacher grades in the review view; folded into the same weighted total.</p></div>
+    </div>
+    <div class="card rise" style="--d:.2s;flex:1.35">
+      <div class="badge">worked example · 5 problems</div>
+      <table class="score" style="margin-top:20px">
+        <tr><th>Problem</th><th>Weight</th><th>Result</th><th>Points</th></tr>
+        <tr><td class="k">P1 · coding</td><td class="k">20</td><td>all tests pass</td><td class="k">20</td></tr>
+        <tr><td class="k">P2 · coding</td><td class="k">20</td><td>half of tests pass</td><td class="k">10</td></tr>
+        <tr><td class="k">P3 · MCQ</td><td class="k">20</td><td style="color:var(--bad)">skipped</td><td class="k" style="color:var(--bad)">0</td></tr>
+        <tr><td class="k">P4 · MCQ</td><td class="k">20</td><td>correct</td><td class="k">20</td></tr>
+        <tr><td class="k">P5 · written</td><td class="k">20</td><td>manual · 15/20</td><td class="k">15</td></tr>
+        <tr><td colspan="3" style="color:var(--dim)">weighted total — skipped P3 stays in the denominator</td><td class="k gt" style="font-size:32px;font-weight:700">65 / 100</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>أهم قاعدة عدل: المقام = قايمة المسائل كلها، مش اللي اتحل بس</li><li>سكِپ مسألة = صفر من وزنها (مثلاً 20)، فيطلع 65/100</li><li>تصحيح موحّد وعادل: coding أوتوماتيك وMCQ أوتوماتيك</li><li>تسليم: M4 هيقولكم بنأمّن المنصة إزاي</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 18 · DIVIDER: SECURITY ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Act 4</div>
+  <h2 class="div-title rise" style="--d:.08s">Security</h2>
+  <div class="div-speaker rise" style="--d:.16s">M4 · Security</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>شكراً يا زميلي</li><li>منصة امتحانات = هدف مغري للغش والتخريب — تعالوا نشوف بنحميها بكام طبقة</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 19 · DEFENSE IN DEPTH ============================== -->
+<section class="slide" data-chip="M4 · Security">
+  <header class="s-head rise" style="margin-bottom:10px"><h2>Defense in Depth</h2><p class="s-sub">Eight independent controls between an attacker and the data.</p></header>
+  <div class="row" style="flex:1;min-height:0;align-items:center">
+    <div class="build-once" style="flex:1.1;height:100%;min-height:0">
+      <svg viewBox="0 0 760 760" style="height:100%;max-width:100%;display:block;margin:0 auto">
+        <circle class="ring dashed rot rl" style="--d:.1s" cx="380" cy="390" r="330" stroke="rgba(37,99,235,.6)"/>
+        <circle class="ring dashed rot rev rl" style="--d:.22s" cx="380" cy="390" r="265" stroke="rgba(94,80,224,.6)"/>
+        <circle class="ring dashed rot rl" style="--d:.34s" cx="380" cy="390" r="200" stroke="rgba(124,58,237,.65)"/>
+        <circle class="ring dashed rot rev rl" style="--d:.46s" cx="380" cy="390" r="135" stroke="rgba(167,139,250,.7)"/>
+        <circle class="rl" style="--d:.58s" cx="380" cy="390" r="72" fill="rgba(124,58,237,.12)" stroke="rgba(167,139,250,.8)" stroke-width="2"/>
+        <text x="380" y="398" text-anchor="middle" style="font-size:28px;font-weight:700;font-family:var(--sans)" fill="#e5e8ee">Data</text>
+        <text class="ringlabel" x="380" y="48" text-anchor="middle">1 · edge</text>
+        <text class="ringlabel" x="380" y="113" text-anchor="middle">2 · identity</text>
+        <text class="ringlabel" x="380" y="178" text-anchor="middle">3 · authorization</text>
+        <text class="ringlabel" x="380" y="243" text-anchor="middle">4 · content</text>
+        <circle class="attackdot" cx="380" cy="60" r="8" fill="#f87171"/>
+      </svg>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:22px" class="build-once">
+      <div class="seclist">
+        <div class="secitem"><span class="sn">ring 1</span><div><b>Strict CORS</b> &nbsp;·&nbsp; <b>parameterized queries</b><br><span>only known origins; no string-built SQL</span></div></div>
+        <div class="secitem"><span class="sn">ring 2</span><div><b>JWT HS256 pinned to HMAC</b> &nbsp;·&nbsp; <b>bcrypt</b><br><span>pinning blocks algorithm-confusion attacks</span></div></div>
+        <div class="secitem"><span class="sn">ring 3</span><div><b>RequireRole</b> &nbsp;·&nbsp; <b>per-owner query scoping</b><br><span>wrong role or wrong owner → request dies early</span></div></div>
+        <div class="secitem"><span class="sn">ring 4</span><div><b>Hidden test cases withheld</b> &nbsp;·&nbsp; <b>fail-closed secrets</b><br><span>the browser never receives expected outputs</span></div></div>
+      </div>
+      <div class="card" style="border-color:rgba(124,58,237,.5);padding:24px 30px">
+        <div class="k" style="font-size:19px;color:#a78bfa">most prominent</div>
+        <p style="margin-top:10px;font-size:22px;color:var(--ink)">HS256 <b>pinned to HMAC</b> — forged-algorithm tokens rejected.<br>Fail-closed boot — <span class="k">JWT_SECRET &lt; 32 chars → refuses to start.</span></p>
+      </div>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>مفيش خط دفاع واحد: تمن طبقات مستقلة بين المهاجم والداتا</li><li>الـedge: CORS وqueries كلها parameterized (مفيش injection)</li><li>الهوية: JWT متثبّت بالـHMAC، والباسوردات bcrypt</li><li>الصلاحيات: RequireRole و owner scoping</li><li>المحتوى: test cases مخفية وأسرار fail-closed</li><li>النبضة الحمرا = هجمة بتموت عند أول طبقة — خلّي بالكم من الحاجتين الكبار، السلايد الجاي هيفصّلهم</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 20 · FAIL-CLOSED ============================== -->
+<section class="slide" data-cascade data-chip="M4 · Security">
+  <style>
+    #dtl .drow{display:flex;align-items:center;gap:26px;padding:14px 28px}
+    #dtl .dleft{width:330px;flex:none;display:flex;flex-direction:column;gap:5px}
+    #dtl .dtag{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:#a5b4fc;text-transform:uppercase}
+    #dtl .dname{font-size:24px;font-weight:700;color:var(--ink)}
+    #dtl .ddesc{flex:1;font-size:20px;line-height:1.5;color:var(--dim)}
+    #dtl .ddesc b{color:var(--ink);font-weight:600}
+    #dtl .ddesc code{font-family:var(--mono);color:#a5b4fc}
+  </style>
+  <header class="s-head rise"><h2>Inside the Five Layers</h2><p class="s-sub">What each control in the chain actually does — from the edge to the sandbox.</p></header>
+  <div id="dtl" style="flex:1;display:flex;flex-direction:column;gap:12px;justify-content:center">
+    <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Edge</span><span class="dname">CORS Allowlist</span></div><div class="ddesc">Only requests from origins on a predefined <b>allowlist</b> reach the API — any other website is blocked before it touches a handler.</div></div>
+    <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Identity</span><span class="dname">JWT + HMAC</span></div><div class="ddesc">On login the server issues a token — <b>user id, role, expiry</b> — signed with a secret key. Every request re-verifies the signature, so a tampered or forged token is rejected.</div></div>
+    <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Authorization</span><span class="dname">RequireRole (RBAC)</span></div><div class="ddesc">Middleware checks the token's role <b>before any handler runs</b> — teacher-only routes reject a student, and vice-versa.</div></div>
+    <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Data</span><span class="dname">Per-Owner Scoping</span></div><div class="ddesc">Every database query is scoped to the authenticated user — you only ever read <b>your own rows</b>, never an ID the client claims to own.</div></div>
+    <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Content</span><span class="dname">Judge0 Sandbox</span></div><div class="ddesc">Student code runs in an isolated sandbox with strict <b>CPU, memory, time and filesystem</b> limits — even malicious or infinite-loop code can't reach the main server.</div></div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>دي تفاصيل الطبقات اللي شفناها في السلايد اللي فات — كل واحدة بتعمل إيه بالظبط</li><li>Edge — الـCORS بيسمح بس للمواقع اللي في الـallowlist توصل للـAPI</li><li>Identity — JWT متوقّع بـHMAC بمفتاح سري، وأي token متزوّر أو متعدّل بيترفض</li><li>Authorization — الـRequireRole بيتأكد من دور اليوزر قبل أي handler</li><li>Data — كل query مربوطة باليوزر نفسه، فمحدش يقرا داتا غيره</li><li>Content — كود الطالب بيتنفّذ جوه Judge0 sandbox بحدود CPU وميموري ووقت وملفات</li></ul></div></div>
+</section>
+<section class="slide" data-cascade data-chip="M4 · Security">
+  <style>
+    #atk .atkrow{display:flex;align-items:center;gap:22px;padding:16px 26px}
+    #atk .atk-try{flex:1;color:var(--dim);font-size:23px;line-height:1.45}
+    #atk .atk-why{flex:1.3;color:var(--ink);font-size:23px;line-height:1.45}
+    #atk .atk-arw{font-family:var(--mono);color:var(--a2);font-size:26px;font-weight:700}
+    #atk .atk-try .r{color:var(--bad);font-weight:800;margin-inline-end:10px}
+    #atk .atk-why .g{color:var(--ok);font-weight:800;margin-inline-end:10px}
+    #atk .atk-why code,#atk .atk-try code{font-family:var(--mono);color:#a5b4fc}
+  </style>
+  <header class="s-head rise"><h2>Attacks That Don't Work</h2><p class="s-sub">We built it assuming someone will try to cheat or break in — here's what happens when they do.</p></header>
+  <div id="atk" style="flex:1;display:flex;flex-direction:column;gap:14px;justify-content:center">
+    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>A student opens another student's submission by ID</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>Every read is owner- / enrollment-scoped — the API returns <b>403</b>, never someone else's row</div></div>
+    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Scrape the hidden test cases to hard-code the outputs</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>Hidden cases never reach the browser — <code>/run</code> returns sample tests only</div></div>
+    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Forge a JWT with <code>alg: none</code> or <code>RS256</code></div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>The verifier pins the <b>HMAC</b> family before the signature is even checked</div></div>
+    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Student code tries to read the database or filesystem</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>It executes inside the <b>Judge0 sandbox</b> — never on our server</div></div>
+    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Skip the hard questions to inflate the score</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>The denominator is the full problem list — a skipped question scores <b>0</b></div></div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>بنيناه وإحنا فاكرين إن حد هيحاول يغش أو يخترق — دي أمثلة لهجمات وبتفشل ليه</li><li>طالب يفتح submission بتاع زميله بالـID؟ كل قراءة مربوطة بصاحبها → بيرجّع 403</li><li>يسحب الـhidden test cases؟ عمرها ما بتوصل للمتصفح، والـ/run بيرجّع الـsample بس</li><li>يزوّر JWT بـalg none أو RS256؟ بنثبّت عيلة HMAC قبل ما نتحقق من التوقيع أصلاً</li><li>كود الطالب يحاول يقرا الداتابيز أو الملفات؟ بيتنفّذ جوه Judge0 sandbox، عمره ما بيلمس سيرفرنا</li><li>يسيب الأسئلة الصعبة عشان الدرجة تعلى؟ المقام هو كل المسائل، والسؤال المتسايب بياخد صفر</li><li>تسليم: M5 هيوريكم التغليف والاختبار والنتايج</li></ul></div></div>
+</section>
+
+<!-- ============================== 21 · DIVIDER: DEVOPS ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Act 5</div>
+  <h2 class="div-title rise" style="--d:.08s">DevOps &amp;<br>Results</h2>
+  <div class="div-speaker rise" style="--d:.16s">M5 · DevOps &amp; Deployment</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للجزء العملي: غلّفنا النظام إزاي، اختبرناه إزاي، وطلع منه إيه</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 22 · PACKAGING & CI ============================== -->
+<section class="slide" data-checkwalk data-chip="M5 · DevOps &amp; Deployment">
+  <header class="s-head"><h2>Packaging &amp; CI</h2><p class="s-sub">One command boots the stack in health order; six CI jobs gate every push — <span class="k" style="color:#8bd6a8">tap to tick each green.</span></p></header>
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:56px">
+    <div>
+      <div class="k" style="font-size:20px;color:var(--dim);margin-bottom:16px">docker compose up · 4 services, health-ordered</div>
+      <div class="boot" style="gap:0">
+        <div class="bnode"><span class="check">✓</span><div><div class="bname">postgres</div><div class="bsub">healthy</div></div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="bnode"><span class="check">✓</span><div><div class="bname">migrate</div><div class="bsub">one-shot</div></div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="bnode"><span class="check">✓</span><div><div class="bname">backend</div><div class="bsub">Gin API</div></div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="bnode"><span class="check">✓</span><div><div class="bname">frontend</div><div class="bsub">React SPA</div></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="k" style="font-size:20px;color:var(--dim);margin-bottom:16px">GitHub Actions · 6 jobs on every push</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px">
+        <div class="cichip"><span class="check">✓</span>go vet</div>
+        <div class="cichip"><span class="check">✓</span>race tests · live Postgres</div>
+        <div class="cichip"><span class="check">✓</span>golangci-lint</div>
+        <div class="cichip"><span class="check">✓</span>eslint + build</div>
+        <div class="cichip"><span class="check">✓</span>vitest</div>
+        <div class="cichip"><span class="check">✓</span>docker smoke builds</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px">
+      <span class="badge">Dependabot · 5 ecosystems</span><span class="badge">distroless · non-root · baked-in --healthcheck</span>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>فوق: الـcompose بيقوم بالترتيب الصح — Postgres healthy ← migration مرة واحدة ← API ← SPA</li><li>محدش يقوم قبل اللي تحته</li><li>تحت: ستة CI jobs، منهم اختبارات race-detector على Postgres حقيقي مش mock</li><li>Dependabot بيراقب خمس ecosystems</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 23 · HARDENED IMAGE ============================== -->
+<section class="slide" data-cascade data-chip="M5 · DevOps &amp; Deployment">
+  <header class="s-head rise"><h2>Hardened Image</h2><p class="s-sub">The production container ships with less, on purpose.</p></header>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div class="card rise" style="--d:.08s;flex:1">
+      <div class="badge">distroless</div>
+      <h3 style="margin-top:20px">No shell, no package manager</h3>
+      <p>The runtime image contains the Go binary and its certificates — an attacker who lands inside finds nothing to run.</p>
+    </div>
+    <div class="card rise" style="--d:.16s;flex:1">
+      <div class="badge">non-root</div>
+      <h3 style="margin-top:20px">Unprivileged by default</h3>
+      <p>The process runs as a non-root user, so a container escape starts from the weakest possible position.</p>
+    </div>
+    <div class="card rise" style="--d:.24s;flex:1">
+      <div class="badge k">--healthcheck</div>
+      <h3 style="margin-top:20px">The binary probes itself</h3>
+      <p>No curl or wget in a distroless image — so the health check is baked into our own binary as a self-probe flag.</p>
+    </div>
+  </div>
+  <div class="codebox rise" style="--d:.3s;margin-top:var(--gap-item);font-size:20px">HEALTHCHECK CMD [<span class="b">"/app/server"</span>, <span class="b">"--healthcheck"</span>]&nbsp;&nbsp;<span class="c"># the same binary, probing itself</span></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>الـproduction image مقصودين نخليه أنحف: مفيش shell ومفيش package manager</li><li>بيشتغل unprivileged افتراضيًا — حتى لو حد دخله مش هيلاقي أدوات</li><li>نتيجة الـdistroless: مفيش curl للـhealthcheck</li><li>زوّدنا للـbinary فلاج ‎--healthcheck بيجرّب الـendpoint بنفسه ويرجّع نجاح/فشل</li><li>تفصيلة صغيرة بتوري إن التغليف اتفكّر فيه من الأول للآخر</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 24 · RESULTS ============================== -->
+<section class="slide" data-chip="M5 · DevOps &amp; Deployment">
+  <header class="s-head rise" style="margin-bottom:30px"><h2>Results by the Numbers</h2><p class="s-sub">What five people shipped in one project.</p></header>
+  <div class="row" style="flex:1;min-height:0;align-items:stretch">
+    <div class="build-once metricgrid" style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:26px;align-content:center">
+      <div class="metric" style="--sd:0s"><div class="mv"><span class="count" data-target="65" data-prefix="~">~65</span></div><div class="ml">REST endpoints</div></div>
+      <div class="metric" style="--sd:.09s"><div class="mv"><span class="count" data-target="6100" data-prefix="~">~6,100</span></div><div class="ml">lines of Go</div></div>
+      <div class="metric" style="--sd:.18s"><div class="mv"><span class="count" data-target="17400" data-prefix="~">~17,400</span></div><div class="ml">frontend lines</div></div>
+      <div class="metric" style="--sd:.27s"><div class="mv"><span class="count" data-target="22">22</span></div><div class="ml">routes</div></div>
+      <div class="metric" style="--sd:.36s"><div class="mv"><span class="count" data-target="15">15</span></div><div class="ml">tables</div></div>
+      <div class="metric" style="--sd:.45s"><div class="mv"><span class="count" data-target="3">3</span></div><div class="ml">question types</div></div>
+      <div class="metric" style="--sd:.54s"><div class="mv"><span class="count" data-target="4">4</span></div><div class="ml">services</div></div>
+      <div class="metric" style="--sd:.63s"><div class="mv"><span class="count" data-target="6">6</span></div><div class="ml">CI jobs</div></div>
+      <div class="metric" style="--sd:.72s"><div class="mv"><span class="count" data-target="5">5</span></div><div class="ml">Dependabot ecosystems</div></div>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>ناخد الأرقام واحد واحد، كل ضغطة رقم جديد</li><li>كل الأرقام معدودة من الـrepo نفسه، مش تقديرات</li><li>ده اللي خمس ناس طلّعوه في مشروع واحد</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 25 · GALLERY ============================== -->
+<section class="slide" data-cascade data-chip="M5 · DevOps &amp; Deployment">
+  <header class="s-head rise" style="margin-bottom:26px"><h2>Screenshot Gallery</h2><p class="s-sub">The product, end to end.</p></header>
+  <div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;gap:22px">
+    <figure class="chrome rise" style="--d:.05s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/teacher/exams/new</span></div><img src="./screenshots/exam-builder.png" alt="Exam builder"><figcaption>Exam builder</figcaption></figure>
+    <figure class="chrome rise" style="--d:.11s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/teacher/questions</span></div><img src="./screenshots/question-bank.png" alt="Question bank"><figcaption>Question bank</figcaption></figure>
+    <figure class="chrome rise" style="--d:.17s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/teacher</span></div><img src="./screenshots/teacher-dashboard.png" alt="Teacher dashboard"><figcaption>Teacher dashboard</figcaption></figure>
+    <figure class="chrome rise" style="--d:.23s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/student</span></div><img src="./screenshots/student-dashboard.png" alt="Student dashboard"><figcaption>Student dashboard</figcaption></figure>
+    <figure class="chrome rise" style="--d:.29s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/exam/attempt</span></div><img src="./screenshots/exam-runner-monaco.png" alt="Exam runner"><figcaption>Exam runner — Monaco</figcaption></figure>
+    <figure class="chrome rise" style="--d:.35s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/teacher/analytics</span></div><img src="./screenshots/analytics-chart.png" alt="Analytics"><figcaption>Analytics</figcaption></figure>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>جولة سريعة بالصور — كله المنتج شغّال فعلاً مش mockups</li><li>هسيب الشاشات تتكلم، وأنا بس أسمّي كل view وإحنا ماشيين</li></ul></div></div></div>
+</section>
+
+<!-- ============================== 26 · GAPS & FUTURE ============================== -->
+<section class="slide" data-chip="M5 · DevOps &amp; Deployment">
+  <header class="s-head rise"><h2>Gaps &amp; Future Work</h2><p class="s-sub">What we would build next — stated honestly.</p></header>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div class="card rise" style="--d:.08s;flex:1">
+      <h3 style="font-size:32px">Known gaps</h3>
+      <p style="margin-top:18px;line-height:1.8">· Written-answer grading UI is functional but basic<br>· No proctoring or anti-cheat beyond timed attempts<br>· Grading throughput under heavy concurrent load is untested at scale</p>
+    </div>
+    <div class="card rise" style="--d:.16s;flex:1">
+      <h3 style="font-size:32px">Next steps</h3>
+      <p style="margin-top:18px;line-height:1.8">· Broader language coverage in the coding runner<br>· Richer analytics for teachers<br>· End-to-end test suite on top of the existing CI jobs</p>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>بكل صراحة عندنا نواقص معروفة ومش هنخبّيها — اللجان بتحترم اللي بيقول حدوده</li><li>كل نقطة ناقصة قدامها خطوة تالية واضحة</li><li>مفيش واحدة بتعطّل الاستخدام الأساسي للنظام</li><li>تسليم: هرجّع لـM1 يقفل بأهم حاجة — نشوف الكلام شغّال حي</li></ul></div></div></div>
+</section>
+
+<!-- ============================== DIVIDER: LIVE DEMO (finale) ============================== -->
+<section class="slide divider">
+  <div class="div-kicker rise">Finale</div>
+  <h2 class="div-title rise" style="--d:.08s">Live Demo</h2>
+  <div class="div-speaker rise" style="--d:.16s">M1 · Live Demo</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للديمو الحي — الجزء اللي بيثبت إن ده مش سلايدات</li><li>تعالوا نشوف APEX شغّال قدامكم</li></ul></div></div></div>
+</section>
+
+<!-- ============================== LIVE DEMO (finale) ============================== -->
+<section class="slide" data-chip="M1 · Live Demo">
+  <header class="s-head rise" style="margin-bottom:30px"><h2>Live Demo</h2><p class="s-sub">Build an exam → take it in Monaco → watch it auto-grade.</p></header>
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center">
+    <figure class="chrome rise" style="--d:.08s;width:1250px;max-width:100%;flex:1;min-height:0">
+      <div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local — end-to-end walkthrough</span></div>
+      <div id="demo-frame" style="flex:1;min-height:0;display:flex;background:#0b1226">
+        <video id="demo-video" controls preload="metadata" playsinline poster="./screenshots/demo-poster.png" src="./demo/demo.mp4" style="width:100%;height:100%;object-fit:contain"></video>
+      </div>
+      <figcaption>demo.mp4 · driven live by M1</figcaption>
+    </figure>
+    <div style="display:flex;gap:16px;margin-top:var(--gap-item)" class="rise">
+      <span class="badge">1 · exam builder</span><span class="badge">2 · Monaco editor</span><span class="badge">3 · auto-grade result</span>
+    </div>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>اللحظة اللي مستنيينها — النظام من الأول للآخر</li><li>كـinstructor: أبني امتحان من الـbuilder وأضيف السؤال والـtest cases</li><li>كطالب: أكتب الحل في Monaco (خلّوا بالكم من الـautosave)، وأضغط submit</li><li>الدرجة اتصححت أوتوماتيك في ثواني من غير ما حد يلمسها</li><li>وكده ده APEX شغّال حي قدام حضراتكم</li></ul></div></div></div>
+</section>
+
+<!-- ============================== CLOSE ============================== -->
+<section class="slide title-slide" data-chip="Team APEX">
+  <h1 class="wordmark solid" style="font-size:180px">APEX</h1>
+  <div class="t-title rise" style="--d:.1s">Questions?</div>
+  <div style="display:flex;gap:14px;margin-top:36px;flex-wrap:wrap;justify-content:center" class="rise">
+    <span class="badge">exams in the browser</span><span class="badge">Judge0 isolation</span><span class="badge">crash-safe runner</span><span class="badge">defense in depth</span><span class="badge">Dockerized + 6-job CI</span>
+  </div>
+  <div class="member-row" style="margin-top:40px">
+    <div class="member rise" style="--d:.2s"><div class="mid">Hossam Rashed</div><div class="mrole">Team Lead · Full-Stack</div></div>
+    <div class="member rise" style="--d:.24s"><div class="mid">Mohamed Abdelfattah</div><div class="mrole">Data &amp; Persistence</div></div>
+    <div class="member rise" style="--d:.28s"><div class="mid">Ahmed Abdelfattah</div><div class="mrole">Grading Engine</div></div>
+    <div class="member rise" style="--d:.32s"><div class="mid">Mohamed Ibrahim</div><div class="mrole">Security</div></div>
+    <div class="member rise" style="--d:.36s"><div class="mid">Adham Basem</div><div class="mrole">DevOps &amp; Deployment</div></div>
+  </div>
+  <div class="t-meta rise" style="--d:.4s">Thank you — Supervisor: <span class="k">Prof. Dr. Ayman El-Sayed Omera</span> · Menoufia University · Electrical &amp; Computer Engineering</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>الفكرة في جملة: منصة تبني وتشغّل وتصحّح امتحانات البرمجة في المتصفح أوتوماتيك</li><li>ألف شكر لأعضاء لجنة المناقشة</li><li>وشكر خاص لمشرفنا على كل مجهوده معانا</li><li>الفريق كله واقف دلوقتي لأي أسئلة</li></ul></div></div></div>
+</section>
+
+</div><!-- /stage -->
+
+<div id="erdOverlay" aria-hidden="true">
+  <button id="erdClose" title="Close (Esc / O)" aria-label="Close">✕</button>
+  <div class="erd-badge">M2 · Data &amp; Persistence — Chen ER diagram &nbsp;<span style="color:#8b96ad">(press O to toggle)</span></div>
+  <div class="erd-stage">
+  <svg viewBox="0 0 1780 730" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="display:block" id="erd2">
+    <defs>
+      <linearGradient id="genta" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#2563eb"/></linearGradient>
+      <linearGradient id="grel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+      <linearGradient id="gatt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#243252"/><stop offset="1" stop-color="#172136"/></linearGradient>
+    </defs>
+    <style>
+      #erd2 .cent rect{fill:url(#genta);stroke:rgba(255,255,255,.2)}
+      #erd2 .cent.poly rect{stroke:#c4b5fd;stroke-width:2.5}
+      #erd2 .cent,#erd2 .crel,#erd2 .cattr{transform-box:fill-box;transform-origin:center}
+      #erd2 .etitle{font-family:var(--sans);font-size:20px;font-weight:700;fill:#fff}
+      #erd2 .crel polygon{fill:url(#grel);stroke:rgba(255,255,255,.15)}
+      #erd2 .rtitle{font-family:var(--sans);font-size:15px;font-weight:600;fill:#fff}
+      #erd2 .cattr ellipse{fill:url(#gatt);stroke:rgba(124,58,237,.45)}
+      #erd2 .atitle{font-family:var(--mono);font-size:14px;fill:#c7d0e2}
+      #erd2 .cline{stroke:#6b7a99;stroke-width:1.6;fill:none;stroke-dasharray:1400;stroke-dashoffset:1400}
+      #erd2 .crd{font-family:var(--mono);font-size:14px;fill:#aeb9d0;opacity:0}
+      #erd2 .lgd{font-family:var(--mono);font-size:15px;fill:#8b96ad}
+      .erd-open #erd2 .cent,.erd-open #erd2 .crel,.erd-open #erd2 .cattr{animation:popin .5s ease-out both;animation-delay:var(--d,0s)}
+      .erd-open #erd2 .cline{animation:reldraw .6s ease-out both;animation-delay:var(--d,.5s)}
+      .erd-open #erd2 .crd{animation:cardin .4s ease both;animation-delay:var(--d,.9s)}
+      @keyframes reldraw{to{stroke-dashoffset:0}}
+      @keyframes cardin{to{opacity:1}}
+    </style>
+
+    <!-- ===== relationship lines ===== -->
+    <line class="cline" style="--d:.5s" x1="430" y1="135" x2="549" y2="135"/><line class="cline" style="--d:.5s" x1="685" y1="135" x2="805" y2="135"/>
+    <line class="cline" style="--d:.55s" x1="995" y1="135" x2="1117" y2="135"/><line class="cline" style="--d:.55s" x1="1253" y1="135" x2="1375" y2="135"/>
+    <line class="cline" style="--d:.6s" x1="900" y1="164" x2="900" y2="215"/><line class="cline" style="--d:.6s" x1="900" y1="295" x2="900" y2="346"/>
+    <line class="cline" style="--d:.7s" x1="900" y1="404" x2="900" y2="447"/><line class="cline" style="--d:.7s" x1="900" y1="527" x2="900" y2="571"/>
+    <line class="cline" style="--d:.65s" x1="995" y1="375" x2="1117" y2="375"/><line class="cline" style="--d:.65s" x1="1253" y1="375" x2="1375" y2="375"/>
+    <line class="cline" style="--d:.6s" x1="1470" y1="164" x2="1470" y2="215"/><line class="cline" style="--d:.6s" x1="1470" y1="295" x2="1470" y2="346"/>
+    <line class="cline" style="--d:.7s" x1="1470" y1="404" x2="1470" y2="447"/><line class="cline" style="--d:.7s" x1="1470" y1="527" x2="1470" y2="571"/>
+    <line class="cline" style="--d:.75s" x1="995" y1="600" x2="1117" y2="600"/><line class="cline" style="--d:.75s" x1="1253" y1="600" x2="1375" y2="600"/>
+    <line class="cline" style="--d:.55s" x1="300" y1="164" x2="250" y2="335"/><line class="cline" style="--d:.55s" x1="250" y1="415" x2="300" y2="571"/>
+    <line class="cline" style="--d:.6s" x1="370" y1="164" x2="420" y2="335"/><line class="cline" style="--d:.6s" x1="420" y1="415" x2="370" y2="571"/>
+    <path class="cline" style="--d:.8s" d="M335,106 V45 H832"/><path class="cline" style="--d:.8s" d="M968,45 H1470 V106"/>
+    <line class="cline" style="--d:.7s" x1="805" y1="150" x2="668" y2="300"/><line class="cline" style="--d:.7s" x1="600" y1="338" x2="400" y2="571"/>
+    <line class="cline" style="--d:.85s" x1="782" y1="452" x2="855" y2="404"/>
+    <line class="cline" style="--d:.85s" x1="196" y1="112" x2="240" y2="124"/><line class="cline" style="--d:.85s" x1="196" y1="168" x2="240" y2="150"/>
+    <line class="cline" style="--d:.85s" x1="196" y1="580" x2="240" y2="590"/><line class="cline" style="--d:.85s" x1="202" y1="636" x2="240" y2="612"/>
+    <line class="cline" style="--d:.85s" x1="1565" y1="124" x2="1580" y2="112"/><line class="cline" style="--d:.85s" x1="1565" y1="150" x2="1580" y2="168"/>
+    <line class="cline" style="--d:.85s" x1="1565" y1="360" x2="1580" y2="348"/><line class="cline" style="--d:.85s" x1="1565" y1="392" x2="1580" y2="404"/><line class="cline" style="--d:.85s" x1="1565" y1="600" x2="1580" y2="600"/>
+
+    <!-- ===== relationship diamonds ===== -->
+    <g class="crel" style="--d:.3s"><polygon points="617,95 685,135 617,175 549,135"/><text class="rtitle" x="617" y="140" text-anchor="middle">creates</text></g>
+    <g class="crel" style="--d:.35s"><polygon points="1185,95 1253,135 1185,175 1117,135"/><text class="rtitle" x="1185" y="140" text-anchor="middle">has</text></g>
+    <g class="crel" style="--d:.4s"><polygon points="900,215 968,255 900,295 832,255"/><text class="rtitle" x="900" y="260" text-anchor="middle">contains</text></g>
+    <g class="crel" style="--d:.45s"><polygon points="900,447 968,487 900,527 832,487"/><text class="rtitle" x="900" y="492" text-anchor="middle">has</text></g>
+    <g class="crel" style="--d:.4s"><polygon points="1185,335 1253,375 1185,415 1117,375"/><text class="rtitle" x="1185" y="380" text-anchor="middle">answers</text></g>
+    <g class="crel" style="--d:.4s"><polygon points="1470,215 1538,255 1470,295 1402,255"/><text class="rtitle" x="1470" y="260" text-anchor="middle">has</text></g>
+    <g class="crel" style="--d:.45s"><polygon points="1470,447 1538,487 1470,527 1402,487"/><text class="rtitle" x="1470" y="492" text-anchor="middle">produces</text></g>
+    <g class="crel" style="--d:.5s"><polygon points="1185,560 1253,600 1185,640 1117,600"/><text class="rtitle" x="1185" y="605" text-anchor="middle">checks</text></g>
+    <g class="crel" style="--d:.35s"><polygon points="250,335 318,375 250,415 182,375"/><text class="rtitle" x="250" y="380" text-anchor="middle">owns</text></g>
+    <g class="crel" style="--d:.4s"><polygon points="420,335 488,375 420,415 352,375"/><text class="rtitle" x="420" y="380" text-anchor="middle">enrolls</text></g>
+    <g class="crel" style="--d:.5s"><polygon points="900,9 968,45 900,81 832,45"/><text class="rtitle" x="900" y="50" text-anchor="middle">takes</text></g>
+    <g class="crel" style="--d:.45s"><polygon points="600,262 668,300 600,338 532,300"/><text class="rtitle" x="600" y="305" text-anchor="middle">assigned</text></g>
+
+    <!-- ===== entities ===== -->
+    <g class="cent" style="--d:.05s"><rect x="240" y="106" width="190" height="58" rx="8"/><text class="etitle" x="335" y="142" text-anchor="middle">users</text></g>
+    <g class="cent" style="--d:.1s"><rect x="805" y="106" width="190" height="58" rx="8"/><text class="etitle" x="900" y="142" text-anchor="middle">exams</text></g>
+    <g class="cent" style="--d:.15s"><rect x="1375" y="106" width="190" height="58" rx="8"/><text class="etitle" x="1470" y="142" text-anchor="middle">exam_attempts</text></g>
+    <g class="cent poly" style="--d:.2s"><rect x="805" y="346" width="190" height="58" rx="8"/><text class="etitle" x="900" y="382" text-anchor="middle">problems</text></g>
+    <g class="cent" style="--d:.2s"><rect x="1375" y="346" width="190" height="58" rx="8"/><text class="etitle" x="1470" y="382" text-anchor="middle">submissions</text></g>
+    <g class="cent" style="--d:.25s"><rect x="240" y="571" width="190" height="58" rx="8"/><text class="etitle" x="335" y="607" text-anchor="middle">classes</text></g>
+    <g class="cent" style="--d:.3s"><rect x="805" y="571" width="190" height="58" rx="8"/><text class="etitle" x="900" y="607" text-anchor="middle">test_cases</text></g>
+    <g class="cent" style="--d:.35s"><rect x="1375" y="571" width="190" height="58" rx="8"/><text class="etitle" x="1470" y="607" text-anchor="middle">test_results</text></g>
+
+    <!-- ===== attributes ===== -->
+    <g class="cattr" style="--d:.55s"><ellipse cx="120" cy="110" rx="76" ry="26"/><text class="atitle" x="120" y="115" text-anchor="middle">role</text></g>
+    <g class="cattr" style="--d:.6s"><ellipse cx="120" cy="168" rx="76" ry="26"/><text class="atitle" x="120" y="173" text-anchor="middle">email</text></g>
+    <g class="cattr" style="--d:.65s"><ellipse cx="120" cy="578" rx="76" ry="26"/><text class="atitle" x="120" y="583" text-anchor="middle">name</text></g>
+    <g class="cattr" style="--d:.7s"><ellipse cx="122" cy="636" rx="84" ry="26"/><text class="atitle" x="122" y="641" text-anchor="middle">invite_code</text></g>
+    <g class="cattr" style="--d:.55s"><ellipse cx="1658" cy="110" rx="78" ry="26"/><text class="atitle" x="1658" y="115" text-anchor="middle">status</text></g>
+    <g class="cattr" style="--d:.6s"><ellipse cx="1658" cy="168" rx="78" ry="26"/><text class="atitle" x="1658" y="173" text-anchor="middle">score</text></g>
+    <g class="cattr" style="--d:.65s"><ellipse cx="1658" cy="348" rx="78" ry="26"/><text class="atitle" x="1658" y="353" text-anchor="middle">status</text></g>
+    <g class="cattr" style="--d:.7s"><ellipse cx="1658" cy="404" rx="78" ry="26"/><text class="atitle" x="1658" y="409" text-anchor="middle">score</text></g>
+    <g class="cattr" style="--d:.7s"><ellipse cx="1658" cy="600" rx="78" ry="26"/><text class="atitle" x="1658" y="605" text-anchor="middle">passed</text></g>
+    <g class="cattr" style="--d:.75s"><ellipse cx="686" cy="470" rx="114" ry="27"/><text class="atitle" x="686" y="475" text-anchor="middle" style="font-size:13px">type: coding·mcq·written</text></g>
+
+    <!-- ===== cardinality labels (max, min) ===== -->
+    <text class="crd" style="--d:.9s" x="460" y="127">N,0</text><text class="crd" style="--d:.9s" x="775" y="127" text-anchor="end">1,1</text>
+    <text class="crd" style="--d:.9s" x="1025" y="127">N,0</text><text class="crd" style="--d:.9s" x="1345" y="127" text-anchor="end">1,1</text>
+    <text class="crd" style="--d:.95s" x="912" y="192">N,1</text><text class="crd" style="--d:.95s" x="912" y="326">1,0</text>
+    <text class="crd" style="--d:1s" x="912" y="432">N,0</text><text class="crd" style="--d:1s" x="912" y="551">1,1</text>
+    <text class="crd" style="--d:.95s" x="1025" y="368">N,0</text><text class="crd" style="--d:.95s" x="1345" y="368" text-anchor="end">1,1</text>
+    <text class="crd" style="--d:.95s" x="1482" y="192">N,1</text><text class="crd" style="--d:.95s" x="1482" y="326">1,1</text>
+    <text class="crd" style="--d:1s" x="1482" y="432">N,0</text><text class="crd" style="--d:1s" x="1482" y="551">1,1</text>
+    <text class="crd" style="--d:1s" x="1025" y="593">N,0</text><text class="crd" style="--d:1s" x="1345" y="593" text-anchor="end">1,1</text>
+    <text class="crd" style="--d:.9s" x="278" y="197" text-anchor="end">N,0</text><text class="crd" style="--d:.9s" x="278" y="545" text-anchor="end">1,1</text>
+    <text class="crd" style="--d:.95s" x="392" y="197">N,0</text><text class="crd" style="--d:.95s" x="392" y="545">N,0</text>
+    <text class="crd" style="--d:.9s" x="348" y="99">N,0</text><text class="crd" style="--d:.9s" x="1457" y="99" text-anchor="end">1,1</text>
+    <text class="crd" style="--d:.95s" x="768" y="180" text-anchor="end">N,0</text><text class="crd" style="--d:.95s" x="432" y="548">N,0</text>
+
+    <!-- legend -->
+    <rect x="470" y="684" width="30" height="22" rx="5" fill="url(#genta)"/><text class="lgd" x="510" y="701">Entity</text>
+    <polygon points="628,684 656,699 628,714 600,699" fill="url(#grel)"/><text class="lgd" x="668" y="701">Relationship</text>
+    <ellipse cx="878" cy="699" rx="24" ry="14" fill="url(#gatt)"/><text class="lgd" x="910" y="701">Attribute</text>
+    <text class="lgd" x="1058" y="701">labels = (max, min) cardinality</text>
+  </svg>
+  </div>
+</div>
+
+
+<div id="lightbox" aria-hidden="true">
+  <button id="lbclose" title="Close (Esc)" aria-label="Close">✕</button>
+  <figure class="lb-chrome">
+    <div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr" id="lb-addr"></span></div>
+    <img id="lb-img" alt="">
+    <figcaption id="lb-cap"></figcaption>
+  </figure>
+</div>
+
+<div id="notes"><span class="nlabel">SPEAKER NOTES · press S to hide</span><span id="notes-body"></span></div>
+<div id="hud">
+  <span id="counter">1 / 27</span>
+  <button id="prev" title="Previous (←)">‹</button>
+  <button id="next" title="Next (→)">›</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var stage=document.getElementById('stage');
+  var slides=Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var N=slides.length;
+  var reduced=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- speaker chips (injected from data-chip) ---- */
+  slides.forEach(function(s){
+    var c=s.getAttribute('data-chip');
+    if(c && !s.classList.contains('divider')){
+      var d=document.createElement('div');d.className='chip';d.textContent=c;s.appendChild(d);
+    }
+  });
+
+  /* ---- scaling ---- */
+  function fit(){
+    var s=Math.min(window.innerWidth/1920, window.innerHeight/1080);
+    stage.style.transform='translate(-50%,-50%) scale('+s+')';
+    window.__scale=s;
+    if(typeof layoutGrade==='function')layoutGrade();
+  }
+  window.addEventListener('resize',fit);fit();
+
+  /* ---- navigation + click-to-reveal build ---- */
+  var cur=-1, counters=[], stepEls=[], shown=0;
+  var notesWin=null, notesT0=null;
+  function clamp(i){return Math.max(0,Math.min(N-1,i));}
+  function fmt(n){return n.toLocaleString('en-US');}
+  /* dividers + the title/closing slides appear whole; every other slide builds element-by-element */
+  function buildAll(slide){return slide.classList.contains('divider')||slide.classList.contains('title-slide')||slide.hasAttribute('data-allvisible');}
+  /* bottom chip-rows and handoff captions appear immediately on entry, not as click-steps */
+  function isInstant(el){
+    if(el.classList.contains('handoff'))return true;
+    var k=el.children; if(!k.length)return false;
+    var hasBadge=false;
+    for(var i=0;i<k.length;i++){ if(k[i].classList.contains('badge'))hasBadge=true; else return false; }
+    return hasBadge;
+  }
+  function notNested(el,slide){var p=el.parentElement;while(p&&p!==slide){if(p.classList&&p.classList.contains('build-once'))return false;p=p.parentElement;}return true;}
+  function getSteps(slide){
+    if(slide.hasAttribute('data-checkwalk')){
+      return [].slice.call(slide.querySelectorAll('.check'));
+    }
+    return [].slice.call(slide.querySelectorAll('.rise,.build-once,.spot')).filter(function(el){
+      return notNested(el,slide)&&!isInstant(el);
+    });
+  }
+  function getInstant(slide){
+    return [].slice.call(slide.querySelectorAll('.rise')).filter(function(el){
+      return notNested(el,slide)&&isInstant(el);
+    });
+  }
+  function animateCount(el){
+    var target=parseInt(el.getAttribute('data-target'),10); if(isNaN(target))return;
+    var pre=el.getAttribute('data-prefix')||'', suf=el.getAttribute('data-suffix')||'';
+    if(reduced){el.textContent=pre+fmt(target)+suf;return;}
+    var t0=null;
+    function step(t){if(t0===null)t0=t;var p=Math.min(1,(t-t0)/1200),e=1-Math.pow(1-p,3);
+      el.textContent=pre+fmt(Math.round(target*e))+suf; if(p<1)counters.push(requestAnimationFrame(step));}
+    counters.push(requestAnimationFrame(step));
+  }
+  function animateGscore(){
+    var g=document.getElementById('gscore'); if(!g)return;
+    if(reduced){g.textContent='80%';return;}
+    g.textContent='0%';
+    setTimeout(function(){
+      var t0=null;
+      function st(t){if(t0===null)t0=t;var p=Math.min(1,(t-t0)/1100),e=1-Math.pow(1-p,3);
+        g.textContent=Math.round(80*e)+'%'; if(p<1)counters.push(requestAnimationFrame(st));}
+      counters.push(requestAnimationFrame(st));
+    },500);
+  }
+  function revealStep(el){
+    el.classList.add('shown');
+    if(el.classList.contains('spot')){
+      var sl=el.closest('.slide');
+      if(sl) sl.querySelectorAll('.spot').forEach(function(c){c.classList.remove('spot-on');});
+      el.classList.add('spot-on');
+    }
+    (el.classList.contains('count')?[el]:[].slice.call(el.querySelectorAll('.count'))).forEach(animateCount);
+    if(el.id==='gradeWrap'){ layoutGrade(); animateGscore(); }
+  }
+  function hideStep(el){
+    el.classList.remove('shown');
+    if(el.classList.contains('spot')) el.classList.remove('spot-on');
+    (el.classList.contains('count')?[el]:[].slice.call(el.querySelectorAll('.count'))).forEach(function(c){
+      c.textContent=(c.getAttribute('data-prefix')||'')+'0'+(c.getAttribute('data-suffix')||'');
+    });
+    if(el.id==='gradeWrap'){var g=document.getElementById('gscore'); if(g)g.textContent='0%';}
+  }
+  function setActive(i){
+    clearCascade();
+    if(cur>=0){
+      slides[cur].classList.remove('active');
+      var v=slides[cur].querySelector('video'); if(v&&!v.paused){try{v.pause();}catch(e){}}
+    }
+    counters.forEach(function(id){cancelAnimationFrame(id);}); counters=[];
+    cur=i;
+    var slide=slides[cur];
+    slide.classList.add('active');
+    stepEls=getSteps(slide);
+    stepEls.forEach(function(e){hideStep(e);});
+    getInstant(slide).forEach(function(e){e.classList.add('shown');});
+    update();
+  }
+  function go(i,fill){
+    if(isEditing())return;
+    i=clamp(i); if(i===cur)return;
+    setActive(i);
+    if(fill||buildAll(slides[cur])){ stepEls.forEach(revealStep); shown=stepEls.length; }
+    else { shown=0; if(stepEls.length && !slides[cur].hasAttribute('data-spotlight') && !slides[cur].hasAttribute('data-checkwalk')){ revealStep(stepEls[0]); shown=1; } }
+  }
+  var cascadeTimers=[];
+  function clearCascade(){ cascadeTimers.forEach(clearTimeout); cascadeTimers=[]; }
+  function advance(){
+    if(isEditing())return;
+    if(shown<stepEls.length){
+      if(slides[cur].hasAttribute('data-cascade')){
+        clearCascade();
+        var slide=slides[cur], d=0;
+        while(shown<stepEls.length){
+          (function(el){ cascadeTimers.push(setTimeout(function(){ if(slides[cur]===slide) revealStep(el); }, d)); })(stepEls[shown]);
+          d+=130; shown++;
+        }
+      } else { revealStep(stepEls[shown]); shown++; }
+    } else if(cur<N-1){ go(cur+1); }
+  }
+  function back(){ if(isEditing())return; clearCascade(); if(cur>0) go(cur-1,true); }
+  function update(){
+    document.getElementById('counter').textContent=(cur+1)+' / '+N;
+    document.getElementById('progress').style.width=(cur/(N-1)*100)+'%';
+    try{history.replaceState(null,'','#'+(cur+1));}catch(e){}
+    try{localStorage.setItem('apex-deck-slide',String(cur));}catch(e){}
+    var src=slides[cur].querySelector('.notes-src');
+    document.getElementById('notes-body').innerHTML=src?src.innerHTML:'(no notes for this slide)';
+    if(typeof layoutGrade==='function')layoutGrade();
+    syncNotes();
+  }
+
+  /* ---- speaker-notes presenter window (press S) — mirrors presentation/index.html ---- */
+  function slideLabel(s){
+    if(!s)return '';
+    var c=(s.getAttribute('data-chip')||'').trim();
+    if(c)return c;
+    var h=s.querySelector('h1,h2');
+    return h?h.textContent.trim():'';
+  }
+  var notesTick=null, pvTries=0, pvEditing=false, pvEditSlide=-1;
+  function isEditing(){return pvEditing&&!!notesWin&&!notesWin.closed;}
+  function pvCSS(){
+    return '*{margin:0;box-sizing:border-box}'
+      +'html,body{height:100%}'
+      +'body{background:#0b1120;color:#e5e8ee;font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;padding:18px;display:flex;flex-direction:column;gap:14px}'
+      +'#pvtop{display:flex;align-items:center;justify-content:space-between;flex:none}'
+      +'#pvtop #pvclock{font:800 40px "JetBrains Mono",ui-monospace,monospace;background:linear-gradient(100deg,#2563eb,#7c3aed);-webkit-background-clip:text;background-clip:text;color:transparent}'
+      +'#pvtop #pvcounter{font:600 14px "JetBrains Mono",ui-monospace,monospace;color:#8b96ad;letter-spacing:.1em;text-transform:uppercase;background:none;border:0;padding:0}'
+      +'#pvgrid{flex:1;display:grid;grid-template-columns:1.9fr 1fr;gap:18px;min-height:0}'
+      +'#pvcur{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}'
+      +'#curthumb{flex:1;min-height:0}'
+      +'#pvside{display:flex;flex-direction:column;gap:14px;min-height:0;min-width:0}'
+      +'.pvlabel{display:flex;align-items:center;gap:10px;font:600 12px "JetBrains Mono",ui-monospace,monospace;color:#8b96ad;letter-spacing:.12em;text-transform:uppercase;flex:none}'
+      +'.pvlabel .tag{padding:3px 9px;border-radius:6px;background:#1b2947;color:#a5b4fc}'
+      +'.pvlabel .tag.next{background:linear-gradient(100deg,#2563eb,#7c3aed);color:#fff}'
+      +'.thumb{position:relative;overflow:hidden;width:100%;border:1px solid rgba(139,150,173,.28);border-radius:12px;background:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.4)}'
+      +'#notewrap{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0}'
+      +'#pvnotes{flex:1;overflow-y:auto;font-size:18px;line-height:1.5;color:#c9d2e3;padding-right:6px}'
+      +'#pvnotes em{color:#8b96ad}'
+      +'#pvnotes ul{margin:0;padding-inline-start:1.15em}'
+      +'#pvnotes li{margin:.34em 0}'
+      +'.pvbtn{font:600 11px "JetBrains Mono",ui-monospace,monospace;color:#e5e8ee;background:#1b2947;border:1px solid rgba(139,150,173,.3);border-radius:6px;padding:4px 10px;cursor:pointer;text-transform:none;letter-spacing:normal}'
+      +'.pvbtn:hover{background:#24345a}'
+      +'#notewrap .pvlabel{align-items:center}'
+      +'#notewrap .pvbtns{margin-inline-start:auto;display:flex;gap:8px}'
+      +'#pvnotes.editing{outline:1px solid #7c3aed;border-radius:8px;padding:8px 10px;background:rgba(124,58,237,.06);cursor:text}'
+      +'#pvnotes.editing ul{list-style:disc}'
+      +'.pvempty{display:flex;align-items:center;justify-content:center;height:100%;color:#5b6780;font:600 14px "JetBrains Mono",ui-monospace,monospace;letter-spacing:.1em}'
+      /* cloned slides: force every build-step visible so the preview is the full slide */
+      +'.thumb .slide{opacity:1 !important;visibility:visible !important}'
+      +'.thumb .rise,.thumb .build-once,.thumb .spot,.thumb .check{opacity:1 !important;visibility:visible !important}'
+      +'.thumb .check{color:var(--ok) !important;border-color:var(--ok) !important;background:rgba(52,211,153,.12) !important}';
+  }
+  function openNotes(){
+    if(notesWin&&!notesWin.closed){notesWin.focus();syncNotes();return;}
+    notesWin=window.open('','apexnotes','width=1280,height=800');
+    if(!notesWin)return;
+    pvEditing=false; pvEditSlide=-1;
+    if(!notesT0)notesT0=Date.now();
+    var dcss='';
+    Array.prototype.forEach.call(document.querySelectorAll('style'),function(s){dcss+=s.textContent+'\n';});
+    var body='<div id="pvtop"><div id="pvclock">00:00</div><div id="pvcounter"></div></div>'
+      +'<div id="pvgrid">'
+      +'<div id="pvcur"><div class="pvlabel"><span class="tag">Now</span><span id="curlabel"></span></div><div class="thumb" id="curthumb"></div></div>'
+      +'<div id="pvside">'
+      +'<div><div class="pvlabel"><span class="tag next">Next</span><span id="nextlabel"></span></div><div class="thumb" id="nextthumb"></div></div>'
+      +'<div id="notewrap"><div class="pvlabel"><span class="tag">Notes</span><span class="pvbtns"><button id="pv-edit" class="pvbtn">&#9998; Edit</button><button id="pv-save" class="pvbtn" hidden>&#10003; Save</button><button id="pv-cancel" class="pvbtn" hidden>&#10005; Dismiss</button></span></div><div id="pvnotes"></div></div>'
+      +'</div></div>';
+    /* build the popup document via DOM (no literal html/body tags in JS — a host HTML
+       prettifier can inject a newline into such a string and break the script) */
+    var pd=notesWin.document;
+    pd.title='APEX — Presenter View';
+    Array.prototype.forEach.call(document.querySelectorAll('head link[rel="stylesheet"]'),function(l){
+      var nl=pd.createElement('link'); nl.rel='stylesheet'; nl.href=l.href; pd.head.appendChild(nl);
+    });
+    var pst=pd.createElement('style'); pst.textContent=dcss+pvCSS(); pd.head.appendChild(pst);
+    if(!pd.body)pd.documentElement.appendChild(pd.createElement('body'));
+    pd.body.innerHTML=body;
+    notesWin.addEventListener('resize',function(){drawPreviews();});
+    pd.addEventListener('keydown',onKey);
+    var eBtn=pd.getElementById('pv-edit'), sBtn=pd.getElementById('pv-save'), cBtn=pd.getElementById('pv-cancel');
+    if(eBtn)eBtn.addEventListener('click',startEdit);
+    if(sBtn)sBtn.addEventListener('click',saveEdit);
+    if(cBtn)cBtn.addEventListener('click',cancelEdit);
+    syncNotes();
+  }
+  function renderPreview(host,slide){
+    if(!host||!notesWin||notesWin.closed)return;
+    var d=notesWin.document;
+    host.innerHTML='';
+    if(!slide){host.innerHTML='<div class="pvempty">END OF DECK</div>';return;}
+    var W=host.clientWidth, H=host.clientHeight;
+    if(!W)return;
+    var scale=H>0?Math.min(W/1920,H/1080):W/1920;
+    if(H<=0)host.style.height=Math.round(1080*scale)+'px';
+    var box=d.createElement('div');
+    box.style.cssText='position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale('+scale+');transform-origin:center center';
+    var clone=d.importNode(slide,true);
+    clone.classList.add('active');
+    clone.classList.remove('past','future');
+    box.appendChild(clone);
+    host.appendChild(box);
+  }
+  function drawPreviews(){
+    if(!notesWin||notesWin.closed)return;
+    var d=notesWin.document, curHost=d.getElementById('curthumb');
+    if(!curHost)return;
+    if((!curHost.clientWidth||!curHost.clientHeight)&&pvTries<30){pvTries++;notesWin.requestAnimationFrame(drawPreviews);return;}
+    pvTries=0;
+    renderPreview(curHost,slides[cur]);
+    renderPreview(d.getElementById('nextthumb'),cur<N-1?slides[cur+1]:null);
+  }
+  function syncNotes(){
+    if(!notesWin||notesWin.closed)return;
+    try{
+      var s=slides[cur], src=s.querySelector('.notes-src'), d=notesWin.document, lab=slideLabel(s);
+      var cEl=d.getElementById('pvcounter'); if(cEl)cEl.textContent='Slide '+(cur+1)+' / '+N;
+      var cl=d.getElementById('curlabel'); if(cl)cl.textContent=lab||('Slide '+(cur+1));
+      var nl=d.getElementById('nextlabel'); if(nl)nl.textContent=cur<N-1?(slideLabel(slides[cur+1])||('Slide '+(cur+2))):'—';
+      var nb=d.getElementById('pvnotes'); if(nb&&!isEditing())nb.innerHTML=src?src.innerHTML:'<em>No notes for this slide.</em>';
+      drawPreviews();
+    }catch(err){}
+  }
+  if(!notesTick)notesTick=setInterval(function(){
+    if(!notesWin||notesWin.closed||!notesT0)return;
+    try{
+      var sec=Math.floor((Date.now()-notesT0)/1000);
+      var mm=String(Math.floor(sec/60)).padStart(2,'0'), ss=String(sec%60).padStart(2,'0');
+      var c=notesWin.document.getElementById('pvclock'); if(c)c.textContent=mm+':'+ss;
+    }catch(err){}
+  },1000);
+
+  /* ---- inline notes editing in the presenter panel (Edit / Save / Dismiss) ---- */
+  function pvSetButtons(editing){
+    if(!notesWin||notesWin.closed)return;
+    var d=notesWin.document, e=d.getElementById('pv-edit'), s=d.getElementById('pv-save'), c=d.getElementById('pv-cancel');
+    if(e)e.hidden=editing; if(s)s.hidden=!editing; if(c)c.hidden=!editing;
+  }
+  function startEdit(){
+    if(!notesWin||notesWin.closed)return;
+    var nb=notesWin.document.getElementById('pvnotes'); if(!nb)return;
+    pvEditing=true; pvEditSlide=cur; nb.contentEditable='true'; nb.classList.add('editing'); pvSetButtons(true);
+    if((nb.innerText||'').trim()==='No notes for this slide.')nb.innerHTML='';
+    nb.focus();
+  }
+  function exitEdit(){
+    pvEditing=false; pvEditSlide=-1;
+    if(!notesWin||notesWin.closed)return;
+    var nb=notesWin.document.getElementById('pvnotes'); if(nb){nb.contentEditable='false'; nb.classList.remove('editing');}
+    pvSetButtons(false);
+  }
+  function pvBulletsHTML(lines){
+    function esc(x){return x.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    lines=lines.map(function(l){return l.trim();}).filter(Boolean);
+    if(!lines.length)return '<div dir="rtl"><em>No notes for this slide.</em></div>';
+    return '<div dir="rtl"><ul>'+lines.map(function(l){return '<li>'+esc(l)+'</li>';}).join('')+'</ul></div>';
+  }
+  function saveEdit(){
+    if(!notesWin||notesWin.closed)return;
+    var nb=notesWin.document.getElementById('pvnotes'); if(!nb)return;
+    var html=pvBulletsHTML((nb.innerText||'').split('\n'));
+    var i=pvEditSlide>=0?pvEditSlide:cur;
+    var s=slides[i]&&slides[i].querySelector('.notes-src'); if(s)s.innerHTML=html;
+    if(i===cur){var nbo=document.getElementById('notes-body'); if(nbo)nbo.innerHTML=html;}
+    exitEdit(); nb.innerHTML=html;
+  }
+  function cancelEdit(){
+    var nb=(notesWin&&!notesWin.closed)?notesWin.document.getElementById('pvnotes'):null;
+    var i=pvEditSlide>=0?pvEditSlide:cur;
+    var s=slides[i]&&slides[i].querySelector('.notes-src');
+    exitEdit(); if(nb)nb.innerHTML=s?s.innerHTML:'<em>No notes for this slide.</em>';
+  }
+
+  /* ---- count-ups are triggered per-reveal in revealStep/animateCount ---- */
+
+  /* ---- keys ---- */
+  function onKey(e){
+    if(isEditing()&&e.key==='Escape'){e.preventDefault();cancelEdit();return;}
+    var tag=(e.target&&e.target.tagName)||'';
+    if(tag==='VIDEO'||tag==='INPUT'||tag==='TEXTAREA')return;
+    if(e.target&&e.target.isContentEditable)return;
+    if(document.getElementById('lightbox').classList.contains('open')){
+      if(e.key==='Escape'||e.key==='Enter'||e.key===' '){e.preventDefault();closeLightbox();}
+      return; /* trap all nav keys while the lightbox is open */
+    }
+    var erdOv=document.getElementById('erdOverlay');
+    if(e.key==='o'||e.key==='O'){ e.preventDefault(); erdOv.classList.toggle('erd-open'); return; }
+    if(erdOv.classList.contains('erd-open')){ if(e.key==='Escape'){e.preventDefault();erdOv.classList.remove('erd-open');} return; }
+    switch(e.key){
+      case 'ArrowRight': case ' ': case 'PageDown': case 'n': case 'N': e.preventDefault(); advance(); break;
+      case 'ArrowLeft': case 'PageUp': case 'p': case 'P': e.preventDefault(); back(); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End': e.preventDefault(); go(N-1,true); break;
+      case 'f': case 'F':
+        if(document.fullscreenElement){document.exitFullscreen&&document.exitFullscreen();}
+        else{document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}
+        break;
+      case 's': case 'S':
+        e.preventDefault(); openNotes();
+        break;
+    }
+  }
+  document.addEventListener('keydown',onKey);
+  document.getElementById('prev').addEventListener('click',function(){back();});
+  (function(){var ov=document.getElementById('erdOverlay');if(ov){var c=document.getElementById('erdClose');if(c)c.addEventListener('click',function(){ov.classList.remove('erd-open');});ov.addEventListener('click',function(e){if(e.target===ov)ov.classList.remove('erd-open');});}})();
+  document.getElementById('next').addEventListener('click',function(){advance();});
+
+  /* ---- lightbox: click a framed screenshot to view it full-size in the same frame ---- */
+  var lb=document.getElementById('lightbox'),
+      lbImg=document.getElementById('lb-img'),
+      lbAddr=document.getElementById('lb-addr'),
+      lbCap=document.getElementById('lb-cap');
+  function openLightbox(fig){
+    var img=fig.querySelector('img'); if(!img)return;
+    lbImg.src=img.currentSrc||img.getAttribute('src');
+    lbImg.alt=img.alt||'';
+    var addr=fig.querySelector('.addr');
+    lbAddr.textContent=addr?addr.textContent.trim():'';
+    var cap=fig.querySelector('figcaption');
+    lbCap.textContent=(cap&&cap.firstChild)?(cap.firstChild.textContent||'').trim():'';
+    lb.classList.add('open'); lb.setAttribute('aria-hidden','false');
+  }
+  function closeLightbox(){ lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); }
+  window.closeLightbox=closeLightbox;
+  [].slice.call(document.querySelectorAll('figure.chrome')).forEach(function(fig){
+    if(!fig.querySelector('img'))return; /* skip the demo video frame */
+    fig.classList.add('zoomable');
+    fig.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); openLightbox(fig); });
+  });
+  lb.addEventListener('click',closeLightbox);
+  document.getElementById('lbclose').addEventListener('click',function(e){e.stopPropagation();closeLightbox();});
+
+  /* ---- hard guard: taps/swipes on the slide body never navigate ----
+     Only real controls (nav buttons, screenshots, the viewer, the video)
+     act on a tap; every other pointer/touch event on the stage is swallowed
+     so no host or stray handler can advance the deck by tapping. */
+  function isInteractive(t){
+    return !!(t.closest && (t.closest('#hud')||t.closest('#lightbox')||t.closest('figure.chrome')||t.closest('button')||t.closest('a')||t.closest('video')||t.closest('input')||t.closest('textarea')));
+  }
+  ['pointerdown','pointerup','mousedown','mouseup','click','dblclick','touchstart','touchend'].forEach(function(type){
+    window.addEventListener(type,function(e){
+      if(isInteractive(e.target))return;
+      e.stopPropagation();
+      if(typeof e.stopImmediatePropagation==='function')e.stopImmediatePropagation();
+    },true);
+  });
+  window.addEventListener('hashchange',function(){
+    var h=parseInt((location.hash||'').replace('#',''),10);
+    if(!isNaN(h)&&h-1!==cur)go(h-1,true);
+  });
+
+  /* ---- demo video graceful fallback ---- */
+  var vid=document.getElementById('demo-video');
+  if(vid){
+    vid.addEventListener('error',function(){
+      var frame=document.getElementById('demo-frame');
+      if(!frame)return;
+      frame.innerHTML='<img src="./screenshots/demo-poster.png" alt="Demo walkthrough poster" style="width:100%;height:100%;object-fit:contain">';
+    });
+  }
+
+  /* ---- exam-runner ticking timer (derived, echoing the design) ---- */
+  var t0=Date.now();
+  setInterval(function(){
+    var el=document.getElementById('runner-timer');
+    if(!el)return;
+    var total=45*60, left=total-Math.floor((Date.now()-t0)/1000)%total;
+    var m=Math.floor(left/60), s=left%60;
+    el.textContent=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+  },1000);
+
+  /* ---- ER hover: highlight related lines ---- */
+  var ents=document.querySelectorAll('.ent');
+  Array.prototype.forEach.call(ents,function(g){
+    var name=g.id.replace('e-','');
+    g.addEventListener('mouseenter',function(){
+      var rels=document.querySelectorAll('.rel');
+      Array.prototype.forEach.call(rels,function(r){
+        if((r.getAttribute('data-e')||'').split(' ').indexOf(name)>=0)r.classList.add('hot');
+      });
+    });
+    g.addEventListener('mouseleave',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.rel.hot'),function(r){r.classList.remove('hot');});
+    });
+  });
+
+  /* ---- self-aligning architecture diagram (slide 7) ---- */
+  function layoutArch(){
+    var $=function(id){return document.getElementById(id);};
+    var br=$('arch-browser'), gin=$('arch-gin'), pg=$('arch-pg'), judge=$('arch-judge');
+    var c1=$('arch-conn1'), c2=$('arch-conn2'), cv=$('arch-connv');
+    var d1=$('arch-dot1'), d2=$('arch-dot2'), dd=$('arch-dotdown'), du=$('arch-dotup');
+    if(!br||!gin||!pg||!judge)return;
+    /* vertical midline = center of the Gin box; center side boxes on it */
+    var mid=gin.offsetTop+gin.offsetHeight/2;
+    br.style.top=Math.round(mid-br.offsetHeight/2)+'px';
+    pg.style.top=Math.round(mid-pg.offsetHeight/2)+'px';
+    /* horizontal connectors: edge to edge, on the midline */
+    var brR=br.offsetLeft+br.offsetWidth, ginL=gin.offsetLeft, ginR=gin.offsetLeft+gin.offsetWidth, pgL=pg.offsetLeft;
+    c1.style.left=(brR-2)+'px'; c1.style.width=(ginL-brR+4)+'px'; c1.style.top=Math.round(mid-2)+'px';
+    c2.style.left=(ginR-2)+'px'; c2.style.width=(pgL-ginR+4)+'px'; c2.style.top=Math.round(mid-2)+'px';
+    if(d1){d1.style.left=(brR+1)+'px'; d1.style.top=Math.round(mid-6.5)+'px'; d1.style.setProperty('--dx',(ginL-brR-15)+'px');}
+    if(d2){d2.style.left=(ginR+1)+'px'; d2.style.top=Math.round(mid-6.5)+'px'; d2.style.setProperty('--dx',(pgL-ginR-15)+'px');}
+    /* Judge0 centered under the Gin box; vertical connector edge to edge */
+    var cx=gin.offsetLeft+gin.offsetWidth/2;
+    judge.style.left=Math.round(cx-judge.offsetWidth/2)+'px';
+    var vt=gin.offsetTop+gin.offsetHeight-2, vb=judge.offsetTop+2, vh=Math.max(0,vb-vt);
+    cv.style.left=Math.round(cx-2)+'px'; cv.style.top=vt+'px'; cv.style.height=vh+'px';
+    if(dd){dd.style.left=Math.round(cx-6.5)+'px'; dd.style.top=(vt+3)+'px'; dd.style.setProperty('--dy',(vh-16)+'px');}
+    if(du){du.style.left=Math.round(cx-6.5)+'px'; du.style.top=(vb-16)+'px'; du.style.setProperty('--dy',(-(vh-16))+'px');}
+  }
+  window.addEventListener('resize',layoutArch);
+  window.addEventListener('load',layoutArch);
+  if(document.fonts&&document.fonts.ready){document.fonts.ready.then(layoutArch);}
+  layoutArch();
+
+  /* ---- self-aligning rejection branch (backend slide) ---- */
+  function layoutPipe(){
+    var pipe=document.getElementById('pipe-row'), rr=document.getElementById('pipe-rr'),
+        line=document.getElementById('pipe-rline'), chip=document.getElementById('pipe-rchip'), rdot=document.getElementById('pipe-rdot');
+    if(!pipe||!rr||!line||!chip)return;
+    var cx=pipe.offsetLeft+rr.offsetLeft+rr.offsetWidth/2;
+    var py=pipe.offsetTop+pipe.offsetHeight;
+    line.style.left=Math.round(cx-1)+'px'; line.style.top=py+'px';
+    var cw=chip.offsetWidth, maxLeft=pipe.offsetLeft+pipe.offsetWidth-cw;
+    chip.style.left=Math.round(Math.min(Math.max(pipe.offsetLeft,cx-cw/2),maxLeft))+'px';
+    chip.style.top=(py+46)+'px';
+    if(rdot){rdot.style.left=Math.round(cx-5.5)+'px'; rdot.style.top=(py-4)+'px';}
+  }
+  window.addEventListener('resize',layoutPipe);
+  window.addEventListener('load',layoutPipe);
+  if(document.fonts&&document.fonts.ready){document.fonts.ready.then(layoutPipe);}
+  layoutPipe();
+
+  /* ---- self-aligning grading fan-out/fan-in (slide 18) ---- */
+  function layoutGrade(){
+    var wrap=document.getElementById('gradeWrap'); if(!wrap) return;
+    var svg=document.getElementById('gradeSvg'); if(!svg) return;
+    var W=wrap.clientWidth, H=wrap.clientHeight; if(!W||!H) return;
+    var gl=document.getElementById('g-left'), qb=document.getElementById('q-box'),
+        finEl=document.getElementById('g-fin'), scEl=document.getElementById('g-score');
+    /* center groups via layout top (no transforms — keeps offset* measurement transform-immune) */
+    if(gl){gl.style.top=Math.round((H-gl.offsetHeight)/2)+'px';}
+    if(qb){qb.style.left=Math.round((W-qb.offsetWidth)/2)+'px'; qb.style.top=Math.round((H-qb.offsetHeight)/2)+'px';}
+    if(finEl){finEl.style.top=Math.round((H-finEl.offsetHeight)/2)+'px';}
+    /* offset*-based geometry ignores the live .rise entrance transform, so lines never draw low */
+    function off(el){var x=0,y=0,n=el;while(n&&n!==wrap){x+=n.offsetLeft;y+=n.offsetTop;n=n.offsetParent;}return {l:x,r:x+el.offsetWidth,cy:y+el.offsetHeight/2,b:y+el.offsetHeight};}
+    var submit=off(document.getElementById('g-submit')), api=off(document.getElementById('g-api')), fin=off(finEl);
+    if(scEl){scEl.style.top=Math.round(fin.b+26)+'px';}
+    var ws=[]; for(var i=0;i<5;i++){var e=document.getElementById('w-'+i); if(e) ws.push(off(e));}
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var NS='http://www.w3.org/2000/svg';
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    function ln(x1,y1,x2,y2){var l=document.createElementNS(NS,'line');l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);l.setAttribute('stroke','#3a465e');l.setAttribute('stroke-width','2');svg.appendChild(l);}
+    function pk(x1,y1,x2,y2,dur,begin){if(reduced)return;var c=document.createElementNS(NS,'circle');c.setAttribute('r','6');c.setAttribute('fill','#8b5cf6');var m=document.createElementNS(NS,'animateMotion');m.setAttribute('dur',dur+'s');m.setAttribute('begin',begin+'s');m.setAttribute('repeatCount','indefinite');m.setAttribute('path','M'+x1+' '+y1+' L'+x2+' '+y2);c.appendChild(m);svg.appendChild(c);}
+    ln(submit.r,submit.cy,api.l,api.cy); pk(submit.r,submit.cy,api.l,api.cy,1.1,0);
+    for(var j=0;j<ws.length;j++){
+      ln(api.r,api.cy,ws[j].l,ws[j].cy);
+      ln(ws[j].r,ws[j].cy,fin.l,fin.cy);
+      pk(api.r,api.cy,ws[j].l,ws[j].cy,1.1,1.2+j*0.15);
+      pk(ws[j].r,ws[j].cy,fin.l,fin.cy,1.0,3.4+j*0.15);
+    }
+  }
+  window.addEventListener('resize',layoutGrade);
+  window.addEventListener('load',layoutGrade);
+  if(document.fonts&&document.fonts.ready){document.fonts.ready.then(layoutGrade);}
+
+  /* ---- restore position: hash > localStorage > 0 ---- */
+  var start=0;
+  var h=parseInt((location.hash||'').replace('#',''),10);
+  if(!isNaN(h)&&h>=1&&h<=N){start=h-1;}
+  else{try{var st=parseInt(localStorage.getItem('apex-deck-slide'),10);if(!isNaN(st))start=clamp(st);}catch(e){}}
+  go(start,true);
+})();
+</script>
+</body>
+</html>
