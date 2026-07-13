@@ -25,13 +25,13 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
-body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased}
+body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center}
 a{color:#7ea4f5;text-decoration:none} a:hover{color:#a78bfa}
 img{max-width:100%;display:block}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 
 /* ============ STAGE & CHROME ============ */
-#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale(1);transform-origin:center center;background:var(--bg)}
+#stage{position:relative;width:1920px;height:1080px;flex:none;transform:scale(1);transform-origin:center center;background:var(--bg)}
 #progress{position:fixed;top:0;left:0;height:5px;width:0%;background:var(--grad);z-index:60;transition:width .35s ease}
 #hud{position:fixed;right:18px;bottom:14px;z-index:60;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:14px;color:var(--dim)}
 #hud button{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:rgba(22,33,60,.85);color:var(--dim);font-size:16px;line-height:1}
@@ -42,7 +42,7 @@ body.show-notes #notes{display:block}
 #notes .nlabel{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:#a78bfa;display:block;margin-bottom:6px}
 
 /* ============ SLIDES ============ */
-.slide{position:absolute;inset:0;padding:var(--pad-top) var(--pad-x) var(--pad-bottom);display:flex;flex-direction:column;opacity:0;visibility:hidden;transition:opacity .4s ease,visibility .4s}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;padding:var(--pad-top) var(--pad-x) var(--pad-bottom);display:flex;flex-direction:column;opacity:0;visibility:hidden;transition:opacity .4s ease,visibility .4s}
 .slide.active{opacity:1;visibility:visible;z-index:5}
 .chip{position:absolute;top:34px;right:var(--pad-x);font-family:var(--mono);font-size:19px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 20px 9px 14px;display:flex;align-items:center;gap:10px;z-index:6}
 .chip::before{content:"";width:12px;height:12px;border-radius:50%;background:var(--grad135)}
@@ -340,7 +340,7 @@ table.score td.k{font-size:21px}
     <div class="member rise" style="--d:.42s"><div class="mid">Mohamed Ibrahim</div><div class="mrole">Security</div></div>
     <div class="member rise" style="--d:.46s"><div class="mid">Adham Basem</div><div class="mrole">DevOps &amp; Deployment</div></div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>أهلاً بحضراتكم وشكراً إنكم معانا النهارده</li><li>APEX منصة امتحانات: المدرّس يعمل امتحانات برمجة وMCQ ومقالي، والطالب يمتحن في المتصفح بوقت محدّد</li><li>إجابات الكود بتشتغل فعلاً جوه sandbox معزول عن طريق Judge0 وبتتصحّح أوتوماتيك</li><li>احنا خمسة، كل واحد هيشرح الجزء اللي بناه — وأنا هبدأ بالصورة الكبيرة</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>أهلاً بحضراتكم وشكراً إنكم معانا النهارده</li><li>APEX منصة امتحانات: المدرّس يعمل امتحانات برمجة وMCQ ومقالي، والطالب يمتحن في المتصفح بوقت محدّد</li><li>إجابات الكود بتشتغل فعلاً جوه sandbox معزول عن طريق Judge0 وبتتصحّح أوتوماتيك</li><li>احنا خمسة، كل واحد هيشرح الجزء اللي بناه — وأنا هبدأ بالصورة الكبيرة</li></ul></div></div>
 </section>
 
 <!-- ============================== 2 · TEAM & RUN OF SHOW ============================== -->
@@ -373,7 +373,7 @@ table.score td.k{font-size:21px}
       <p style="font-size:22px">Packaging · CI · results · closes the talk</p>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>الترتيب: أنا (التصميم والـarchitecture) ← M2 داتا ← M3 تشغيل وتصحيح ← M4 أمان ← M5 الـDevOps والنتايج</li><li>بنقفل بديمو حي أنا اللي هشغّله قدام حضراتكم</li><li>منظومة واحدة اشتغلنا عليها كفريق، كل واحد مسؤول عن جزئه</li><li>الوقت في حدود عشرين دقيقة — يلا نبدأ: بنحل مشكلة إيه؟</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>الترتيب: أنا (التصميم والـarchitecture) ← M2 داتا ← M3 تشغيل وتصحيح ← M4 أمان ← M5 الـDevOps والنتايج</li><li>بنقفل بديمو حي أنا اللي هشغّله قدام حضراتكم</li><li>منظومة واحدة اشتغلنا عليها كفريق، كل واحد مسؤول عن جزئه</li><li>الوقت في حدود عشرين دقيقة — يلا نبدأ: بنحل مشكلة إيه؟</li></ul></div></div>
 </section>
 
 <!-- ============================== 3 · DIVIDER: PROBLEM ============================== -->
@@ -381,7 +381,7 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Act 1</div>
   <h2 class="div-title rise" style="--d:.08s">The Problem &amp;<br>Our Solution</h2>
   <div class="div-speaker rise" style="--d:.16s">M1 · Team Lead</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال: قبل ما نوريكم بنينا إيه، ليه امتحانات البرمجة صعبة بالطرق الحالية؟</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال: قبل ما نوريكم بنينا إيه، ليه امتحانات البرمجة صعبة بالطرق الحالية؟</li></ul></div></div>
 </section>
 
 <!-- ============================== 4 · THE PROBLEM ============================== -->
@@ -404,7 +404,7 @@ table.score td.k{font-size:21px}
       <p>In the browser, a refresh or crash can wipe answers or reset a timer — a timed exam has to survive failure.</p>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>امتحان البرمجة محتاج تلات حاجات مش موجودة في الورق والأدوات العامة</li><li>الكود لازم يشتغل فعلاً، مش بس يتكتب</li><li>التصحيح لازم يبقى موحّد وعادل، مش مزاجي وبطيء</li><li>الوقت لازم يفضل آمن حتى لو النت وقع من الطالب</li><li>كل وجع فيهم بيتحل في جزء من APEX هنوريه</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>امتحان البرمجة محتاج تلات حاجات مش موجودة في الورق والأدوات العامة</li><li>الكود لازم يشتغل فعلاً، مش بس يتكتب</li><li>التصحيح لازم يبقى موحّد وعادل، مش مزاجي وبطيء</li><li>الوقت لازم يفضل آمن حتى لو النت وقع من الطالب</li><li>كل وجع فيهم بيتحل في جزء من APEX هنوريه</li></ul></div></div>
 </section>
 
 <!-- ============================== 4b · EXISTING TOOLS ============================== -->
@@ -422,7 +422,7 @@ table.score td.k{font-size:21px}
     </div>
   </div>
   <div class="rise" style="--d:.3s;text-align:center;font-size:44px;font-weight:800;margin-top:var(--gap-item)"><span style="color:var(--ok)">✓</span> APEX = <span class="gt">both</span></div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>كل أداة موجودة بتحل نص المشكلة بس</li><li>تطبيقات الكويز: شكلها حلو بس مبتشغّلش كود</li><li>الـonline judges الخام: بتشغّل كود بس مفيش workflow للفصل (لا كلاسات ولا توقيت ولا درجات)</li><li>APEX هو نقطة التقاطع اللي بتجمع الاتنين</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>كل أداة موجودة بتحل نص المشكلة بس</li><li>تطبيقات الكويز: شكلها حلو بس مبتشغّلش كود</li><li>الـonline judges الخام: بتشغّل كود بس مفيش workflow للفصل (لا كلاسات ولا توقيت ولا درجات)</li><li>APEX هو نقطة التقاطع اللي بتجمع الاتنين</li></ul></div></div>
 </section>
 
 <!-- ============================== 5 · THE SOLUTION ============================== -->
@@ -448,7 +448,7 @@ table.score td.k{font-size:21px}
   <div style="display:flex;gap:16px;margin-top:var(--gap-item)" class="rise">
     <span class="badge">Go 1.25 · Gin · GORM</span><span class="badge">React 18 · Vite · TypeScript</span><span class="badge">PostgreSQL 16</span><span class="badge">Judge0</span><span class="badge">Docker Compose</span><span class="badge">JWT auth</span>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>APEX منصة full-stack كاملة: تبني وتشغّل وتصحّح الامتحانات في المتصفح</li><li>التلات ركايز بتقابل التلات مشاكل اللي قلنا عليهم</li><li>اخترنا الأدوات بوعي: Gin وMonaco وJudge0 دمجناها جوه نظام صمّمناه وبنيناه بنفسنا</li><li>انتقال: يلا نبص على الـarchitecture</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>APEX منصة full-stack كاملة: تبني وتشغّل وتصحّح الامتحانات في المتصفح</li><li>التلات ركايز بتقابل التلات مشاكل اللي قلنا عليهم</li><li>اخترنا الأدوات بوعي: Gin وMonaco وJudge0 دمجناها جوه نظام صمّمناه وبنيناه بنفسنا</li><li>انتقال: يلا نبص على الـarchitecture</li></ul></div></div>
 </section>
 
 <!-- ============================== 6 · DIVIDER: ARCHITECTURE ============================== -->
@@ -456,7 +456,7 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Act 1 · continued</div>
   <h2 class="div-title rise" style="--d:.08s">Architecture &amp;<br>Core Engineering</h2>
   <div class="div-speaker rise" style="--d:.16s">M1 · Team Lead</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للنظام نفسه: صورة الـarchitecture، بعدها backend، وfrontend، وأخيراً الـexam runner</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للنظام نفسه: صورة الـarchitecture، بعدها backend، وfrontend، وأخيراً الـexam runner</li></ul></div></div>
 </section>
 
 <!-- ============================== 7 · ARCHITECTURE ============================== -->
@@ -497,7 +497,7 @@ table.score td.k{font-size:21px}
       <div class="sub">untrusted student code runs here — never on our server</div>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>من الشمال لليمين: React SPA ← Gin API ← PostgreSQL</li><li>المربع المنقّط هو المفتاح: كود الطالب بيتبعت لـJudge0 ويتنفّذ هناك، بعيد عن السيرفر والداتا</li><li>جوه الـAPI ~20 feature package متركّبين بـmain.go من 79 سطر</li><li>deployment واحد monolith، بس الكود مقسّم ومنظّم</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>من الشمال لليمين: React SPA ← Gin API ← PostgreSQL</li><li>المربع المنقّط هو المفتاح: كود الطالب بيتبعت لـJudge0 ويتنفّذ هناك، بعيد عن السيرفر والداتا</li><li>جوه الـAPI ~20 feature package متركّبين بـmain.go من 79 سطر</li><li>deployment واحد monolith، بس الكود مقسّم ومنظّم</li></ul></div></div>
 </section>
 
 <!-- ============================== 8 · BACKEND ============================== -->
@@ -533,7 +533,7 @@ table.score td.k{font-size:21px}
       <span class="badge">Go 1.25 · Gin · GORM</span><span class="badge">~65 REST endpoints</span><span class="badge">~6,100 lines of Go</span><span class="badge">stateless JWT</span>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>كل request بيعدي على نفس السلسلة قبل أي handler</li><li>الـauthentication والـauthorization منفصلين ومترتبين</li><li>token صح بس دور غلط ← بيموت عند RequireRole قبل ما يوصل للكود</li><li>الحجم: ~6,100 سطر Go على ~65 endpoint</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>كل request بيعدي على نفس السلسلة قبل أي handler</li><li>الـauthentication والـauthorization منفصلين ومترتبين</li><li>token صح بس دور غلط ← بيموت عند RequireRole قبل ما يوصل للكود</li><li>الحجم: ~6,100 سطر Go على ~65 endpoint</li></ul></div></div>
 </section>
 
 <!-- ============================== 9 · FRONTEND ============================== -->
@@ -559,7 +559,7 @@ table.score td.k{font-size:21px}
   <div style="display:flex;gap:16px;margin-top:var(--gap-item)" class="rise">
     <span class="badge">React 18 + Vite + TypeScript</span><span class="badge">Tailwind · shadcn/Radix</span><span class="badge">Monaco editor</span><span class="badge">~17,400 lines · 22 routes</span>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>تلات screenshots حقيقية: login، شاشة المدرّس، شاشة الطالب</li><li>نفس الـSPA — الدور اللي جوه الـJWT بيحدد إنت تشوف أنهي routes</li><li>~17,400 سطر TypeScript على 22 route</li><li>مبني على shadcn وRadix، وMonaco لكتابة الكود</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>تلات screenshots حقيقية: login، شاشة المدرّس، شاشة الطالب</li><li>نفس الـSPA — الدور اللي جوه الـJWT بيحدد إنت تشوف أنهي routes</li><li>~17,400 سطر TypeScript على 22 route</li><li>مبني على shadcn وRadix، وMonaco لكتابة الكود</li></ul></div></div>
 </section>
 
 <!-- ============================== 10 · EXAM RUNNER ============================== -->
@@ -580,7 +580,7 @@ table.score td.k{font-size:21px}
       <div class="callout rise" style="--d:.36s"><h5>~1,170-line crash-safe runner</h5><p>Reload mid-exam → answers and clock restore exactly where you were.</p></div>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>أعمق شغل في الـfrontend، وعده: refresh أو نت واقع أو هنج ما يخسّرش الطالب امتحانه</li><li>الوقت بيتحسب من الـstartedAt على السيرفر — مفيش حاجة في المتصفح تصفّر العداد</li><li>الإجابة بتتحفظ مرتين: محلياً مع كل حرف، وعلى السيرفر كل 1.5 ثانية بالـdebounce</li><li>في الديمو: هنعمل refresh وسط الامتحان ومش هيضيع حاجة</li><li>تسليم: M2 هيوريكم الداتا بتتخزن فين وإزاي</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>أعمق شغل في الـfrontend، وعده: refresh أو نت واقع أو هنج ما يخسّرش الطالب امتحانه</li><li>الوقت بيتحسب من الـstartedAt على السيرفر — مفيش حاجة في المتصفح تصفّر العداد</li><li>الإجابة بتتحفظ مرتين: محلياً مع كل حرف، وعلى السيرفر كل 1.5 ثانية بالـdebounce</li><li>في الديمو: هنعمل refresh وسط الامتحان ومش هيضيع حاجة</li><li>تسليم: M2 هيوريكم الداتا بتتخزن فين وإزاي</li></ul></div></div>
 </section>
 
 <!-- ============================== DIVIDER: DATA ============================== -->
@@ -588,7 +588,7 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Act 2</div>
   <h2 class="div-title rise" style="--d:.08s">Data &amp;<br>Persistence</h2>
   <div class="div-speaker rise" style="--d:.16s">M2 · Data &amp; Persistence</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>شكراً يا زميلي</li><li>الجداول دي الأساس اللي كل اللي شفتوه واقف عليه — سلايد واحد على شكلها وعلاقاتها</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>شكراً يا زميلي</li><li>الجداول دي الأساس اللي كل اللي شفتوه واقف عليه — سلايد واحد على شكلها وعلاقاتها</li></ul></div></div>
 </section>
 
 <!-- ============================== 14b · ERD crow's-foot (physical) ============================== -->
@@ -721,7 +721,7 @@ table.score td.k{font-size:21px}
     <text class="note" x="800" y="705" text-anchor="middle" style="font-size:15px">Core of 15 tables — peripheral tables (UserProfile, Notification, Announcement, Folder, PasswordResetToken) omitted for clarity.</text>
   </svg>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>نفس الـ9 جداول الأساسية بمنظور فيزيكال: الأعمدة والـforeign keys</li><li>اليوزر عنده كذا class وكذا exam</li><li>التسجيل وتوزيع الامتحان جدولين M:N بيربطوا</li><li>المسألة البرمجية ليها كذا test case مخفي</li><li>العمود المميّز = سلسلة التصحيح: attempt ← submissions ← نتايج test</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>نفس الـ9 جداول الأساسية بمنظور فيزيكال: الأعمدة والـforeign keys</li><li>اليوزر عنده كذا class وكذا exam</li><li>التسجيل وتوزيع الامتحان جدولين M:N بيربطوا</li><li>المسألة البرمجية ليها كذا test case مخفي</li><li>العمود المميّز = سلسلة التصحيح: attempt ← submissions ← نتايج test</li></ul></div></div>
 </section>
 
 <!-- ============================== 14b · WRITE PATH ============================== -->
@@ -761,7 +761,7 @@ table.score td.k{font-size:21px}
       <span class="badge">PostgreSQL 16 · 15 tables</span><span class="badge">GORM</span><span class="badge">dual-layer autosave</span>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>تتبّع محاولة واحدة جوه الجداول:</li><li>answers: بيتكتب على طول من الـautosave</li><li>submissions: بتتعمل لحظة التسليم ومعاها Judge0 token والـverdict</li><li>scores: الصف الواحد النهائي بالدرجة</li><li>التلاتة بيتعملوا بخدمة الـmigrate، وأي كتابة owner-scoped</li><li>تسليم: M3 هيوريكم الكود بيتشغّل وبيتصحّح إزاي</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>تتبّع محاولة واحدة جوه الجداول:</li><li>answers: بيتكتب على طول من الـautosave</li><li>submissions: بتتعمل لحظة التسليم ومعاها Judge0 token والـverdict</li><li>scores: الصف الواحد النهائي بالدرجة</li><li>التلاتة بيتعملوا بخدمة الـmigrate، وأي كتابة owner-scoped</li><li>تسليم: M3 هيوريكم الكود بيتشغّل وبيتصحّح إزاي</li></ul></div></div>
 </section>
 
 <!-- ============================== 15 · DIVIDER: GRADING ============================== -->
@@ -769,7 +769,7 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Act 3</div>
   <h2 class="div-title rise" style="--d:.08s">Code Execution<br>&amp; Grading</h2>
   <div class="div-speaker rise" style="--d:.16s">M3 · Grading Engine</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>خلصنا الداتا — دلوقتي قلب المشروع: إزاي الكود بيشتغل وإزاي بنحسب الدرجة</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>خلصنا الداتا — دلوقتي قلب المشروع: إزاي الكود بيشتغل وإزاي بنحسب الدرجة</li></ul></div></div>
 </section>
 
 <!-- ============================== 15b · PLAYGROUND ============================== -->
@@ -834,7 +834,7 @@ table.score td.k{font-size:21px}
       <p class="rise" style="--d:.34s;font-size:16px;color:#7c8aa8;margin:0;text-align:center">One engine, two consumers — the compiler is general; test-case grading is just one use of it.</p>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>قبل التصحيح: المحرك اللي تحته — Playground = compiler أونلاين عادي</li><li>تختار لغة، تكتب في Monaco، تحط input، تدوس Run، يرجّعلك stdout/stderr والوقت والذاكرة</li><li>ست لغات (Python, JavaScript, TypeScript, Java, C, C++) من endpoint واحد POST /api/execute</li><li>كله جوه Judge0 sandbox بـtimeout 30 ثانية</li><li>محرك التصحيح بيستخدم نفس الـengine — بس بيغذّيه بالـtest cases المخفية ويقارن الـoutput</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>قبل التصحيح: المحرك اللي تحته — Playground = compiler أونلاين عادي</li><li>تختار لغة، تكتب في Monaco، تحط input، تدوس Run، يرجّعلك stdout/stderr والوقت والذاكرة</li><li>ست لغات (Python, JavaScript, TypeScript, Java, C, C++) من endpoint واحد POST /api/execute</li><li>كله جوه Judge0 sandbox بـtimeout 30 ثانية</li><li>محرك التصحيح بيستخدم نفس الـengine — بس بيغذّيه بالـtest cases المخفية ويقارن الـoutput</li></ul></div></div>
 </section>
 
 <!-- ============================== 16 · RUNNING UNTRUSTED CODE ============================== -->
@@ -864,7 +864,7 @@ table.score td.k{font-size:21px}
       <div class="glabel rise" style="--d:.4s;margin-top:22px;line-height:1.7">coding = auto · MCQ = auto · written = manual<br>each worker runs one test case<br>staggered finishes = truly concurrent</div>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>لما الطالب يسلّم: بنفرّع goroutines على التوازي — واحدة لكل test case مخفي</li><li>كل واحدة بتتنفّذ جوه Judge0 — السيرفر بتاعنا عمره ما بيشغّل كود الطالب</li><li>النتايج بتتجمّع في finalizer idempotent: retry أو callback متكرر مستحيل يصحّح مرتين</li><li>المثال: 4 من 5 نجحوا ← 80% على المسألة</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>لما الطالب يسلّم: بنفرّع goroutines على التوازي — واحدة لكل test case مخفي</li><li>كل واحدة بتتنفّذ جوه Judge0 — السيرفر بتاعنا عمره ما بيشغّل كود الطالب</li><li>النتايج بتتجمّع في finalizer idempotent: retry أو callback متكرر مستحيل يصحّح مرتين</li><li>المثال: 4 من 5 نجحوا ← 80% على المسألة</li></ul></div></div>
 </section>
 
 <!-- ============================== 17 · SCORING ============================== -->
@@ -889,7 +889,7 @@ table.score td.k{font-size:21px}
       </table>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>أهم قاعدة عدل: المقام = قايمة المسائل كلها، مش اللي اتحل بس</li><li>سكِپ مسألة = صفر من وزنها (مثلاً 20)، فيطلع 65/100</li><li>تصحيح موحّد وعادل: coding أوتوماتيك وMCQ أوتوماتيك</li><li>تسليم: M4 هيقولكم بنأمّن المنصة إزاي</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>أهم قاعدة عدل: المقام = قايمة المسائل كلها، مش اللي اتحل بس</li><li>سكِپ مسألة = صفر من وزنها (مثلاً 20)، فيطلع 65/100</li><li>تصحيح موحّد وعادل: coding أوتوماتيك وMCQ أوتوماتيك</li><li>تسليم: M4 هيقولكم بنأمّن المنصة إزاي</li></ul></div></div>
 </section>
 
 <!-- ============================== 18 · DIVIDER: SECURITY ============================== -->
@@ -897,42 +897,110 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Act 4</div>
   <h2 class="div-title rise" style="--d:.08s">Security</h2>
   <div class="div-speaker rise" style="--d:.16s">M4 · Security</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>شكراً يا زميلي</li><li>منصة امتحانات = هدف مغري للغش والتخريب — تعالوا نشوف بنحميها بكام طبقة</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>شكراً يا زميلي</li><li>منصة امتحانات = هدف مغري للغش والتخريب — تعالوا نشوف بنحميها بكام طبقة</li></ul></div></div>
 </section>
 
 <!-- ============================== 19 · DEFENSE IN DEPTH ============================== -->
 <section class="slide" data-chip="M4 · Security">
-  <header class="s-head rise" style="margin-bottom:10px"><h2>Defense in Depth</h2><p class="s-sub">Eight independent controls between an attacker and the data.</p></header>
-  <div class="row" style="flex:1;min-height:0;align-items:center">
-    <div class="build-once" style="flex:1.1;height:100%;min-height:0">
-      <svg viewBox="0 0 760 760" style="height:100%;max-width:100%;display:block;margin:0 auto">
-        <circle class="ring dashed rot rl" style="--d:.1s" cx="380" cy="390" r="330" stroke="rgba(37,99,235,.6)"/>
-        <circle class="ring dashed rot rev rl" style="--d:.22s" cx="380" cy="390" r="265" stroke="rgba(94,80,224,.6)"/>
-        <circle class="ring dashed rot rl" style="--d:.34s" cx="380" cy="390" r="200" stroke="rgba(124,58,237,.65)"/>
-        <circle class="ring dashed rot rev rl" style="--d:.46s" cx="380" cy="390" r="135" stroke="rgba(167,139,250,.7)"/>
-        <circle class="rl" style="--d:.58s" cx="380" cy="390" r="72" fill="rgba(124,58,237,.12)" stroke="rgba(167,139,250,.8)" stroke-width="2"/>
-        <text x="380" y="398" text-anchor="middle" style="font-size:28px;font-weight:700;font-family:var(--sans)" fill="#e5e8ee">Data</text>
-        <text class="ringlabel" x="380" y="48" text-anchor="middle">1 · edge</text>
-        <text class="ringlabel" x="380" y="113" text-anchor="middle">2 · identity</text>
-        <text class="ringlabel" x="380" y="178" text-anchor="middle">3 · authorization</text>
-        <text class="ringlabel" x="380" y="243" text-anchor="middle">4 · content</text>
-        <circle class="attackdot" cx="380" cy="60" r="8" fill="#f87171"/>
-      </svg>
+<style>
+  #did{--r1:rgba(37,99,235,.9);--r2:rgba(94,80,224,.9);--r3:rgba(124,58,237,.92);--r4:rgba(167,139,250,.95)}
+  #did{display:flex;flex:1;min-height:0;align-items:center;gap:40px}
+  #did .did-stage{flex:1.02;height:100%;min-height:0}
+  #did .did-stage svg{height:100%;max-width:100%;display:block;margin:0 auto}
+
+  /* --- live-only enrichments (snap to a clean static frame under reduced-motion) --- */
+  #did .did-sweep{transform-box:view-box;transform-origin:380px 390px}
+  .slide.active #did .did-sweep{animation:did-spin 7s linear infinite}
+  @keyframes did-spin{to{transform:rotate(360deg)}}
+
+  #did .did-pulse{transform-box:fill-box;transform-origin:center;opacity:0}
+  .slide.active #did .did-pulse{animation:did-pulse 3.4s ease-out infinite}
+  @keyframes did-pulse{0%{opacity:.55;transform:scale(1)}70%{opacity:0;transform:scale(2.15)}100%{opacity:0;transform:scale(2.15)}}
+
+  #did .did-atk{transform-box:fill-box;transform-origin:center;opacity:0}
+  .slide.active #did .did-atk{animation:did-atk 6s ease-in var(--ad,0s) infinite}
+  @keyframes did-atk{
+    0%{opacity:.9;transform:translateY(-116px) scale(1)}
+    7%{opacity:1}
+    40%{opacity:1;transform:translateY(-6px) scale(1)}
+    47%{opacity:1;transform:translateY(0) scale(2.9)}
+    54%{opacity:0;transform:translateY(0) scale(2.9)}
+    100%{opacity:0;transform:translateY(-116px) scale(1)}
+  }
+  .did-bnum{font-family:var(--mono);font-size:21px;font-weight:700}
+  .did-core-t{font-family:var(--sans);font-weight:800;letter-spacing:.04em}
+  .did-core-s{font-family:var(--mono);font-size:15px;letter-spacing:.22em}
+
+  /* --- editorial right column --- */
+  #did .did-side{flex:.98;display:flex;flex-direction:column;justify-content:center;gap:40px;padding-left:14px;
+    border-left:1px solid var(--line)}
+  #did .did-eyebrow{font-family:var(--mono);font-size:22px;letter-spacing:.16em;text-transform:uppercase;color:#a5b4fc}
+  #did .did-head{font-size:60px;font-weight:800;line-height:1.06;letter-spacing:-.02em;color:var(--ink)}
+  #did .did-grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #did .did-stats{display:flex;gap:52px}
+  #did .did-stat{display:flex;align-items:baseline;gap:14px}
+  #did .did-num{font-size:66px;font-weight:800;line-height:1;letter-spacing:-.03em}
+  #did .did-lab{font-family:var(--mono);font-size:19px;line-height:1.18;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+  #did .did-legend{display:flex;flex-direction:column;gap:15px;margin-top:2px}
+  #did .did-leg{display:flex;align-items:center;gap:18px}
+  #did .did-dot{width:15px;height:15px;border-radius:50%;background:var(--c);flex:none}
+  #did .did-ln{font-family:var(--mono);font-size:20px;color:var(--dim);width:22px;flex:none}
+  #did .did-name{font-size:30px;font-weight:600;color:var(--ink)}
+  #did .did-rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+</style>
+
+<header class="s-head rise" style="margin-bottom:6px"><h2>Defense in Depth</h2><p class="s-sub">Four concentric layers, eight independent controls — an attack dies before it reaches the data.</p></header>
+
+<div id="did" class="did-wrap">
+  <div class="did-stage build-once">
+    <svg viewBox="-70 -70 900 900">
+      <circle class="ring dashed rot rl" style="--d:.1s" cx="380" cy="390" r="330" stroke="rgba(37,99,235,.55)"/>
+      <circle class="ring dashed rot rev rl" style="--d:.22s" cx="380" cy="390" r="265" stroke="rgba(79,70,229,.55)"/>
+      <circle class="ring dashed rot rl" style="--d:.34s" cx="380" cy="390" r="200" stroke="rgba(109,40,217,.55)"/>
+      <circle class="ring dashed rot rev rl" style="--d:.46s" cx="380" cy="390" r="135" stroke="rgba(124,58,237,.6)"/>
+
+      <circle class="rl" style="--d:.58s" cx="380" cy="390" r="72" fill="#1b2947" stroke="rgba(124,58,237,.7)" stroke-width="2"/>
+      <text class="did-core-t" x="380" y="384" text-anchor="middle" font-size="30" fill="#e5e8ee">DATA</text>
+      <text class="did-core-s" x="380" y="414" text-anchor="middle" fill="#a5b4fc">SECURED</text>
+
+      <!-- on-ring numbered badges (colors mirror the legend) -->
+      <g>
+        <circle cx="380" cy="60"  r="19" fill="#0f172a" stroke="rgba(37,99,235,.9)"  stroke-width="2"/>
+        <text class="did-bnum" x="380" y="67"  text-anchor="middle" fill="#e5e8ee">1</text>
+        <circle cx="380" cy="125" r="19" fill="#0f172a" stroke="rgba(79,70,229,.9)"  stroke-width="2"/>
+        <text class="did-bnum" x="380" y="132" text-anchor="middle" fill="#e5e8ee">2</text>
+        <circle cx="380" cy="190" r="19" fill="#0f172a" stroke="rgba(109,40,217,.9)" stroke-width="2"/>
+        <text class="did-bnum" x="380" y="197" text-anchor="middle" fill="#e5e8ee">3</text>
+        <circle cx="380" cy="255" r="19" fill="#0f172a" stroke="rgba(124,58,237,.9)" stroke-width="2"/>
+        <text class="did-bnum" x="380" y="262" text-anchor="middle" fill="#e5e8ee">4</text>
+      </g>
+
+      <!-- attackers streaking in, dying at the edge (live-only) -->
+      <g transform="rotate(52 380 390)"><circle class="did-atk" style="--ad:0s"   cx="380" cy="60" r="9" fill="#f87171"/></g>
+      <g transform="rotate(146 380 390)"><circle class="did-atk" style="--ad:2s"  cx="380" cy="60" r="9" fill="#f87171"/></g>
+      <g transform="rotate(236 380 390)"><circle class="did-atk" style="--ad:4s"  cx="380" cy="60" r="9" fill="#f87171"/></g>
+    </svg>
+  </div>
+
+  <div class="did-side build-once">
+    <div class="did-eyebrow">zero&#8209;trust &nbsp;·&nbsp; fail&#8209;closed</div>
+    <h3 class="did-head">An attack <span class="did-grad">dies</span><br>before it reaches the data.</h3>
+
+    <div class="did-stats">
+      <div class="did-stat"><span class="did-num did-grad">8</span><span class="did-lab">independent<br>controls</span></div>
+      <div class="did-stat"><span class="did-num did-grad">4</span><span class="did-lab">defense<br>rings</span></div>
+      <div class="did-stat"><span class="did-num did-grad">0</span><span class="did-lab">breach<br>paths</span></div>
     </div>
-    <div style="flex:1;display:flex;flex-direction:column;gap:22px" class="build-once">
-      <div class="seclist">
-        <div class="secitem"><span class="sn">ring 1</span><div><b>Strict CORS</b> &nbsp;·&nbsp; <b>parameterized queries</b><br><span>only known origins; no string-built SQL</span></div></div>
-        <div class="secitem"><span class="sn">ring 2</span><div><b>JWT HS256 pinned to HMAC</b> &nbsp;·&nbsp; <b>bcrypt</b><br><span>pinning blocks algorithm-confusion attacks</span></div></div>
-        <div class="secitem"><span class="sn">ring 3</span><div><b>RequireRole</b> &nbsp;·&nbsp; <b>per-owner query scoping</b><br><span>wrong role or wrong owner → request dies early</span></div></div>
-        <div class="secitem"><span class="sn">ring 4</span><div><b>Hidden test cases withheld</b> &nbsp;·&nbsp; <b>fail-closed secrets</b><br><span>the browser never receives expected outputs</span></div></div>
-      </div>
-      <div class="card" style="border-color:rgba(124,58,237,.5);padding:24px 30px">
-        <div class="k" style="font-size:19px;color:#a78bfa">most prominent</div>
-        <p style="margin-top:10px;font-size:22px;color:var(--ink)">HS256 <b>pinned to HMAC</b> — forged-algorithm tokens rejected.<br>Fail-closed boot — <span class="k">JWT_SECRET &lt; 32 chars → refuses to start.</span></p>
-      </div>
+
+    <div class="did-legend">
+      <div class="did-leg" style="--c:rgba(37,99,235,.9)"><span class="did-dot"></span><span class="did-ln">1</span><span class="did-name">edge</span><span class="did-rule"></span></div>
+      <div class="did-leg" style="--c:rgba(79,70,229,.9)"><span class="did-dot"></span><span class="did-ln">2</span><span class="did-name">identity</span><span class="did-rule"></span></div>
+      <div class="did-leg" style="--c:rgba(109,40,217,.9)"><span class="did-dot"></span><span class="did-ln">3</span><span class="did-name">authorization</span><span class="did-rule"></span></div>
+      <div class="did-leg" style="--c:rgba(124,58,237,.9)"><span class="did-dot"></span><span class="did-ln">4</span><span class="did-name">content</span><span class="did-rule"></span></div>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>مفيش خط دفاع واحد: تمن طبقات مستقلة بين المهاجم والداتا</li><li>الـedge: CORS وqueries كلها parameterized (مفيش injection)</li><li>الهوية: JWT متثبّت بالـHMAC، والباسوردات bcrypt</li><li>الصلاحيات: RequireRole و owner scoping</li><li>المحتوى: test cases مخفية وأسرار fail-closed</li><li>النبضة الحمرا = هجمة بتموت عند أول طبقة — خلّي بالكم من الحاجتين الكبار، السلايد الجاي هيفصّلهم</li></ul></div></div></div>
+</div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>مفيش خط دفاع واحد: تمن طبقات مستقلة بين المهاجم والداتا</li><li>الـedge: CORS وqueries كلها parameterized (مفيش injection)</li><li>الهوية: JWT متثبّت بالـHMAC، والباسوردات bcrypt</li><li>الصلاحيات: RequireRole و owner scoping</li><li>المحتوى: test cases مخفية وأسرار fail-closed</li><li>النبضة الحمرا = هجمة بتموت عند أول طبقة — خلّي بالكم من الحاجتين الكبار، السلايد الجاي هيفصّلهم</li></ul></div></div>
 </section>
 
 <!-- ============================== 20 · FAIL-CLOSED ============================== -->
@@ -982,7 +1050,7 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Act 5</div>
   <h2 class="div-title rise" style="--d:.08s">DevOps &amp;<br>Results</h2>
   <div class="div-speaker rise" style="--d:.16s">M5 · DevOps &amp; Deployment</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للجزء العملي: غلّفنا النظام إزاي، اختبرناه إزاي، وطلع منه إيه</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للجزء العملي: غلّفنا النظام إزاي، اختبرناه إزاي، وطلع منه إيه</li></ul></div></div>
 </section>
 
 <!-- ============================== 22 · PACKAGING & CI ============================== -->
@@ -1016,7 +1084,7 @@ table.score td.k{font-size:21px}
       <span class="badge">Dependabot · 5 ecosystems</span><span class="badge">distroless · non-root · baked-in --healthcheck</span>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>فوق: الـcompose بيقوم بالترتيب الصح — Postgres healthy ← migration مرة واحدة ← API ← SPA</li><li>محدش يقوم قبل اللي تحته</li><li>تحت: ستة CI jobs، منهم اختبارات race-detector على Postgres حقيقي مش mock</li><li>Dependabot بيراقب خمس ecosystems</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>فوق: الـcompose بيقوم بالترتيب الصح — Postgres healthy ← migration مرة واحدة ← API ← SPA</li><li>محدش يقوم قبل اللي تحته</li><li>تحت: ستة CI jobs، منهم اختبارات race-detector على Postgres حقيقي مش mock</li><li>Dependabot بيراقب خمس ecosystems</li></ul></div></div>
 </section>
 
 <!-- ============================== 23 · HARDENED IMAGE ============================== -->
@@ -1040,7 +1108,7 @@ table.score td.k{font-size:21px}
     </div>
   </div>
   <div class="codebox rise" style="--d:.3s;margin-top:var(--gap-item);font-size:20px">HEALTHCHECK CMD [<span class="b">"/app/server"</span>, <span class="b">"--healthcheck"</span>]&nbsp;&nbsp;<span class="c"># the same binary, probing itself</span></div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>الـproduction image مقصودين نخليه أنحف: مفيش shell ومفيش package manager</li><li>بيشتغل unprivileged افتراضيًا — حتى لو حد دخله مش هيلاقي أدوات</li><li>نتيجة الـdistroless: مفيش curl للـhealthcheck</li><li>زوّدنا للـbinary فلاج ‎--healthcheck بيجرّب الـendpoint بنفسه ويرجّع نجاح/فشل</li><li>تفصيلة صغيرة بتوري إن التغليف اتفكّر فيه من الأول للآخر</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>الـproduction image مقصودين نخليه أنحف: مفيش shell ومفيش package manager</li><li>بيشتغل unprivileged افتراضيًا — حتى لو حد دخله مش هيلاقي أدوات</li><li>نتيجة الـdistroless: مفيش curl للـhealthcheck</li><li>زوّدنا للـbinary فلاج ‎--healthcheck بيجرّب الـendpoint بنفسه ويرجّع نجاح/فشل</li><li>تفصيلة صغيرة بتوري إن التغليف اتفكّر فيه من الأول للآخر</li></ul></div></div>
 </section>
 
 <!-- ============================== 24 · RESULTS ============================== -->
@@ -1059,7 +1127,7 @@ table.score td.k{font-size:21px}
       <div class="metric" style="--sd:.72s"><div class="mv"><span class="count" data-target="5">5</span></div><div class="ml">Dependabot ecosystems</div></div>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>ناخد الأرقام واحد واحد، كل ضغطة رقم جديد</li><li>كل الأرقام معدودة من الـrepo نفسه، مش تقديرات</li><li>ده اللي خمس ناس طلّعوه في مشروع واحد</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>ناخد الأرقام واحد واحد، كل ضغطة رقم جديد</li><li>كل الأرقام معدودة من الـrepo نفسه، مش تقديرات</li><li>ده اللي خمس ناس طلّعوه في مشروع واحد</li></ul></div></div>
 </section>
 
 <!-- ============================== 25 · GALLERY ============================== -->
@@ -1073,7 +1141,7 @@ table.score td.k{font-size:21px}
     <figure class="chrome rise" style="--d:.29s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/exam/attempt</span></div><img src="./screenshots/exam-runner-monaco.png" alt="Exam runner"><figcaption>Exam runner — Monaco</figcaption></figure>
     <figure class="chrome rise" style="--d:.35s;min-height:0"><div class="chrome-bar"><span class="tl"></span><span class="tl y"></span><span class="tl g"></span><span class="addr">apex.local/teacher/analytics</span></div><img src="./screenshots/analytics-chart.png" alt="Analytics"><figcaption>Analytics</figcaption></figure>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>جولة سريعة بالصور — كله المنتج شغّال فعلاً مش mockups</li><li>هسيب الشاشات تتكلم، وأنا بس أسمّي كل view وإحنا ماشيين</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>جولة سريعة بالصور — كله المنتج شغّال فعلاً مش mockups</li><li>هسيب الشاشات تتكلم، وأنا بس أسمّي كل view وإحنا ماشيين</li></ul></div></div>
 </section>
 
 <!-- ============================== 26 · GAPS & FUTURE ============================== -->
@@ -1089,7 +1157,7 @@ table.score td.k{font-size:21px}
       <p style="margin-top:18px;line-height:1.8">· Broader language coverage in the coding runner<br>· Richer analytics for teachers<br>· End-to-end test suite on top of the existing CI jobs</p>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>بكل صراحة عندنا نواقص معروفة ومش هنخبّيها — اللجان بتحترم اللي بيقول حدوده</li><li>كل نقطة ناقصة قدامها خطوة تالية واضحة</li><li>مفيش واحدة بتعطّل الاستخدام الأساسي للنظام</li><li>تسليم: هرجّع لـM1 يقفل بأهم حاجة — نشوف الكلام شغّال حي</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>بكل صراحة عندنا نواقص معروفة ومش هنخبّيها — اللجان بتحترم اللي بيقول حدوده</li><li>كل نقطة ناقصة قدامها خطوة تالية واضحة</li><li>مفيش واحدة بتعطّل الاستخدام الأساسي للنظام</li><li>تسليم: هرجّع لـM1 يقفل بأهم حاجة — نشوف الكلام شغّال حي</li></ul></div></div>
 </section>
 
 <!-- ============================== DIVIDER: LIVE DEMO (finale) ============================== -->
@@ -1097,7 +1165,7 @@ table.score td.k{font-size:21px}
   <div class="div-kicker rise">Finale</div>
   <h2 class="div-title rise" style="--d:.08s">Live Demo</h2>
   <div class="div-speaker rise" style="--d:.16s">M1 · Live Demo</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للديمو الحي — الجزء اللي بيثبت إن ده مش سلايدات</li><li>تعالوا نشوف APEX شغّال قدامكم</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>انتقال للديمو الحي — الجزء اللي بيثبت إن ده مش سلايدات</li><li>تعالوا نشوف APEX شغّال قدامكم</li></ul></div></div>
 </section>
 
 <!-- ============================== LIVE DEMO (finale) ============================== -->
@@ -1115,7 +1183,7 @@ table.score td.k{font-size:21px}
       <span class="badge">1 · exam builder</span><span class="badge">2 · Monaco editor</span><span class="badge">3 · auto-grade result</span>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>اللحظة اللي مستنيينها — النظام من الأول للآخر</li><li>كـinstructor: أبني امتحان من الـbuilder وأضيف السؤال والـtest cases</li><li>كطالب: أكتب الحل في Monaco (خلّوا بالكم من الـautosave)، وأضغط submit</li><li>الدرجة اتصححت أوتوماتيك في ثواني من غير ما حد يلمسها</li><li>وكده ده APEX شغّال حي قدام حضراتكم</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>اللحظة اللي مستنيينها — النظام من الأول للآخر</li><li>كـinstructor: أبني امتحان من الـbuilder وأضيف السؤال والـtest cases</li><li>كطالب: أكتب الحل في Monaco (خلّوا بالكم من الـautosave)، وأضغط submit</li><li>الدرجة اتصححت أوتوماتيك في ثواني من غير ما حد يلمسها</li><li>وكده ده APEX شغّال حي قدام حضراتكم</li></ul></div></div>
 </section>
 
 <!-- ============================== CLOSE ============================== -->
@@ -1133,7 +1201,7 @@ table.score td.k{font-size:21px}
     <div class="member rise" style="--d:.36s"><div class="mid">Adham Basem</div><div class="mrole">DevOps &amp; Deployment</div></div>
   </div>
   <div class="t-meta rise" style="--d:.4s">Thank you — Supervisor: <span class="k">Prof. Dr. Ayman El-Sayed Omera</span> · Menoufia University · Electrical &amp; Computer Engineering</div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>الفكرة في جملة: منصة تبني وتشغّل وتصحّح امتحانات البرمجة في المتصفح أوتوماتيك</li><li>ألف شكر لأعضاء لجنة المناقشة</li><li>وشكر خاص لمشرفنا على كل مجهوده معانا</li><li>الفريق كله واقف دلوقتي لأي أسئلة</li></ul></div></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>الفكرة في جملة: منصة تبني وتشغّل وتصحّح امتحانات البرمجة في المتصفح أوتوماتيك</li><li>ألف شكر لأعضاء لجنة المناقشة</li><li>وشكر خاص لمشرفنا على كل مجهوده معانا</li><li>الفريق كله واقف دلوقتي لأي أسئلة</li></ul></div></div>
 </section>
 
 </div><!-- /stage -->
@@ -1281,7 +1349,7 @@ table.score td.k{font-size:21px}
   /* ---- scaling ---- */
   function fit(){
     var s=Math.min(window.innerWidth/1920, window.innerHeight/1080);
-    stage.style.transform='translate(-50%,-50%) scale('+s+')';
+    stage.style.transform='scale('+s+')';
     window.__scale=s;
     if(typeof layoutGrade==='function')layoutGrade();
   }
