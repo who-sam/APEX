@@ -76,7 +76,7 @@ Keep `gorm:"default:false"` in struct tags — it tells GORM what value to use o
 
 ## Migrations policy (versioned SQL)
 
-`cmd/migrate` runs `golang-migrate` against `DATABASE_URL` (Railway) or the discrete `DB_*` vars (local). GORM `AutoMigrate` still owns the schema baseline today; new schema changes are layered on top via numbered SQL files.
+`cmd/migrate` runs `golang-migrate` against `DATABASE_URL` (Railway) or the discrete `DB_*` vars (local). `0001_init` is a real baseline — the full DDL of the 15 core models (generated from a first-boot `AutoMigrate`, verified up/down) — so `SKIP_AUTOMIGRATE=true` builds the schema from an empty database. Locally, GORM `AutoMigrate` still materializes the schema; new schema changes are layered on top via numbered SQL files.
 
 **Rules:**
 1. **New schema changes go in `internal/database/migrations/sql/`** as paired `NNNN_name.up.sql` / `NNNN_name.down.sql`. Number them sequentially.
