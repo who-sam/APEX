@@ -7,9 +7,6 @@ dist/
 *.mp4
 /seed
 
-# Local Netlify folder
-.netlify
-
 # Editor / OS
 .idea/
 .vscode/

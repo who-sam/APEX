@@ -22,5 +22,3 @@ issues:
   exclude-dirs:
     - frontend
     - book
-    - photos
-    - seed

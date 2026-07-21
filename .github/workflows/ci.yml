@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          # Pin to match netlify.toml so CI and Netlify build identically.
+          # Pin Bun so CI builds stay reproducible.
           bun-version: "1.1.38"
       - run: bun install --frozen-lockfile
       - run: bun run lint
@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          # Pin to match netlify.toml so CI and Netlify build identically.
+          # Pin Bun so CI builds stay reproducible.
           bun-version: "1.1.38"
       - run: bun install --frozen-lockfile
       - run: bun run test
