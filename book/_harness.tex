@@ -1,5 +1,5 @@
 % Compile-verification harness. Agents test a single figure or chapter file with:
-%   cd new-book && xelatex -interaction=nonstopmode -halt-on-error \
+%   cd book && xelatex -interaction=nonstopmode -halt-on-error \
 %       -jobname=chk-UNIQUE "\def\target{chapters/01-introduction}\input{_harness}"
 % Undefined \cref/\cite resolve to "??"/warnings (other files absent) — that is fine.
 % Only hard LaTeX errors (bad macros, unescaped chars, broken environments) fail.

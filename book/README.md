@@ -1,4 +1,4 @@
-# APEX — IEEE-style Graduation Book (`new-book`)
+# APEX — IEEE-style Graduation Book (`book`)
 
 A complete, self-contained graduation thesis for the **APEX** classroom examination
 portal, typeset in **XeLaTeX** with IEEE documentation conventions (Times-family body

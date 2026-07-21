@@ -279,9 +279,9 @@ CORS is built from `APP_URL` + `ALLOWED_ORIGINS` at startup (see `internal/confi
 │       ├── pages/                # Index, NotFound
 │       ├── hooks/ lib/ assets/
 │       └── test/                 # Vitest setup
-├── new-book/                     # LaTeX thesis (IEEE-standard XeLaTeX → main.pdf)
+├── book/                         # LaTeX thesis (IEEE-standard XeLaTeX → main.pdf)
 │   └── figures/                  # generated figure assets
-└── final presentation/           # Defense slide deck (PPTX + HTML)
+└── presentation/                 # Defense slide deck (PPTX + HTML)
 ```
 
 ---
@@ -579,8 +579,8 @@ Both services ship as production-ready Docker images:
 
 ## Related Artifacts
 
-- **`new-book/`** — Full graduation thesis in LaTeX (IEEE-standard XeLaTeX rewrite, `main.tex` → `main.pdf`). Use this for narrative context — design decisions, related-work comparison, and the user-facing walkthrough — rather than as developer documentation.
-- **`final presentation/`** — Defense slide deck (`APEX-Defense-slides+notes.pptx`, with an HTML mirror in `index.html`), suitable for a 15-minute talk over the same material.
+- **`book/`** — Full graduation thesis in LaTeX (IEEE-standard XeLaTeX, `main.tex` → `main.pdf`). Use this for narrative context — design decisions, related-work comparison, and the user-facing walkthrough — rather than as developer documentation.
+- **`presentation/`** — Defense slide deck (`APEX-Defense-slides+notes.pptx`, with an HTML mirror in `index.html`), suitable for a 15-minute talk over the same material.
 - **[`ORM_RULES.md`](ORM_RULES.md)** — Required reading before touching the schema. Codifies the incident that motivated the migration philosophy.
 
 ---
