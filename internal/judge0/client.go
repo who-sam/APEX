@@ -102,14 +102,14 @@ func RunCode(code, language, stdin string) CodeResult {
 		StatusID: j0Resp.Status.ID,
 	}
 
-	// FIX: parse execution_time_ms from Judge0 time string (seconds → ms)
+	// Judge0 reports time as a seconds string; convert to integer milliseconds.
 	if j0Resp.Time != nil {
 		if seconds, err := strconv.ParseFloat(strings.TrimSpace(*j0Resp.Time), 64); err == nil {
 			result.TimeMs = int(seconds * 1000)
 		}
 	}
 
-	// FIX: parse memory_kb from Judge0 memory number
+	// Judge0 reports memory as a number in kilobytes.
 	if j0Resp.Memory != nil {
 		if mem, err := j0Resp.Memory.Int64(); err == nil {
 			result.MemoryKb = int(mem)

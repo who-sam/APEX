@@ -62,7 +62,7 @@ func Grade(submissionID uint) {
 			}
 		}
 
-		// FIX: populate execution_time_ms and memory_kb on TestResult
+		// Record per-test execution time and memory alongside the pass/fail result.
 		tr := models.TestResult{
 			SubmissionID:    submission.ID,
 			TestCaseID:      tc.ID,
@@ -88,7 +88,7 @@ func Grade(submissionID uint) {
 		finalStatus = "accepted"
 	}
 
-	// FIX: set max time/memory on Submission record
+	// Persist the worst-case time/memory across all test cases on the submission.
 	database.DB.Model(&submission).Updates(map[string]any{
 		"status":            finalStatus,
 		"passed_count":      passed,

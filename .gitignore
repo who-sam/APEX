@@ -9,3 +9,13 @@ dist/
 
 # Local Netlify folder
 .netlify
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Go test coverage
+coverage.out
+coverage.html
