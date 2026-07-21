@@ -1,6 +1,0 @@
-$pdf_mode = 5; # xelatex
-$xelatex = 'xelatex -interaction=nonstopmode -synctex=1 %O %S';
-$bibtex_use = 2;
-$biber = 'biber %O %S';
-$clean_ext = 'aux bbl bcf blg fdb_latexmk fls glg glo gls ist lof log lot out run.xml synctex.gz toc xdv';
-@default_files = ('main.tex');
