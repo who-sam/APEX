@@ -1,82 +1,53 @@
-# Welcome to your Lovable project
+# APEX Frontend
 
-## Landing page environment variables
+The web client for **APEX** — the classroom examination portal. Built with React 18, Vite,
+TypeScript, Tailwind CSS, and shadcn/ui. It talks to the Go backend over `/api`.
 
-The public landing at `/` reads two optional Vite env vars. If unset, the corresponding links are hidden rather than pointing at dead placeholders.
+See the [root README](../README.md) for the full-stack overview, architecture, and deployment.
 
-- `VITE_GITHUB_URL` — repository URL shown on the header, hero, and footer GitHub buttons.
-- `VITE_CONTACT_EMAIL` — contact address rendered as a `mailto:` link in the footer.
-
-Set them in `.env.local` (gitignored) for local dev or your hosting provider's env settings for production.
-
-## Project info
-
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
-
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Getting started
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+# from frontend/
+bun install          # or: npm install
+bun run dev          # Vite dev server on http://localhost:5173
 ```
 
-**Edit a file directly in GitHub**
+The dev server proxies `/api` to the backend at `http://localhost:8080` (see
+[`vite.config.ts`](vite.config.ts)), so run the Go API alongside it.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Scripts
 
-**Use GitHub Codespaces**
+| Script | Purpose |
+|--------|---------|
+| `dev` | Start the Vite dev server (port 5173, HMR). |
+| `build` | Production build to `dist/`. |
+| `preview` | Serve the production build locally. |
+| `lint` | Run ESLint over the project. |
+| `test` | Run the Vitest suite once. |
+| `test:watch` | Run Vitest in watch mode. |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Environment variables
 
-## What technologies are used for this project?
+All are optional; unset values degrade gracefully (links hide, features no-op).
 
-This project is built with:
+| Variable | Purpose |
+|----------|---------|
+| `VITE_API_URL` | Base URL for API calls. Defaults to `/api` (the dev proxy / same-origin in prod). |
+| `VITE_GOOGLE_CLIENT_ID` | Google Identity Services web client ID. Must match `GOOGLE_CLIENT_ID` on the backend. |
+| `VITE_GITHUB_URL` | Repository URL shown on the landing header, hero, and footer buttons. |
+| `VITE_CONTACT_EMAIL` | Contact address rendered as a `mailto:` link in the footer. |
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Copy [`.env.example`](.env.example) to `.env.local` (gitignored) for local development,
+or set the variables in your hosting provider for production.
 
-## How can I deploy this project?
+## Layout
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```
+src/
+├── features/     # feature modules (auth, classes, exams, grading, dashboard, …)
+├── components/   # shared UI (shadcn/ui primitives + composites)
+├── pages/        # top-level route pages (Index, NotFound)
+├── hooks/ lib/   # shared hooks and utilities
+└── test/         # Vitest setup
+```
