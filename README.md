@@ -671,5 +671,5 @@ This is a graduation project, not a hardened production system — see [Project 
 
 ## License
 
-Released under the **Apache License 2.0** — see [`LICENSE`](LICENSE). Copyright © 2026 Amr Samy.
+Released under the **Apache License 2.0** — see [`LICENSE`](LICENSE). Copyright © 2026 Hossam Rashed.
 
