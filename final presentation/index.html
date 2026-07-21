@@ -593,14 +593,15 @@ table.score td.k{font-size:21px}
 
 <!-- ============================== 14b · ERD crow's-foot (physical) ============================== -->
 <section class="slide" data-chip="M2 · Data &amp; Persistence">
-  <header class="s-head rise" style="margin-bottom:14px"><h2>Data Model — crow's-foot view</h2><p class="s-sub">The same <span class="k" style="color:var(--ink)">9 core tables</span> with their key columns · crow's-foot marks the “many” end; the grading chain runs exam_attempts → submissions → test_results.</p></header>
+  <header class="s-head rise" style="margin-bottom:14px"><h2>Data Model — crow's-foot view</h2><p class="s-sub"><span class="k" style="color:var(--ink)">10 core tables</span> of 15 with their key columns · <span class="k" style="color:#a78bfa">PK</span> = purple, <span class="k" style="color:#7ea4f5">FK →</span> = blue · crow's-foot marks the “many” end; the grading chain runs exam_attempts → submissions → test_results.</p></header>
   <div style="flex:1;min-height:0" class="erd3wrap build-once">
-  <svg viewBox="0 0 1720 720" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="display:block" id="erd3">
+  <svg viewBox="0 0 1720 764" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="display:block" id="erd3">
     <defs>
       <linearGradient id="gband3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb" stop-opacity=".35"/><stop offset="1" stop-color="#7c3aed" stop-opacity=".35"/></linearGradient>
       <linearGradient id="gline3" gradientUnits="userSpaceOnUse" x1="960" y1="120" x2="1500" y2="440"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
       <marker id="crow3" markerWidth="22" markerHeight="22" refX="17" refY="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M17,11 L2,3 M17,11 L2,11 M17,11 L2,19" stroke="#6b7a99" stroke-width="1.8" fill="none"/></marker>
       <marker id="one3" markerWidth="16" markerHeight="22" refX="8" refY="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,3 L8,19" stroke="#6b7a99" stroke-width="2"/></marker>
+      <marker id="zeroone3" markerWidth="30" markerHeight="22" refX="8" refY="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,3 L8,19" stroke="#6b7a99" stroke-width="2"/><circle cx="21" cy="11" r="5" fill="none" stroke="#6b7a99" stroke-width="1.7"/></marker>
     </defs>
     <style>
       #erd3 .body{fill:#16213c;stroke:rgba(255,255,255,.08)}
@@ -608,7 +609,7 @@ table.score td.k{font-size:21px}
       #erd3 .ent{cursor:default;transform-box:fill-box;transform-origin:center}
       #erd3 .etitle{font-family:var(--sans);font-size:21px;font-weight:700;fill:#e5e8ee}
       #erd3 .jtitle{font-family:var(--sans);font-size:16px;font-weight:700;fill:#e5e8ee}
-      #erd3 .ecol{font-family:var(--mono);font-size:15px;fill:#8b96ad}
+      #erd3 .ecol{font-family:var(--mono);font-size:14px;fill:#8b96ad}
       #erd3 .ecol.pk{fill:#a78bfa}
       #erd3 .ecol.fk{fill:#7ea4f5}
       #erd3 .jcol{font-family:var(--mono);font-size:13px;fill:#93a0ba}
@@ -635,13 +636,13 @@ table.score td.k{font-size:21px}
     <path class="rel" data-e="erd-class erd-classmember"   style="--d:.65s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M290,470 H313 V360 H340"/>
     <path class="rel" data-e="erd-exam erd-examclass"      style="--d:.7s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M615,180 H580 V456 H545"/>
     <path class="rel" data-e="erd-class erd-examclass"     style="--d:.75s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M290,500 H313 V495 H340"/>
-    <path class="rel" data-e="erd-exam erd-problem"        style="--d:.6s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M740,262 V410"/>
+    <path class="rel" data-e="erd-exam erd-problem"        style="--d:.6s"  marker-start="url(#zeroone3)" marker-end="url(#crow3)" d="M740,262 V410"/>
     <path class="rel" data-e="erd-exam erd-attempt"        style="--d:.65s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M865,150 H965"/>
     <path class="rel" data-e="erd-problem erd-testcase"    style="--d:.7s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M865,505 H965"/>
-    <path class="rel" data-e="erd-problem erd-submission"  style="--d:.85s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M760,615 V665 H1610 V150 H1565"/>
+    <path class="rel" data-e="erd-problem erd-submission"  style="--d:.85s" marker-start="url(#one3)" marker-end="url(#crow3)" d="M760,615 V665 H1650 V150 H1615"/>
     <path class="rel" data-e="erd-testcase erd-testresult" style="--d:.8s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M1215,505 H1265 V490 H1315"/>
-    <path class="rel spine" data-e="erd-attempt erd-submission"    marker-start="url(#one3)" marker-end="url(#crow3)" d="M1215,150 H1315"/>
-    <path class="rel spine" data-e="erd-submission erd-testresult" marker-start="url(#one3)" marker-end="url(#crow3)" d="M1440,262 V410"/>
+    <path class="rel spine" data-e="erd-attempt erd-submission"    marker-start="url(#zeroone3)" marker-end="url(#crow3)" d="M1215,150 H1315"/>
+    <path class="rel spine" data-e="erd-submission erd-testresult" marker-start="url(#one3)" marker-end="url(#crow3)" d="M1465,290 V410"/>
     <path class="rel" data-e="erd-user erd-attempt"        style="--d:.9s"  marker-start="url(#one3)" marker-end="url(#crow3)" d="M210,62 V40 H1090 V62"/>
 
     <!-- relationship labels -->
@@ -669,9 +670,9 @@ table.score td.k{font-size:21px}
       <text class="note" x="1090" y="307" text-anchor="middle">one attempt per student per exam</text>
     </g>
     <g class="ent spineent" id="e-erd-submission" style="--d:.2s">
-      <rect class="body" x="1315" y="62" width="250" height="200" rx="12"/><rect x="1315" y="62" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <rect class="body" x="1315" y="62" width="300" height="228" rx="12"/><rect x="1315" y="62" width="300" height="42" rx="12" fill="url(#gband3)"/>
       <text class="etitle" x="1337" y="90">submissions</text>
-      <text class="ecol pk" x="1337" y="138">id</text><text class="ecol fk" x="1337" y="165">exam_attempt_id →</text><text class="ecol fk" x="1337" y="192">problem_id → problems</text><text class="ecol fk" x="1337" y="219">user_id → users</text><text class="ecol" x="1337" y="246">status · score</text>
+      <text class="ecol pk" x="1337" y="136">id</text><text class="ecol fk" x="1337" y="163">exam_attempt_id → exam_attempts</text><text class="ecol fk" x="1337" y="190">exam_id → exams</text><text class="ecol fk" x="1337" y="217">problem_id → problems</text><text class="ecol fk" x="1337" y="244">user_id → users</text><text class="ecol" x="1337" y="271">status · score</text>
     </g>
     <g class="ent" id="e-erd-class" style="--d:.25s">
       <rect class="body" x="40" y="410" width="250" height="168" rx="12"/><rect x="40" y="410" width="250" height="42" rx="12" fill="url(#gband3)"/>
@@ -691,9 +692,9 @@ table.score td.k{font-size:21px}
       <text class="ecol pk" x="987" y="486">id</text><text class="ecol fk" x="987" y="513">problem_id → problems</text><text class="ecol" x="987" y="540">input · expected_output</text><text class="ecol" x="987" y="567">is_sample</text>
     </g>
     <g class="ent spineent" id="e-erd-testresult" style="--d:.4s">
-      <rect class="body" x="1315" y="410" width="250" height="168" rx="12"/><rect x="1315" y="410" width="250" height="42" rx="12" fill="url(#gband3)"/>
+      <rect class="body" x="1315" y="410" width="300" height="168" rx="12"/><rect x="1315" y="410" width="300" height="42" rx="12" fill="url(#gband3)"/>
       <text class="etitle" x="1337" y="438">test_results</text>
-      <text class="ecol pk" x="1337" y="486">id</text><text class="ecol fk" x="1337" y="513">submission_id →</text><text class="ecol fk" x="1337" y="540">test_case_id →</text><text class="ecol" x="1337" y="567">passed</text>
+      <text class="ecol pk" x="1337" y="486">id</text><text class="ecol fk" x="1337" y="513">submission_id → submissions</text><text class="ecol fk" x="1337" y="540">test_case_id → test_cases</text><text class="ecol" x="1337" y="567">passed</text>
     </g>
 
     <!-- ===== join tables ===== -->
@@ -712,56 +713,68 @@ table.score td.k{font-size:21px}
       <text class="note" x="354" y="542">unique(exam_id, class_id)</text>
     </g>
 
-    <!-- crow's-foot legend -->
-    <line x1="1440" y1="675" x2="1512" y2="675" stroke="#5b6a87" stroke-width="2" marker-start="url(#one3)" marker-end="url(#crow3)"/>
-    <text class="rlab" x="1432" y="680" text-anchor="end">1</text>
-    <text class="rlab" x="1520" y="680">many</text>
+    <!-- PK / FK + cardinality legend -->
+    <text class="ecol pk" x="40" y="705">id</text><text class="rlab" x="66" y="705">primary key</text>
+    <text class="ecol fk" x="250" y="705">→ ref</text><text class="rlab" x="316" y="705">foreign key</text>
+    <line x1="560" y1="701" x2="620" y2="701" stroke="#5b6a87" stroke-width="2" marker-start="url(#one3)" marker-end="url(#crow3)"/>
+    <text class="rlab" x="552" y="706" text-anchor="end">one</text><text class="rlab" x="632" y="706">many</text>
+    <line x1="900" y1="701" x2="980" y2="701" stroke="#5b6a87" stroke-width="2" marker-start="url(#zeroone3)" marker-end="url(#crow3)"/>
+    <text class="rlab" x="885" y="706" text-anchor="end">zero or one</text><text class="rlab" x="992" y="706">many · nullable FK</text>
 
     <!-- honesty caption -->
-    <text class="note" x="800" y="705" text-anchor="middle" style="font-size:15px">Core of 15 tables — peripheral tables (UserProfile, Notification, Announcement, Folder, PasswordResetToken) omitted for clarity.</text>
+    <text class="note" x="800" y="734" text-anchor="middle" style="font-size:14px">10 of 15 tables shown · omitted (all simple 1:N to users/classes, user_profiles is 1:1): user_profiles · notifications · announcements · folders · password_reset_tokens.</text>
+    <text class="note" x="800" y="752" text-anchor="middle" style="font-size:14px">submissions.user_id &amp; exam_id are denormalized — reachable via the attempt/problem, but stored directly so a student's or exam's submissions filter without a join.</text>
   </svg>
   </div>
   <div class="notes-src" hidden><div dir="rtl"><ul><li>نفس الـ9 جداول الأساسية بمنظور فيزيكال: الأعمدة والـforeign keys</li><li>اليوزر عنده كذا class وكذا exam</li><li>التسجيل وتوزيع الامتحان جدولين M:N بيربطوا</li><li>المسألة البرمجية ليها كذا test case مخفي</li><li>العمود المميّز = سلسلة التصحيح: attempt ← submissions ← نتايج test</li></ul></div></div>
 </section>
 
-<!-- ============================== 14b · WRITE PATH ============================== -->
+<!-- ============================== 14c · SCHEMA DESIGN & INTEGRITY ============================== -->
 <section class="slide" data-cascade data-chip="M2 · Data &amp; Persistence">
-  <header class="s-head rise"><h2>The Write Path</h2><p class="s-sub">Where a student's work lands — one row at a time, from keystroke to final score.</p></header>
-  <div class="pipe-wrap">
-    <div class="row" style="align-items:stretch;gap:0">
-      <div class="card rise" style="--d:.08s;flex:1;display:flex;flex-direction:column">
-        <div class="badge" style="align-self:flex-start"><span class="k">1 · autosave</span></div>
-        <h3 style="font-size:30px;margin-top:18px">→ <span class="k gt">answers</span></h3>
-        <p style="font-size:21px">Every keystroke mirrors to <span class="k" style="color:var(--ink)">localStorage</span>; a 1.5s debounced PUT writes the row — <span class="k" style="color:var(--ink)">payload</span> + <span class="k" style="color:var(--ink)">saved_at</span>.</p>
-      </div>
-      <div class="pipe-arrow" style="align-self:center">→</div>
-      <div class="card rise" style="--d:.16s;flex:1;display:flex;flex-direction:column">
-        <div class="badge" style="align-self:flex-start"><span class="k">2 · submit</span></div>
-        <h3 style="font-size:30px;margin-top:18px">→ <span class="k gt">submissions</span></h3>
-        <p style="font-size:21px">On submit, a row captures the <span class="k" style="color:var(--ink)">judge0_token</span>, <span class="k" style="color:var(--ink)">verdict</span>, and <span class="k" style="color:var(--ink)">passed / total</span>.</p>
-      </div>
-      <div class="pipe-arrow" style="align-self:center">→</div>
-      <div class="card rise" style="--d:.24s;flex:1;display:flex;flex-direction:column">
-        <div class="badge" style="align-self:flex-start"><span class="k">3 · finalize</span></div>
-        <h3 style="font-size:30px;margin-top:18px">→ <span class="k gt">scores</span></h3>
-        <p style="font-size:21px">The finalizer writes one row: <span class="k" style="color:var(--ink)">weighted_total</span> + a per-problem <span class="k" style="color:var(--ink)">detail</span> breakdown.</p>
-      </div>
-    </div>
-    <div class="row rise" style="--d:.34s;gap:20px;margin-top:44px;align-items:stretch">
-      <div class="card" style="flex:1;padding:26px 32px">
-        <h3 style="font-size:26px">Managed by GORM</h3>
-        <p style="font-size:20px;margin-top:10px">Schema is created and evolved by a one-shot <span class="k" style="color:var(--ink)">migrate</span> service before the API ever accepts traffic.</p>
-      </div>
-      <div class="card" style="flex:1;padding:26px 32px">
-        <h3 style="font-size:26px">Scoped &amp; parameterized</h3>
-        <p style="font-size:20px;margin-top:10px">Every write is owner-scoped and parameterized — a student can only ever touch rows on their own attempt.</p>
-      </div>
-    </div>
-    <div style="display:flex;gap:16px;margin-top:36px" class="rise">
-      <span class="badge">PostgreSQL 16 · 15 tables</span><span class="badge">GORM</span><span class="badge">dual-layer autosave</span>
+  <header class="s-head rise"><h2>Schema Design &amp; Integrity</h2><p class="s-sub">Normalized to third normal form — and correctness is enforced <span class="k" style="color:var(--ink)">in the database</span>, not just the application.</p></header>
+  <div class="rise" style="--d:.06s;margin-bottom:26px">
+    <div class="metric" style="min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div class="mv">3NF</div>
+      <div class="ml" style="margin-top:14px">third normal form · one deliberate denormalization</div>
     </div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>تتبّع محاولة واحدة جوه الجداول:</li><li>answers: بيتكتب على طول من الـautosave</li><li>submissions: بتتعمل لحظة التسليم ومعاها Judge0 token والـverdict</li><li>scores: الصف الواحد النهائي بالدرجة</li><li>التلاتة بيتعملوا بخدمة الـmigrate، وأي كتابة owner-scoped</li><li>تسليم: M3 هيوريكم الكود بيتشغّل وبيتصحّح إزاي</li></ul></div></div>
+  <div class="row" style="flex:1;align-items:stretch">
+    <div class="card rise" style="--d:.14s;flex:1;display:flex;flex-direction:column">
+      <div class="badge">constraints</div>
+      <h3 style="margin-top:18px;font-size:30px">Integrity, in the DB</h3>
+      <div style="margin-top:18px;font-size:23px;line-height:2.1">
+        <div><span class="gt" style="font-weight:700">·</span> PK on every table</div>
+        <div><span class="gt" style="font-weight:700">·</span> FK referential integrity</div>
+        <div><span class="gt" style="font-weight:700">·</span> <span class="k">NOT NULL</span> · <span class="k">ON DELETE SET NULL</span></div>
+        <div><span class="gt" style="font-weight:700">·</span> rules = composite <span class="k">UNIQUE</span></div>
+      </div>
+      <div class="k" style="margin-top:auto;padding-top:16px;font-size:15px;color:#7c8aa8">idx_user_exam_attempt · idx_exam_class</div>
+    </div>
+    <div class="card rise" style="--d:.22s;flex:1;display:flex;flex-direction:column">
+      <div class="badge">3NF · one exception</div>
+      <h3 style="margin-top:18px;font-size:30px">One denormalization</h3>
+      <div style="margin-top:18px;font-size:23px;line-height:2.1">
+        <div><span class="gt" style="font-weight:700">·</span> <span class="k">user_id</span> &amp; <span class="k">exam_id</span> on submissions</div>
+        <div><span class="gt" style="font-weight:700">·</span> derivable via attempt / problem</div>
+        <div><span class="gt" style="font-weight:700">·</span> stored for join-free filtering</div>
+      </div>
+      <div class="k" style="margin-top:auto;padding-top:16px;font-size:15px;color:#7c8aa8">a conscious trade-off, not an oversight</div>
+    </div>
+    <div class="card rise" style="--d:.3s;flex:1;display:flex;flex-direction:column">
+      <div class="badge k">jsonb · versioned SQL</div>
+      <h3 style="margin-top:18px;font-size:30px">Types &amp; evolution</h3>
+      <div style="margin-top:18px;font-size:23px;line-height:2.1">
+        <div><span class="gt" style="font-weight:700">·</span> <span class="k">6 jsonb</span> — options · tags · drafts</div>
+        <div><span class="gt" style="font-weight:700">·</span> relational columns strongly typed</div>
+        <div><span class="gt" style="font-weight:700">·</span> versioned SQL migrations</div>
+      </div>
+      <div class="k" style="margin-top:auto;padding-top:16px;font-size:15px;color:#7c8aa8">migrate runs before API traffic</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;margin-top:var(--gap-item)" class="rise">
+    <span class="badge">PostgreSQL 16 · 15 tables</span><span class="badge">referential integrity</span><span class="badge">timestamptz</span><span class="badge">owner-scoped writes</span><span class="badge">reproducible migrations</span>
+  </div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>السلايد دي عن تصميم قاعدة البيانات نفسها: الـschema متعمِل إزاي، وإزاي بنضمن إن الداتا دايماً صح — وده الجزء اللي بيهم دكتور قواعد البيانات</li><li>الـschema كله متـnormalized لـثالث normal form (3NF): مفيش تكرار بيانات ولا اعتماديات زايدة</li><li>أهم نقطة: الصحّة مفروضة جوّه قاعدة البيانات نفسها، مش بس في الكود — كل جدول له primary key، وكل علاقة لها foreign key بيضمن التكامل المرجعي، والأعمدة المطلوبة NOT NULL</li><li>القواعد المهمة زي "محاولة واحدة لكل امتحان" اتعملت composite UNIQUE: حتى لو الكود غلط، Postgres نفسه بيرفض التكرار (عندنا 7 قيود unique، منهم 3 مركّبة)</li><li>استثناء واحد مقصود عن الـ3NF: submissions.user_id وexam_id نقدر نوصلهم من الـattempt والـproblem، بس خزّناهم مباشرة عشان نفلتر submissions أي طالب أو امتحان من غير join — trade-off واعي للأداء، مش غلطة</li><li>29 index وكل foreign key متغطّي بـindex، و6 أعمدة jsonb للبيانات نصف-المنظّمة (اختيارات MCQ، tags، الحفظ التلقائي)، والباقي أعمدة relational قوية النوع</li><li>الـschema بيتبني ويتطوّر بـmigrations مكتوبة SQL ومرقّمة، بتتنفّذ بخدمة migrate مرة واحدة قبل ما الـAPI يستقبل أي request — يعني قابل لإعادة الإنشاء بالظبط في أي بيئة</li><li>تسليم: دلوقتي نشوف الداتا دي بتتكتب فعلاً إزاي — من أول ضغطة زرار لحد الدرجة النهائية</li></ul></div></div>
 </section>
 
 <!-- ============================== 15 · DIVIDER: GRADING ============================== -->
@@ -987,7 +1000,6 @@ table.score td.k{font-size:21px}
     <h3 class="did-head">An attack <span class="did-grad">dies</span><br>before it reaches the data.</h3>
 
     <div class="did-stats">
-      <div class="did-stat"><span class="did-num did-grad">8</span><span class="did-lab">independent<br>controls</span></div>
       <div class="did-stat"><span class="did-num did-grad">4</span><span class="did-lab">defense<br>rings</span></div>
       <div class="did-stat"><span class="did-num did-grad">0</span><span class="did-lab">breach<br>paths</span></div>
     </div>
@@ -1014,7 +1026,7 @@ table.score td.k{font-size:21px}
     #dtl .ddesc b{color:var(--ink);font-weight:600}
     #dtl .ddesc code{font-family:var(--mono);color:#a5b4fc}
   </style>
-  <header class="s-head rise"><h2>Inside the Five Layers</h2><p class="s-sub">What each control in the chain actually does — from the edge to the sandbox.</p></header>
+  <header class="s-head rise"><h2>Inside the Four Layers</h2><p class="s-sub">What each control in the chain actually does — from the edge to the sandbox.</p></header>
   <div id="dtl" style="flex:1;display:flex;flex-direction:column;gap:12px;justify-content:center">
     <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Edge</span><span class="dname">CORS Allowlist</span></div><div class="ddesc">Only requests from origins on a predefined <b>allowlist</b> reach the API — any other website is blocked before it touches a handler.</div></div>
     <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Identity</span><span class="dname">JWT + HMAC</span></div><div class="ddesc">On login the server issues a token — <b>user id, role, expiry</b> — signed with a secret key. Every request re-verifies the signature, so a tampered or forged token is rejected.</div></div>
@@ -1022,27 +1034,7 @@ table.score td.k{font-size:21px}
     <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Data</span><span class="dname">Per-Owner Scoping</span></div><div class="ddesc">Every database query is scoped to the authenticated user — you only ever read <b>your own rows</b>, never an ID the client claims to own.</div></div>
     <div class="card rise drow" style="--d:.04s"><div class="dleft"><span class="dtag">Content</span><span class="dname">Judge0 Sandbox</span></div><div class="ddesc">Student code runs in an isolated sandbox with strict <b>CPU, memory, time and filesystem</b> limits — even malicious or infinite-loop code can't reach the main server.</div></div>
   </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>دي تفاصيل الطبقات اللي شفناها في السلايد اللي فات — كل واحدة بتعمل إيه بالظبط</li><li>Edge — الـCORS بيسمح بس للمواقع اللي في الـallowlist توصل للـAPI</li><li>Identity — JWT متوقّع بـHMAC بمفتاح سري، وأي token متزوّر أو متعدّل بيترفض</li><li>Authorization — الـRequireRole بيتأكد من دور اليوزر قبل أي handler</li><li>Data — كل query مربوطة باليوزر نفسه، فمحدش يقرا داتا غيره</li><li>Content — كود الطالب بيتنفّذ جوه Judge0 sandbox بحدود CPU وميموري ووقت وملفات</li></ul></div></div>
-</section>
-<section class="slide" data-cascade data-chip="M4 · Security">
-  <style>
-    #atk .atkrow{display:flex;align-items:center;gap:22px;padding:16px 26px}
-    #atk .atk-try{flex:1;color:var(--dim);font-size:23px;line-height:1.45}
-    #atk .atk-why{flex:1.3;color:var(--ink);font-size:23px;line-height:1.45}
-    #atk .atk-arw{font-family:var(--mono);color:var(--a2);font-size:26px;font-weight:700}
-    #atk .atk-try .r{color:var(--bad);font-weight:800;margin-inline-end:10px}
-    #atk .atk-why .g{color:var(--ok);font-weight:800;margin-inline-end:10px}
-    #atk .atk-why code,#atk .atk-try code{font-family:var(--mono);color:#a5b4fc}
-  </style>
-  <header class="s-head rise"><h2>Attacks That Don't Work</h2><p class="s-sub">We built it assuming someone will try to cheat or break in — here's what happens when they do.</p></header>
-  <div id="atk" style="flex:1;display:flex;flex-direction:column;gap:14px;justify-content:center">
-    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>A student opens another student's submission by ID</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>Every read is owner- / enrollment-scoped — the API returns <b>403</b>, never someone else's row</div></div>
-    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Scrape the hidden test cases to hard-code the outputs</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>Hidden cases never reach the browser — <code>/run</code> returns sample tests only</div></div>
-    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Forge a JWT with <code>alg: none</code> or <code>RS256</code></div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>The verifier pins the <b>HMAC</b> family before the signature is even checked</div></div>
-    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Student code tries to read the database or filesystem</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>It executes inside the <b>Judge0 sandbox</b> — never on our server</div></div>
-    <div class="card rise atkrow" style="--d:.04s"><div class="atk-try"><span class="r">✗</span>Skip the hard questions to inflate the score</div><div class="atk-arw">→</div><div class="atk-why"><span class="g">✓</span>The denominator is the full problem list — a skipped question scores <b>0</b></div></div>
-  </div>
-  <div class="notes-src" hidden><div dir="rtl"><ul><li>بنيناه وإحنا فاكرين إن حد هيحاول يغش أو يخترق — دي أمثلة لهجمات وبتفشل ليه</li><li>طالب يفتح submission بتاع زميله بالـID؟ كل قراءة مربوطة بصاحبها → بيرجّع 403</li><li>يسحب الـhidden test cases؟ عمرها ما بتوصل للمتصفح، والـ/run بيرجّع الـsample بس</li><li>يزوّر JWT بـalg none أو RS256؟ بنثبّت عيلة HMAC قبل ما نتحقق من التوقيع أصلاً</li><li>كود الطالب يحاول يقرا الداتابيز أو الملفات؟ بيتنفّذ جوه Judge0 sandbox، عمره ما بيلمس سيرفرنا</li><li>يسيب الأسئلة الصعبة عشان الدرجة تعلى؟ المقام هو كل المسائل، والسؤال المتسايب بياخد صفر</li><li>تسليم: M5 هيوريكم التغليف والاختبار والنتايج</li></ul></div></div>
+  <div class="notes-src" hidden><div dir="rtl"><ul><li>دي تفاصيل الطبقات اللي شفناها في السلايد اللي فات — كل واحدة بتعمل إيه بالظبط</li><li>Edge — الـCORS بيسمح بس للمواقع اللي في الـallowlist توصل للـAPI</li><li>Identity — JWT متوقّع بـHMAC بمفتاح سري، وأي token متزوّر أو متعدّل بيترفض</li><li>Authorization — الـRequireRole بيتأكد من دور اليوزر قبل أي handler</li><li>Data — كل query مربوطة باليوزر نفسه، فمحدش يقرا داتا غيره</li><li>Content — كود الطالب بيتنفّذ جوه Judge0 sandbox بحدود CPU وميموري ووقت وملفات</li><li>تسليم: M5 هيوريكم التغليف والاختبار والنتايج</li></ul></div></div>
 </section>
 
 <!-- ============================== 21 · DIVIDER: DEVOPS ============================== -->
@@ -1313,6 +1305,65 @@ table.score td.k{font-size:21px}
   </div>
 </div>
 
+
+<!-- ============================== easter egg: APEX backronym (press A) ============================== -->
+<style>
+  #apexOverlay{position:fixed;inset:0;z-index:97;display:none;flex-direction:column;align-items:center;justify-content:center;padding:60px;background:#0a0e1a;font-family:'Inter',system-ui,sans-serif;text-align:center;overflow:hidden}
+  #apexOverlay.apex-open{display:flex}
+  #apexOverlay .ov-close{position:fixed;top:24px;right:28px;width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:rgba(22,33,60,.9);color:var(--ink);font-size:20px;line-height:1;z-index:98;cursor:pointer}
+  #apexOverlay .ov-close:hover{border-color:rgba(124,58,237,.5)}
+  #apexOverlay .ov-inner{display:flex;flex-direction:column;align-items:center;gap:clamp(22px,3.6vmin,46px)}
+  #apexOverlay .eyebrow{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:clamp(.62rem,1.15vw,.9rem);letter-spacing:.42em;text-transform:uppercase;color:var(--dim);padding-left:.42em;opacity:0}
+  #apexOverlay .sentence{font-size:clamp(2.4rem,7.6vw,6.2rem);line-height:1.05;font-weight:600;letter-spacing:-.01em;white-space:nowrap;color:var(--dim);opacity:0}
+  #apexOverlay .sentence .lead{font-weight:800;color:var(--dim)}
+  #apexOverlay .sentence .ax-conn{font-style:italic}
+  #apexOverlay .h1{--hue:#2563eb} #apexOverlay .h2{--hue:#5b47d6} #apexOverlay .h3{--hue:#7c3aed}
+  #apexOverlay .rule{width:0;height:1px;background:var(--line);opacity:0}
+  #apexOverlay .decode{display:flex;flex-direction:column;gap:clamp(9px,1.5vmin,17px);align-items:start;font-size:clamp(1.15rem,2.35vw,2.05rem);font-weight:600}
+  #apexOverlay .decode .dc{display:grid;grid-template-columns:2.3em max-content auto;align-items:baseline;column-gap:.72em;opacity:0}
+  #apexOverlay .decode .dc b{font-weight:800;color:var(--hue);text-align:right}
+  #apexOverlay .decode .dc .ar{color:var(--dim);font-weight:400}
+  #apexOverlay .decode .dc .dw{color:var(--ink)}
+  #apexOverlay .decode .dc .self{font-weight:800;color:#8b7bf7;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  #apexOverlay .decode .dc .loop{color:var(--dim);font-weight:600;font-size:.82em}
+  #apexOverlay .foot{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:clamp(.62rem,1.15vw,.82rem);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);opacity:0}
+  #apexOverlay .hint{position:absolute;bottom:clamp(24px,4vh,52px);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:clamp(.6rem,1vw,.78rem);letter-spacing:.28em;text-transform:uppercase;color:var(--dim);padding-left:.28em;opacity:0}
+
+  @keyframes apexFade{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  @keyframes apexUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes apexIgnite{from{color:var(--dim)}to{color:var(--hue)}}
+  @keyframes apexRule{from{opacity:0;width:0}to{opacity:1;width:clamp(60px,7vw,120px)}}
+
+  #apexOverlay.apex-open .eyebrow{animation:apexFade .55s ease .05s both}
+  #apexOverlay.apex-open .sentence{animation:apexUp .6s cubic-bezier(.2,.7,.2,1) .2s both}
+  #apexOverlay.apex-open .lead{animation:apexIgnite .5s ease var(--ig) both}
+  #apexOverlay.apex-open .rule{animation:apexRule .7s cubic-bezier(.2,.7,.2,1) 1.75s both}
+  #apexOverlay.apex-open .decode .dc{animation:apexUp .5s cubic-bezier(.2,.7,.2,1) var(--dc) both}
+  #apexOverlay.apex-open .foot{animation:apexFade .6s ease 2.75s both}
+  #apexOverlay.apex-open .hint{animation:apexFade .6s ease 3.05s both}
+
+  @media (prefers-reduced-motion:reduce){
+    #apexOverlay.apex-open .eyebrow,#apexOverlay.apex-open .sentence,#apexOverlay.apex-open .rule,#apexOverlay.apex-open .decode .dc,#apexOverlay.apex-open .foot,#apexOverlay.apex-open .hint{animation:none;opacity:1;transform:none}
+    #apexOverlay.apex-open .rule{width:clamp(60px,7vw,120px)}
+    #apexOverlay.apex-open .lead{animation:none;color:var(--hue)}
+  }
+</style>
+
+<div id="apexOverlay" aria-hidden="true">
+  <button class="ov-close" title="Close (Esc / A)" aria-label="Close">&#10005;</button>
+  <div class="ov-inner">
+    <div class="eyebrow">a recursive acronym</div>
+    <div class="sentence" aria-label="APEX Portal for EXams"><span class="lead h1" style="--ig:1.05s">A</span> <span class="lead h2" style="--ig:1.28s">P</span>ortal <span class="ax-conn">for</span> <span class="lead h3" style="--ig:1.55s">EX</span>ams</div>
+    <div class="rule" aria-hidden="true"></div>
+    <div class="decode" aria-hidden="true">
+      <div class="dc h1" style="--dc:1.95s"><b>A</b><span class="ar">→</span><span class="dw"><span class="self">APEX</span> <span class="loop">&#8635;</span></span></div>
+      <div class="dc h2" style="--dc:2.1s"><b>P</b><span class="ar">→</span><span class="dw">Portal</span></div>
+      <div class="dc h3" style="--dc:2.25s"><b>EX</b><span class="ar">→</span><span class="dw">EXams</span></div>
+    </div>
+    <div class="foot" aria-hidden="true">like GNU &amp; WINE — the A expands to APEX, forever</div>
+  </div>
+  <div class="hint">press A or Esc to close</div>
+</div>
 
 <div id="lightbox" aria-hidden="true">
   <button id="lbclose" title="Close (Esc)" aria-label="Close">✕</button>
@@ -1648,6 +1699,9 @@ table.score td.k{font-size:21px}
     var erdOv=document.getElementById('erdOverlay');
     if(e.key==='o'||e.key==='O'){ e.preventDefault(); erdOv.classList.toggle('erd-open'); return; }
     if(erdOv.classList.contains('erd-open')){ if(e.key==='Escape'){e.preventDefault();erdOv.classList.remove('erd-open');} return; }
+    var apexOv=document.getElementById('apexOverlay');
+    if(e.key==='a'||e.key==='A'){ e.preventDefault(); apexOv.classList.toggle('apex-open'); return; }
+    if(apexOv.classList.contains('apex-open')){ if(e.key==='Escape'){e.preventDefault();apexOv.classList.remove('apex-open');} return; }
     switch(e.key){
       case 'ArrowRight': case ' ': case 'PageDown': case 'n': case 'N': e.preventDefault(); advance(); break;
       case 'ArrowLeft': case 'PageUp': case 'p': case 'P': e.preventDefault(); back(); break;
@@ -1665,6 +1719,7 @@ table.score td.k{font-size:21px}
   document.addEventListener('keydown',onKey);
   document.getElementById('prev').addEventListener('click',function(){back();});
   (function(){var ov=document.getElementById('erdOverlay');if(ov){var c=document.getElementById('erdClose');if(c)c.addEventListener('click',function(){ov.classList.remove('erd-open');});ov.addEventListener('click',function(e){if(e.target===ov)ov.classList.remove('erd-open');});}})();
+  (function(){var ov=document.getElementById('apexOverlay');if(ov){var c=ov.querySelector('.ov-close');if(c)c.addEventListener('click',function(){ov.classList.remove('apex-open');});ov.addEventListener('click',function(e){if(e.target===ov)ov.classList.remove('apex-open');});}})();
   document.getElementById('next').addEventListener('click',function(){advance();});
 
   /* ---- lightbox: click a framed screenshot to view it full-size in the same frame ---- */
