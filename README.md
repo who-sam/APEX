@@ -70,7 +70,7 @@ APEX is a graduation project (Menoufia University, Electronics & Communications)
 - **Submission grading is fire-and-forget.** `judge0.Grade(...)` runs in a bare goroutine — a process crash mid-grade leaves submissions stuck in `running`. There is no worker queue / retry yet.
 - **Exam auto-submit on timeout is client-side only.** When the countdown hits zero the exam-taking UI submits the attempt; there is no server-side sweep that force-submits an abandoned in-progress attempt if the student's browser is closed at expiry.
 - **SPA stores the JWT in `localStorage`.** No CSRF surface because there are no cookies, but an XSS would lift the token. Trade-off chosen for a simpler deploy; switch to `httpOnly` cookies + same-site if you harden it.
-- **Test coverage is minimal.** The CI suites run, but the backend has no `*_test.go` files yet and the frontend ships one sanity test.
+- **Test coverage is focused, not comprehensive.** The backend ships stdlib unit tests for pure logic in five packages (`config`, `judge0`, `auth`, `class`, `middleware`) — token/claim handling, output normalization, invite-code generation, DSN building, JWT/role middleware — and the frontend ships one sanity test. These are targeted pure-logic tests, not full end-to-end or handler coverage.
 
 > The `seed` demo-data binary is **not** committed — it is a local build artifact (`/seed` is git-ignored). Build it on demand with `go build -o seed ./cmd/seed` or just run `go run ./cmd/seed`.
 
@@ -100,7 +100,7 @@ APEX is a graduation project (Menoufia University, Electronics & Communications)
 **Platform**
 - JWT auth, password reset by email (one-time SHA-256-hashed token, 1 h expiry), Google Identity Services sign-in.
 - Email + in-app reminders for upcoming exams (T-60 min in-app, T-60 min email, T-0 email — column-deduped, idempotent across restarts).
-- Idempotent legacy SQL migrations gated in front of GORM `AutoMigrate`, plus a parallel versioned `golang-migrate` track (`internal/database/migrations/sql/`) that owns incremental schema changes when `SKIP_AUTOMIGRATE=true` (see [ORM_RULES.md](ORM_RULES.md)).
+- Idempotent legacy SQL migrations gated in front of GORM `AutoMigrate`, plus a parallel versioned `golang-migrate` track (`internal/database/migrations/sql/`) with a real `0001` baseline that builds the full schema from an empty database when `SKIP_AUTOMIGRATE=true`, and owns all incremental changes thereafter (see [ORM_RULES.md](ORM_RULES.md)).
 - `/healthz` liveness endpoint and a `--healthcheck` self-probe so the shell-less distroless Docker image can health-check itself.
 
 ---
@@ -150,7 +150,7 @@ The backend is a single Gin process. Routes split into `public` (no auth) and `p
 | Editor           | `@monaco-editor/react`                                            |
 | Data             | `@tanstack/react-query` 5, `react-hook-form`, `zod`               |
 | Routing          | `react-router-dom` 6                                              |
-| Tests            | Vitest 3 + Testing Library + jsdom (frontend); Go `testing` + `golangci-lint` (backend) |
+| Tests            | Go `testing` (stdlib unit tests) + `golangci-lint` (backend); Vitest 3 + Testing Library + jsdom (frontend) |
 | Container        | Distroless `gcr.io/distroless/static-debian12:nonroot` (backend), `nginx:1.27-alpine` (frontend) |
 | CI               | GitHub Actions: backend vet+test+lint, frontend lint+build+test, Docker smoke build |
 
@@ -222,7 +222,7 @@ The reset is scoped to the `@apex.test` domain and never touches real accounts. 
 | Student | `amr.samy@apex.test`     | `demo1234` | Main demo account: graded results, an upcoming exam, and one **live-now** exam to take |
 | Student | `omar.hassan@apex.test`  | `demo1234` | Top scorer across classes |
 | Student | `lina.farouk@apex.test`  | `demo1234` | CS101 written answer pending grade |
-| Student | *(+4 more `@apex.test` students)* | `demo1234` | Varied score distributions |
+| Student | *(+5 more `@apex.test` students)* | `demo1234` | Varied score distributions |
 
 Class invite codes (for the join-class flow): `CS101DEM`, `CS210DEM`, `CS330DEM`, `ECE240DM`.
 
@@ -244,8 +244,7 @@ All config is loaded from environment (`.env` is auto-loaded via `godotenv` in `
 | `DB_NAME`            | dev      | `apex`                   | Database name                                                                        |
 | `DB_SSLMODE`         | no       | `disable`                | `require` for managed providers                                                      |
 | `PORT`               | no       | `8080`                   | HTTP listen port (also read by the `--healthcheck` self-probe)                       |
-| `SKIP_AUTOMIGRATE`   | prod     | *(unset → false)*        | Set to `true` in production to disable GORM `AutoMigrate` and run only the versioned `golang-migrate` files (see [caveat](#database-migrations)) |
-| `MIGRATIONS_DIR`     | no       | `file://internal/database/migrations/sql` | Where `cmd/migrate` reads SQL migrations from                          |
+| `SKIP_AUTOMIGRATE`   | prod     | *(unset → false)*        | Set to `true` in production to disable GORM `AutoMigrate` and build/evolve the schema solely from the versioned `golang-migrate` files (see [Database Migrations](#database-migrations)) |
 | `JWT_SECRET`         | **yes**  | —                        | HS256 signing key, must be ≥ 32 chars, must not be the literal `dev-secret-change-in-prod` |
 | `JUDGE0_URL`         | no       | `https://ce.judge0.com`  | Judge0 base URL — point at a self-hosted instance for production                     |
 | `APP_URL`            | no       | `http://localhost:5173`  | Public frontend URL (used in password-reset email links and as a CORS origin)        |
@@ -256,6 +255,8 @@ All config is loaded from environment (`.env` is auto-loaded via `godotenv` in `
 | `SMTP_PASS`          | no       | *(empty)*                |                                                                                      |
 | `SMTP_FROM`          | no       | *(empty)*                | Envelope-from address                                                                |
 | `GOOGLE_CLIENT_ID`   | no       | *(empty)*                | Google Identity Services web client ID; if empty, `POST /auth/google` returns 503    |
+
+> **`MIGRATIONS_DIR`** (default `file://internal/database/migrations/sql`) is **not** part of `config.Load()` / the `Config` struct — it is read directly via `os.Getenv` by `cmd/migrate` (`cmd/migrate/main.go`) and by `RunSQLMigrations` (`internal/database/sqlmigrate.go`). Override it only for non-standard layouts (e.g. the versioned SQL files copied to a different path inside a container). See [Database Migrations](#database-migrations).
 
 ### Frontend (Vite build args)
 
@@ -292,13 +293,13 @@ CORS is built from `APP_URL` + `ALLOWED_ORIGINS` at startup (see `internal/confi
 │   ├── migrate/                  # golang-migrate CLI wrapper (`migrate up|down|version|force`)
 │   └── seed/                     # demo-data loader (build to a gitignored `./seed` if desired)
 ├── internal/
-│   ├── config/                   # env loading, DSN, MigrateURL
+│   ├── config/                   # env loading, DSN, MigrateURL (+ config_test.go)
 │   ├── database/                 # GORM init + legacy idempotent SQL migrations
 │   │   └── migrations/sql/       # versioned NNNN_*.up.sql / .down.sql for golang-migrate
-│   ├── middleware/               # CORS, JWT auth, role gating
+│   ├── middleware/               # CORS, JWT auth, role gating (+ auth_test.go)
 │   ├── models/                   # GORM models (single source of truth for schema)
-│   ├── auth/                     # signup, login, Google OAuth, password reset, account delete
-│   ├── class/                    # CRUD, member removal, stats, cover image
+│   ├── auth/                     # signup, login, Google OAuth, password reset, account delete (+ handler_test.go)
+│   ├── class/                    # CRUD, member removal, stats, cover image (+ invite_code_test.go)
 │   ├── student/                  # student-scoped views (join, classes, exams, stats, performance)
 │   ├── teacher/                  # teacher dashboard, pending-grading queue
 │   ├── exam/                     # exam CRUD, assign, close/reopen, attempts (start/submit/autosave), results, reset
@@ -306,7 +307,7 @@ CORS is built from `APP_URL` + `ALLOWED_ORIGINS` at startup (see `internal/confi
 │   ├── testcase/                 # test cases per problem
 │   ├── submission/               # sample-run, get, manual grade
 │   ├── execute/                  # one-off code run (playground; not persisted)
-│   ├── judge0/                   # client + grader (coding/MCQ/written) + attempt aggregator
+│   ├── judge0/                   # client + grader (coding/MCQ/written) + attempt aggregator (+ grader_pure_test.go)
 │   ├── folder/                   # bank-question folders
 │   ├── announcement/             # per-class announcements + attachments
 │   ├── notification/             # in-app notifications + helper for fan-out
@@ -532,7 +533,7 @@ APEX has two migration tracks; which one mutates schema depends on `SKIP_AUTOMIG
 **Local / dev (`SKIP_AUTOMIGRATE` unset or `false`):** `internal/database/database.go` runs three passes on every boot:
 
 1. **`RunMigrations`** — explicit, idempotent SQL executed **before** `AutoMigrate` (each block gated by `tableExists()` so fresh DBs stay quiet). Use this for any change to an existing table (add column nullable, backfill, set NOT NULL / DEFAULT, drop FK, sweep orphans, drop legacy tables).
-2. **`AutoMigrate`** — owned by GORM, over the 15 models. This is what materializes the schema baseline today.
+2. **`AutoMigrate`** — owned by GORM, over the 15 models. In dev this is what materializes the schema.
 3. **`RunPostMigrations`** — runs after `AutoMigrate` so it can reference GORM-created tables (e.g. adds `fk_problems_folder` after `folders` exists, sweeping orphan refs first).
 
 **Production (`SKIP_AUTOMIGRATE=true`):** `RunMigrations`, `AutoMigrate`, and `RunPostMigrations` are all skipped, and only the versioned files in `internal/database/migrations/sql/` run via `golang-migrate`. The same logic is exposed as a CLI in `cmd/migrate`:
@@ -544,9 +545,9 @@ go run ./cmd/migrate down                # roll back one migration
 go run ./cmd/migrate force <version>     # mark a version applied without running it (recovery only)
 ```
 
-> **Baseline caveat.** The only versioned file today, `0001_init`, is an intentional no-op (`SELECT 1`) that just marks version 1 — the real schema baseline is still materialized by GORM `AutoMigrate`. The versioned track therefore owns **incremental** changes (`0002+`) but cannot build the schema from an empty database on its own. `SKIP_AUTOMIGRATE=true` is only safe against a database whose baseline schema already exists (e.g. from a prior AutoMigrate run). Before a true from-scratch production deploy, generate a real baseline migration (e.g. a `pg_dump` of the AutoMigrated schema) as `0001`.
+**Baseline.** `0001_init` is a **real baseline migration** — full DDL (all 15 core tables, sequences, constraints, and indexes) equivalent to a first-boot GORM `AutoMigrate`, generated by `pg_dump` of a freshly AutoMigrated Postgres 16 database. It was verified end-to-end with `golang-migrate`: `up` builds all 15 tables from an empty database and stamps version 1; `down` drops all 15 tables back to version 0. This means `SKIP_AUTOMIGRATE=true` can bootstrap a **from-scratch** production database on its own — no prior AutoMigrate run required. The versioned track owns the baseline (`0001`) **and** all incremental changes (`0002+`); GORM `AutoMigrate` is only used in the dev path.
 
-**Adding a new migration:** put a paired `NNNN_name.up.sql` / `NNNN_name.down.sql` in `internal/database/migrations/sql/`. Both must be idempotent (`IF EXISTS` / `IF NOT EXISTS`) and `down` must reverse `up`. After adding, run `go run ./cmd/migrate up`, then `version`, then sanity-check row counts per Rule 4 of [ORM_RULES.md](ORM_RULES.md).
+**Adding a new migration:** put a paired `NNNN_name.up.sql` / `NNNN_name.down.sql` in `internal/database/migrations/sql/` (or wherever `MIGRATIONS_DIR` points). Both must be idempotent (`IF EXISTS` / `IF NOT EXISTS`) and `down` must reverse `up`. After adding, run `go run ./cmd/migrate up`, then `version`, then sanity-check row counts per Rule 4 of [ORM_RULES.md](ORM_RULES.md).
 
 > See [ORM_RULES.md](ORM_RULES.md) for the incident that motivated this. **Never** add `gorm:"default:X"` to a struct field on an already-populated table without a matching SQL migration — it silently rewrites existing rows.
 
@@ -590,7 +591,17 @@ bun run test                       # Vitest single run
 bun run test:watch                 # watch mode
 ```
 
-Frontend tests use Vitest + jsdom + Testing Library (`frontend/src/test/setup.ts`). **Coverage is intentionally minimal in this thesis snapshot** — the backend has no `*_test.go` files yet, and the frontend ships a single sanity test. The CI matrix exercises the runners themselves so adding real tests does not require pipeline changes.
+The backend ships **stdlib unit tests for pure, deterministic logic** — no database or network needed — in five packages:
+
+| Package | File | Covers |
+|---------|------|--------|
+| `internal/config`     | `config_test.go`        | DSN assembly, `MigrateURL`, `getEnv` fallbacks, password-not-leaked-in-DSN ordering |
+| `internal/judge0`     | `grader_pure_test.go`   | output normalization (CRLF/CR/whitespace), idempotency, pointer deref helper |
+| `internal/auth`       | `handler_test.go`       | JWT token/claim generation & signature validation, reset-token SHA-256 hashing, email regex |
+| `internal/class`      | `invite_code_test.go`   | invite-code length, alphabet, no-ambiguous-chars, distribution |
+| `internal/middleware` | `auth_test.go`          | JWT `Auth` context wiring, bad-request rejection, RS256 rejection, `RequireRole` gating |
+
+These are focused pure-logic tests, not end-to-end or full handler coverage — most HTTP handlers and DB paths are exercised manually and via the frontend, not automated. The frontend adds a Vitest + jsdom + Testing Library setup (`frontend/src/test/setup.ts`) with a single sanity test. The CI matrix runs both suites on every push, so expanding coverage does not require pipeline changes.
 
 ---
 
@@ -606,7 +617,7 @@ Both services ship as production-ready Docker images:
 
 - Generate a strong `JWT_SECRET` (`openssl rand -hex 32`) and set it via your orchestrator's secret store.
 - Provide a managed Postgres 16 (Neon, Railway, RDS, etc.) and set `DATABASE_URL` (takes precedence over `DB_*` for both `apex` and `cmd/migrate`). Use `sslmode=require` for managed providers.
-- If using `SKIP_AUTOMIGRATE=true`, ensure the baseline schema already exists (see the [migration caveat](#database-migrations)) and run `migrate up` as a pre-deploy step (the bundled `migrate` compose service is the reference implementation).
+- Set `SKIP_AUTOMIGRATE=true` and run `migrate up` as a pre-deploy step — `0001_init` builds the full baseline schema from an empty database, and any `0002+` files apply incrementally (the bundled `migrate` compose service is the reference implementation).
 - Run a Judge0 instance you control — the public `ce.judge0.com` is rate-limited and not for production.
 - Configure `SMTP_*` and `APP_URL` so password-reset and exam-reminder emails resolve correctly. Without `SMTP_HOST` all emails silently fall back to stdout logging.
 - Set `GOOGLE_CLIENT_ID` (backend) **and** `VITE_GOOGLE_CLIENT_ID` (frontend build arg) to the same web client ID; whitelist `APP_URL` in the Google Cloud Console.
@@ -624,7 +635,7 @@ Both services ship as production-ready Docker images:
 | Cannot reach Postgres on `localhost:5432`                  | Compose maps the container to host port `5433` by default (override with `POSTGRES_HOST_PORT`).     |
 | `unsupported language` from Judge0                         | The frontend sent a language not in `LanguageMap`. Add the alias in `internal/judge0/client.go`.    |
 | Every exam disappears from student view after a migration  | You added `gorm:"default:true"` on an existing table. Read [ORM_RULES.md](ORM_RULES.md) and revert. |
-| Fresh production DB ends up with no tables                 | You set `SKIP_AUTOMIGRATE=true` against an empty DB; `0001_init` is a no-op baseline. Run AutoMigrate once or add a real baseline migration first. |
+| Fresh production DB has no tables after `SKIP_AUTOMIGRATE=true` | The migrate step never ran. `0001_init` builds the full baseline — run `go run ./cmd/migrate up` (or let the compose `migrate` service complete) against the DB. Confirm with `migrate version` → 1. |
 | Password-reset email never arrives                         | `SMTP_HOST` empty → link is in backend stdout. Set SMTP creds for real delivery.                    |
 | Google sign-in returns 401 / 503                           | 503 = `GOOGLE_CLIENT_ID` not set on backend. 401 = backend / frontend client IDs don't match.       |
 | Bun install fails in CI but works locally                  | CI pins Bun to `1.1.38`; pin your local Bun to match (`bun upgrade --version 1.1.38`).              |
@@ -661,3 +672,4 @@ This is a graduation project, not a hardened production system — see [Project 
 ## License
 
 Released under the **Apache License 2.0** — see [`LICENSE`](LICENSE). Copyright © 2026 Amr Samy.
+
