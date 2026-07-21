@@ -2,17 +2,28 @@
 
 > Exam, grading, and live-coding portal for classrooms. Go + Gin backend, React + Vite frontend, PostgreSQL store, Judge0 sandbox for code execution.
 
-APEX lets teachers build mixed-format exams (coding, MCQ, written), assign them to classes, auto-grade code against test cases, and manually grade written answers. Students join classes by invite code, take timed exams in a Monaco editor, see live test feedback, and review results.
+[![Go](https://img.shields.io/badge/Go-1.25.3-00ADD8?logo=go&logoColor=white)](go.mod)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](frontend/package.json)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](frontend/package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](frontend/package.json)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](docker-compose.yml)
+[![CI](https://github.com/who-sam/APEX/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
+
+APEX lets teachers build mixed-format exams (coding, MCQ, written), assign them to classes, auto-grade code against test cases, and manually grade written answers. Students join classes by invite code, take timed exams in a Monaco editor, see live sample-test feedback, and review their results.
 
 ---
 
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Project Status](#project-status)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
+- [Demo Data & Logins](#demo-data--logins)
 - [Configuration](#configuration)
 - [Project Layout](#project-layout)
 - [Data Model](#data-model)
@@ -26,7 +37,27 @@ APEX lets teachers build mixed-format exams (coding, MCQ, written), assign them 
 - [Deployment](#deployment)
 - [Troubleshooting](#troubleshooting)
 - [Related Artifacts](#related-artifacts)
+- [Contributing](#contributing)
+- [Security](#security)
 - [License](#license)
+
+---
+
+## Screenshots
+
+| Landing / Sign-in | Teacher Dashboard |
+|---|---|
+| ![Landing and login](presentation/screenshots/landing-login.png) | ![Teacher dashboard](presentation/screenshots/teacher-dashboard.png) |
+
+| Exam Builder | Live Coding (Monaco + Judge0) |
+|---|---|
+| ![Exam builder](presentation/screenshots/exam-builder.png) | ![Exam runner with Monaco editor](presentation/screenshots/exam-runner-monaco.png) |
+
+| Question Bank | Student Dashboard |
+|---|---|
+| ![Question bank](presentation/screenshots/question-bank.png) | ![Student dashboard](presentation/screenshots/student-dashboard.png) |
+
+More screenshots live in [`presentation/screenshots/`](presentation/screenshots/) (`analytics-chart.png`, `auth-signin.png`, `demo-poster.png`) and, with figure captions, in the thesis under [`book/figures/screenshots/`](book/figures/screenshots/).
 
 ---
 
@@ -37,16 +68,18 @@ APEX is a graduation project (Menoufia University, Electronics & Communications)
 - **Auth has no rate limiting.** Bcrypt cost 10 is the only brake on credential stuffing. Front the API with a WAF / rate limiter in production.
 - **Password minimum is 6 characters.** Raise this before exposing the instance to the public internet.
 - **Submission grading is fire-and-forget.** `judge0.Grade(...)` runs in a bare goroutine — a process crash mid-grade leaves submissions stuck in `running`. There is no worker queue / retry yet.
-- **SPA stores the JWT in `localStorage`.** No CSRF protection because there are no cookies, but XSS would lift the token. Trade-off chosen for simpler deploy; switch to `httpOnly` cookies + same-site if you harden it.
+- **Exam auto-submit on timeout is client-side only.** When the countdown hits zero the exam-taking UI submits the attempt; there is no server-side sweep that force-submits an abandoned in-progress attempt if the student's browser is closed at expiry.
+- **SPA stores the JWT in `localStorage`.** No CSRF surface because there are no cookies, but an XSS would lift the token. Trade-off chosen for a simpler deploy; switch to `httpOnly` cookies + same-site if you harden it.
 - **Test coverage is minimal.** The CI suites run, but the backend has no `*_test.go` files yet and the frontend ships one sanity test.
-- **A 17 MB pre-built `seed` binary is checked in at the repo root.** Convenient for first-boot, painful for clone size — strip from git history if you fork.
+
+> The `seed` demo-data binary is **not** committed — it is a local build artifact (`/seed` is git-ignored). Build it on demand with `go build -o seed ./cmd/seed` or just run `go run ./cmd/seed`.
 
 ---
 
 ## Features
 
 **Teacher**
-- Class management with invite codes, cover images, member roster, removal.
+- Class management with invite codes, cover images, member roster, member removal.
 - Exam builder: coding / MCQ / written, per-question points, difficulty, hints, time/memory limits, image attachments, tags.
 - Question bank with folders for reuse across exams.
 - Draft vs published exams; publishing requires `start_time` to be set. Shuffle questions; show-results-after toggle; per-exam passing score.
@@ -54,21 +87,21 @@ APEX is a graduation project (Menoufia University, Electronics & Communications)
 - Auto-grading via Judge0 with normalized output diffing; manual grading queue for written answers (with teacher feedback + score override).
 - Announcements per class with attachments; notification fan-out to enrolled students.
 - Dashboard, results explorer, pending-grading queue, class stats.
-- Grade announcement gating: optionally block announcement until all manual grading is complete.
+- Grade-announcement gating: optionally block announcements until all manual grading is complete.
 - Exam preview: view any exam exactly as students see it before publishing.
 
 **Student**
 - Join classes via 8-char invite code; leave class; see assigned exams.
 - Timed exam attempts with server-side autosave (`PUT /student/exams/:id/autosave`), resume, and shuffled question order.
-- Monaco editor with multi-language run / submit, sample-test feedback.
+- Monaco editor with multi-language run / submit and sample-test feedback.
 - Results review per attempt with per-test breakdown and teacher feedback.
 - Profile, notifications, help page.
 
 **Platform**
-- JWT auth, password reset by email (one-time SHA-256-hashed token, 1h expiry), Google Identity Services sign-in.
-- Email + in-app reminders for upcoming exams (T-60min in-app, T-60min email, T-0 email — column-deduped, idempotent across restarts).
-- Idempotent legacy SQL migrations gated in front of GORM `AutoMigrate`, plus a parallel versioned `golang-migrate` track (`internal/database/migrations/sql/`) that becomes the sole source of truth when `SKIP_AUTOMIGRATE=true` (see [ORM_RULES.md](ORM_RULES.md)).
-- `/healthz` liveness endpoint and a `--healthcheck` self-probe so the distroless Docker image can health-check without a shell.
+- JWT auth, password reset by email (one-time SHA-256-hashed token, 1 h expiry), Google Identity Services sign-in.
+- Email + in-app reminders for upcoming exams (T-60 min in-app, T-60 min email, T-0 email — column-deduped, idempotent across restarts).
+- Idempotent legacy SQL migrations gated in front of GORM `AutoMigrate`, plus a parallel versioned `golang-migrate` track (`internal/database/migrations/sql/`) that owns incremental schema changes when `SKIP_AUTOMIGRATE=true` (see [ORM_RULES.md](ORM_RULES.md)).
+- `/healthz` liveness endpoint and a `--healthcheck` self-probe so the shell-less distroless Docker image can health-check itself.
 
 ---
 
@@ -96,7 +129,7 @@ APEX is a graduation project (Menoufia University, Electronics & Communications)
                   └──────────────┘         └────────────────────────┘
 ```
 
-Backend is a single Gin process. Routes are split into `public` (no auth) and `protected` (JWT middleware). Role-scoped subgroups (`teacher`, `student`) are enforced by `middleware.RequireRole`. A background goroutine (`internal/reminder`) ticks every minute for exam reminders. Code grading (`internal/judge0`) runs in fire-and-forget goroutines spawned from the exam-submit handler. In production, schema changes are owned by the `cmd/migrate` binary; the same Docker image ships all three binaries (`apex`, `migrate`, `seed`).
+The backend is a single Gin process. Routes split into `public` (no auth) and `protected` (JWT middleware); role-scoped subgroups (`teacher`, `student`) are enforced by `middleware.RequireRole`. A background goroutine (`internal/reminder`) ticks every minute for exam reminders. Code grading (`internal/judge0`) runs in fire-and-forget goroutines spawned from the exam-submit handler. In production, schema changes are owned by the `cmd/migrate` binary; the same Docker image ships all three binaries (`apex`, `migrate`, `seed`).
 
 ---
 
@@ -142,9 +175,9 @@ This will:
 4. `bun run dev` (or `npm run dev` if Bun is missing) on `:5173`.
 5. Trap Ctrl+C and tear everything down.
 
-Open http://localhost:5173 and sign up. The backend exposes `GET /healthz` for liveness checks.
+Open http://localhost:5173 and sign up (or seed demo data — see below). The backend exposes `GET /healthz` for liveness checks.
 
-> **`JWT_SECRET` is required**, must be ≥32 characters, and the placeholder literal `dev-secret-change-in-prod` is rejected. Generate one with `openssl rand -hex 32` and paste it into `.env` before starting.
+> **`JWT_SECRET` is required**, must be ≥ 32 characters, and the placeholder literal `dev-secret-change-in-prod` is rejected. Generate one with `openssl rand -hex 32` and paste it into `.env` before starting.
 
 ### Manual
 ```bash
@@ -172,6 +205,29 @@ JWT_SECRET=$(openssl rand -hex 32) docker compose up --build
 
 ---
 
+## Demo Data & Logins
+
+Load a rich, demo-ready dataset (teacher + 8 students, four classes, exams in every lifecycle state, a question bank, a pending-grading queue, announcements, and notifications):
+
+```bash
+go run ./cmd/seed            # seed once; exits early if demo data already present
+go run ./cmd/seed -reset     # wipe existing @apex.test demo data first, then reseed
+```
+
+The reset is scoped to the `@apex.test` domain and never touches real accounts. All demo accounts share the password `demo1234`.
+
+| Role    | Email                    | Password   | Notes |
+|---------|--------------------------|------------|-------|
+| Teacher | `ayman.omera@apex.test`  | `demo1234` | Owns all four classes, has a pending-grading queue |
+| Student | `amr.samy@apex.test`     | `demo1234` | Main demo account: graded results, an upcoming exam, and one **live-now** exam to take |
+| Student | `omar.hassan@apex.test`  | `demo1234` | Top scorer across classes |
+| Student | `lina.farouk@apex.test`  | `demo1234` | CS101 written answer pending grade |
+| Student | *(+4 more `@apex.test` students)* | `demo1234` | Varied score distributions |
+
+Class invite codes (for the join-class flow): `CS101DEM`, `CS210DEM`, `CS330DEM`, `ECE240DM`.
+
+---
+
 ## Configuration
 
 All config is loaded from environment (`.env` is auto-loaded via `godotenv` in `config.init()`). Defaults shown; **`JWT_SECRET` has no default** and the app refuses to start without one.
@@ -187,10 +243,10 @@ All config is loaded from environment (`.env` is auto-loaded via `godotenv` in `
 | `DB_PASSWORD`        | dev      | `postgres`               | Postgres password                                                                    |
 | `DB_NAME`            | dev      | `apex`                   | Database name                                                                        |
 | `DB_SSLMODE`         | no       | `disable`                | `require` for managed providers                                                      |
-| `PORT`               | no       | `8080`                   | HTTP listen port                                                                     |
-| `SKIP_AUTOMIGRATE`   | prod     | *(unset → false)*        | Set to `true` in production to disable GORM `AutoMigrate`; `cmd/migrate up` becomes the sole schema authority |
+| `PORT`               | no       | `8080`                   | HTTP listen port (also read by the `--healthcheck` self-probe)                       |
+| `SKIP_AUTOMIGRATE`   | prod     | *(unset → false)*        | Set to `true` in production to disable GORM `AutoMigrate` and run only the versioned `golang-migrate` files (see [caveat](#database-migrations)) |
 | `MIGRATIONS_DIR`     | no       | `file://internal/database/migrations/sql` | Where `cmd/migrate` reads SQL migrations from                          |
-| `JWT_SECRET`         | **yes**  | —                        | HS256 signing key, must be ≥32 chars, must not be the literal `dev-secret-change-in-prod` |
+| `JWT_SECRET`         | **yes**  | —                        | HS256 signing key, must be ≥ 32 chars, must not be the literal `dev-secret-change-in-prod` |
 | `JUDGE0_URL`         | no       | `https://ce.judge0.com`  | Judge0 base URL — point at a self-hosted instance for production                     |
 | `APP_URL`            | no       | `http://localhost:5173`  | Public frontend URL (used in password-reset email links and as a CORS origin)        |
 | `ALLOWED_ORIGINS`    | no       | *(empty)*                | Comma-separated additional CORS origins; merged with `APP_URL`                       |
@@ -228,14 +284,13 @@ CORS is built from `APP_URL` + `ALLOWED_ORIGINS` at startup (see `internal/confi
 ├── Dockerfile                    # multi-stage Go build → distroless static-debian12:nonroot
 ├── docker-compose.yml            # postgres + migrate (one-shot) + backend + frontend (nginx)
 ├── start.sh                      # one-shot local dev launcher
-├── seed                          # pre-built demo-data binary (17 MB; bloats clone)
 ├── ORM_RULES.md                  # REQUIRED reading before any schema change
 ├── go.mod / go.sum
 ├── .golangci.yml                 # golangci-lint config
 ├── .github/workflows/            # ci.yml (vet/test/lint/build) + docker.yml (image smoke build)
 ├── cmd/
 │   ├── migrate/                  # golang-migrate CLI wrapper (`migrate up|down|version|force`)
-│   └── seed/                     # demo data loader (source of the root `seed` binary)
+│   └── seed/                     # demo-data loader (build to a gitignored `./seed` if desired)
 ├── internal/
 │   ├── config/                   # env loading, DSN, MigrateURL
 │   ├── database/                 # GORM init + legacy idempotent SQL migrations
@@ -268,65 +323,63 @@ CORS is built from `APP_URL` + `ALLOWED_ORIGINS` at startup (see `internal/confi
 │   ├── package.json (bun.lock)
 │   └── src/
 │       ├── main.tsx / App.tsx
-│       ├── app/routes.tsx        # central route table
 │       ├── contexts/             # AuthContext, role gating
 │       ├── components/           # shared UI (shadcn/ui + layout)
 │       ├── features/             # auth, dashboard, exams, courses, grading,
 │       │                         #   playground, results, settings, social, landing
-│       │                         # routes: exam-builder, question-bank[/:id|/new],
-│       │                         #   grading, exam/:id (take), exam/:id/review,
-│       │                         #   exam-preview/:id, help, notifications
 │       ├── pages/                # Index, NotFound
 │       ├── hooks/ lib/ assets/
-│       └── test/                 # Vitest setup
+│       └── test/                 # Vitest setup + sanity test
 ├── book/                         # LaTeX thesis (IEEE-standard XeLaTeX → main.pdf)
-│   └── figures/                  # generated figure assets
-└── presentation/                 # Defense slide deck (PPTX + HTML)
+│   └── figures/                  # figure assets + captioned screenshots
+└── presentation/                 # Defense slide deck (PPTX + HTML) + screenshots
 ```
 
 ---
 
 ## Data Model
 
-Core entities (see `internal/models/*.go` for full struct tags):
+15 GORM models map to 15 tables (see `internal/models/*.go` for full struct tags). Enums are application-enforced Go string columns, not Postgres enum types.
 
-- **User** — `email`, `password_hash`, `role` (`teacher` | `student`), `name`, optional `google_id`. `UserProfile` carries bio, avatar (base64 dataURL or URL), notification toggles, and per-teacher defaults.
-- **Class** — owned by a teacher, joined by students via 8-char `invite_code`. Fields: `cover_image`, `grades_announced`, `passing_threshold`, `block_announce_with_pending`. Membership via `ClassMember`.
-- **Exam** — owned by teacher; `duration_minutes`, optional `start_time`/`end_time`, `is_draft`, `is_practice`, `shuffle_questions`, `show_results_after`, `passing_score`. Assigned to one or many classes via `ExamClass`. Has many `Problem`. `reset_at` invalidates cached student attempts when a teacher destructively edits exam content. `reminder_sent_at` / `email_reminder1h_sent_at` / `email_reminder_start_sent_at` are deduplication stamps for the reminder scheduler.
-- **Problem** — three types: `coding`, `mcq`, `written`. Belongs to an exam **or** to the question bank (`is_bank=true`). Optional `class_id` and `folder_id` for bank organization. Coding problems have `TestCase` rows. MCQ uses `options` + `correct_option_ids` (JSONB). Written has `rubric`, `max_word_count`, `require_manual_grading`.
-- **TestCase** — `input`, `expected_output`, `is_sample`, `points`.
-- **ExamAttempt** — one row per (student, exam) attempt; aggregates `score` across submissions (excluding `pending_review`); tracks `graded_notified` for one-shot notification; `draft_answers` (JSONB) + `draft_saved_at` hold the in-progress autosave payload (opaque to the server, cleared on submit).
-- **Submission** — one row per (attempt, problem). Status lifecycle: `pending` → `running` → one of `accepted`, `wrong_answer`, `compilation_error`, `time_limit_exceeded`, `runtime_error`, or `pending_review` (written or unconfigured MCQ awaiting manual grade). Carries `score`, `passed_count`/`total_count`, `code`/`selected_options`/`text_answer`, `execution_time_ms`, `memory_kb`, optional `teacher_feedback`. `TestResult` rows hold per-test outcome.
+- **User** — `email` (unique), `password_hash` (hidden), `role` (`teacher` | `student`), `name`, optional `google_id` (for OAuth linking). `UserProfile` (1:1 via `user_id`) carries bio, avatar (base64 dataURL or URL), notification toggles, and per-teacher defaults.
+- **Class** — owned by a teacher, joined by students via 8-char `invite_code` (unique). Fields: `cover_image`, `grades_announced`, `passing_threshold` (60), `block_announce_with_pending` (true). Membership via **ClassMember** (composite unique on `class_id + user_id`).
+- **Exam** — owned by a teacher; `duration_minutes` (60), nullable `start_time`/`end_time`, `is_draft`, `is_practice`, `shuffle_questions`, `show_results_after` (true), `passing_score` (50). Assigned to one or many classes via **ExamClass**. Has many **Problem**. `reset_at` invalidates cached student attempts when a teacher destructively edits exam content. `reminder_sent_at` / `email_reminder1h_sent_at` / `email_reminder_start_sent_at` are dedup stamps for the reminder scheduler.
+  > Although `start_time` is nullable at the Go level (`*time.Time`), `RunMigrations` backfills any legacy null to `created_at`, and publishing an exam requires it — so a persisted exam is effectively always `start_time`-populated.
+- **Problem** — three types: `coding`, `mcq`, `written`. Belongs to an exam **or** to the question bank (`is_bank=true`, exam_id null). Optional `class_id` and `folder_id` (FK to folders, `ON DELETE SET NULL`) for bank organization. Coding problems have `TestCase` rows, `time_limit_ms` (2000), `memory_limit_kb` (262144), `starter_code`. MCQ uses `options` + `correct_option_ids` (JSONB) + `multiple_correct`. Written has `rubric`, `max_word_count` (500), `require_manual_grading`.
+- **TestCase** — `input`, `expected_output`, `is_sample`, `points`, `order_index`.
+- **ExamAttempt** — one row per (student, exam) (composite unique). Aggregates `score` across submissions (excluding `pending_review`); tracks `graded_notified` for one-shot notification; `draft_answers` (JSONB) + `draft_saved_at` hold the in-progress autosave payload (opaque to the server, cleared on submit).
+- **Submission** — one row per answer. Status lifecycle: `pending` → `running` → one of `accepted`, `wrong_answer`, `compilation_error`, `time_limit_exceeded`, `runtime_error`, or `pending_review` (written, or an MCQ with no correct answers configured). Carries `score`, `passed_count`/`total_count`, `code`/`selected_options`/`text_answer`, `execution_time_ms`, `memory_kb`, optional `teacher_feedback`. **TestResult** rows hold per-test outcome.
 - **Folder** — per-teacher grouping for bank questions.
-- **Announcement** — per-class, with JSONB `attachments`. Fans out `Notification` rows to enrolled students.
-- **Notification**, **PasswordResetToken** — straightforward.
+- **Announcement** — per-class, with JSONB `attachments`. Fans out **Notification** rows to enrolled students.
+- **Notification** — `type`, `title`, `description`, `link_to`, `read`; standalone (no FK associations).
+- **PasswordResetToken** — SHA-256 `token_hash` (hex, unique, hidden), `expires_at`, `used_at`.
 
-> Schema changes **must** follow [ORM_RULES.md](ORM_RULES.md) — never use `gorm:"default:X"` on existing tables. Add the column nullable, backfill, then constrain. Legacy in-code migrations live in `internal/database/migrations.go`; new changes belong in `internal/database/migrations/sql/NNNN_*.up.sql` / `.down.sql` (paired and idempotent), which become the sole schema authority when `SKIP_AUTOMIGRATE=true`.
+> Schema changes **must** follow [ORM_RULES.md](ORM_RULES.md) — never use `gorm:"default:X"` on existing tables for DDL. Add the column nullable, backfill, then constrain. Legacy in-code migrations live in `internal/database/migrations.go`; new changes belong in `internal/database/migrations/sql/NNNN_*.up.sql` / `.down.sql` (paired and idempotent). See [Database Migrations](#database-migrations) for how the two tracks interact.
 
 ---
 
 ## API Reference
 
-Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, returns `{"status":"ok"}`). All protected routes require `Authorization: Bearer <jwt>`. Tokens are issued on signup/login and valid for 24 hours.
+Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, no `/api` prefix, returns `{"status":"ok"}`). All protected routes require `Authorization: Bearer <jwt>`. Tokens are issued on signup/login and valid for 24 hours.
 
 ### Auth (`public`)
-| Method | Path                       | Body                                                                                    |
+| Method | Path                       | Body / Notes                                                                            |
 |--------|----------------------------|-----------------------------------------------------------------------------------------|
 | POST   | `/auth/signup`             | `{name, email, password, role}` — `role` ∈ {`teacher`, `student`}, password ≥ 6 chars  |
 | POST   | `/auth/login`              | `{email, password}`                                                                     |
 | POST   | `/auth/forgot-password`    | `{email}` — always returns 200 to avoid enumeration                                     |
 | POST   | `/auth/reset-password`     | `{token, new_password}`                                                                 |
-| POST   | `/auth/google`             | `{id_token, role?}` — Google Identity Services credential; returns `{needs_role: true}` if a new account is created without `role` |
-| DELETE | `/auth/account`            | *(protected)* permanently delete account (cascade in a single transaction)              |
+| POST   | `/auth/google`             | `{id_token, role?}` — Google credential; returns `{needs_role: true}` if a new account is created without `role` |
+| DELETE | `/auth/account`            | *(any authenticated user)* permanently delete own account (cascade in one transaction)  |
 
-### Profile
+### Profile *(any authenticated user)*
 | Method | Path                  |
 |--------|-----------------------|
 | GET    | `/profile`            |
 | PUT    | `/profile`            |
 | PUT    | `/profile/password`   |
 
-### Classes (teacher)
+### Classes *(teacher role)*
 | Method | Path                                       |
 |--------|--------------------------------------------|
 | POST   | `/classes`                                 |
@@ -337,7 +390,7 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 | GET    | `/classes/:id/stats`                       |
 | DELETE | `/classes/:id/members/:userId`             |
 
-### Student
+### Student *(student role)*
 | Method | Path                              |
 |--------|-----------------------------------|
 | POST   | `/student/classes/join`           |
@@ -352,28 +405,29 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 | POST   | `/student/exams/:id/start`        |
 | PUT    | `/student/exams/:id/autosave`     |
 | POST   | `/student/exams/:id/submit`       |
-| GET    | `/attempts/mine`                  |
 
-### Teacher
+`GET /attempts/mine` — **any authenticated user** (not student-role-gated); filtered server-side to the caller's own attempts.
+
+### Teacher *(teacher role)*
 | Method | Path                          |
 |--------|-------------------------------|
 | GET    | `/teacher/dashboard`          |
 | GET    | `/teacher/grading/pending`    |
 
-### Exams (teacher)
+### Exams *(teacher role)*
 | Method | Path                          | Notes                                                  |
 |--------|-------------------------------|--------------------------------------------------------|
 | POST   | `/exams`                      |                                                        |
 | GET    | `/exams`                      |                                                        |
 | GET    | `/exams/:id`                  |                                                        |
-| PUT    | `/exams/:id`                  | Publishing (is_draft→false) requires start_time set    |
+| PUT    | `/exams/:id`                  | Publishing (`is_draft`→false) requires `start_time` set |
 | DELETE | `/exams/:id`                  |                                                        |
-| POST   | `/exams/:id/assign`           | Validates all class_ids belong to calling teacher      |
+| POST   | `/exams/:id/assign`           | Validates all `class_id`s belong to the calling teacher |
 | POST   | `/exams/:id/close`            |                                                        |
 | POST   | `/exams/:id/reopen`           |                                                        |
 | GET    | `/exams/:id/results`          |                                                        |
 
-### Problems (teacher)
+### Problems *(teacher role)*
 | Method | Path                              |
 |--------|-----------------------------------|
 | POST   | `/exams/:id/problems`             |
@@ -386,7 +440,8 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 | PUT    | `/test-cases/:id`                 |
 | DELETE | `/test-cases/:id`                 |
 
-### Folders (teacher)
+### Folders *(any authenticated user; scoped per-owner)*
+Folders are owned per user (`user_id` treated as `teacher_id`); there is no `RequireRole` on these routes, so any authenticated caller can manage their own folders.
 | Method | Path                |
 |--------|---------------------|
 | GET    | `/folders`          |
@@ -395,14 +450,15 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 | DELETE | `/folders/:id`      |
 
 ### Submissions
-| Method | Path                              | Notes                                      |
+| Method | Path                              | Access / Notes                             |
 |--------|-----------------------------------|--------------------------------------------|
-| POST   | `/submissions/run`                | Run against sample test cases              |
+| POST   | `/submissions/run`                | Any authed user; runs against **sample** test cases only (teacher owns problem, or student enrolled in an assigned class) |
 | GET    | `/submissions/:id`                | Student (own) or teacher (exam owner)      |
-| PUT    | `/submissions/:id/grade`          | Teacher (exam owner) only                  |
-| POST   | `/execute`                        | One-off playground run                     |
+| PUT    | `/submissions/:id/grade`          | **Teacher** (exam owner) only              |
+| POST   | `/execute`                        | Any authed user; one-off playground run    |
 
-### Announcements
+### Announcements *(any authenticated user)*
+Access control is enforced **inside the handlers** (class ownership for teachers, membership for students) via `user_id`, not by role middleware.
 | Method | Path                                       |
 |--------|--------------------------------------------|
 | GET    | `/classes/:id/announcements`               |
@@ -410,7 +466,7 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 | PUT    | `/announcements/:id`                       |
 | DELETE | `/announcements/:id`                       |
 
-### Notifications
+### Notifications *(any authenticated user)*
 | Method | Path                                  |
 |--------|---------------------------------------|
 | GET    | `/notifications`                      |
@@ -423,24 +479,24 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 ## Auth & Roles
 
 - Passwords hashed with bcrypt (cost 10). JWTs are HS256, 24 h expiry, claims `{user_id, email, role, name, exp}`, signed with `JWT_SECRET` (≥ 32 chars, enforced at startup).
-- Frontend stores the token in `localStorage["kernel-token"]` and sends `Authorization: Bearer <token>`. On 401 the client clears local state and redirects to `/auth`.
-- `middleware.Auth` extracts the bearer token, validates it, and sets `user_id`, `email`, `role` on the Gin context.
-- `middleware.RequireRole("teacher" | "student")` gates feature subgroups (e.g. `/exams` is teacher-only; `/student/*` is student-only).
-- Google sign-in: frontend posts the Identity Services credential to `/auth/google` as `{id_token, role?}`. Backend verifies via `google.golang.org/api/idtoken` against `GOOGLE_CLIENT_ID`, then resolves the user by `google_id` → email (linking the existing account) → new account. If a new account is being created and the request omits `role`, the response is `{needs_role: true, email, name}` and the client must re-submit with a role.
-- Password reset: `/auth/forgot-password` issues a `PasswordResetToken` containing a SHA-256 hash of a 32-byte random token, valid for 1 hour and single-use (`used_at`). Prior unused tokens for the same user are invalidated. If `SMTP_HOST` is empty the link is **logged to stdout** for dev; otherwise emailed via `internal/email`.
+- Frontend stores the token in `localStorage` and sends `Authorization: Bearer <token>`. On 401 the client clears local state and redirects to `/auth`.
+- `middleware.Auth` extracts the bearer token, enforces the HMAC signing method, validates it, and sets `user_id`, `email`, `role` on the Gin context (401 on any failure).
+- `middleware.RequireRole("teacher" | "student")` gates feature subgroups (403 on wrong role): e.g. `/exams` is teacher-only, `/student/*` is student-only. Note that `/folders`, `/announcements`, `/notifications`, `/attempts/mine`, `/submissions/*`, `/execute`, and `/profile` are **not** role-gated — they are available to any authenticated user and scoped by ownership inside the handlers.
+- Google sign-in: the frontend posts the Identity Services credential to `/auth/google` as `{id_token, role?}`. The backend verifies via `google.golang.org/api/idtoken` against `GOOGLE_CLIENT_ID`, then resolves the user by `google_id` → email (linking an existing account) → new account. If a new account is being created and the request omits `role`, the response is `{needs_role: true, email, name}` and the client must re-submit with a role.
+- Password reset: `/auth/forgot-password` issues a `PasswordResetToken` containing a SHA-256 hash of a 32-byte random token, valid for 1 hour and single-use (`used_at`). Prior unused tokens for the same user are invalidated. If `SMTP_HOST` is empty, the link is **logged to stdout** for dev; otherwise it is emailed via `internal/email`.
 
 ---
 
 ## Code Execution & Grading
 
 - `POST /execute` (playground) and `POST /submissions/run` (sample-test feedback inside the exam UI) send code to Judge0 and return stdout/stderr/time/memory. Neither persists a `Submission` row.
-- Real grading is triggered server-side by `POST /student/exams/:id/submit` (via `internal/judge0/grader.go`). Submission rows are created atomically during exam submission and graded in a fire-and-forget goroutine per submission — there is currently no worker queue or retry, so a backend crash mid-grade leaves the submission stuck in `running`.
-  - Each `TestCase` is sent to Judge0 with `input`. Output is normalized (CRLF → LF, trailing whitespace on each line stripped, surrounding whitespace trimmed) before an equality check. Judge0 status `3` (accepted) and `4` (wrong answer) both count as "ran"; everything else maps to `compilation_error` (6), `time_limit_exceeded` (5), `runtime_error` (11), or `wrong_answer`.
-  - `score = passed_count / total_count * 100` for coding. MCQ uses set equality of `correct_option_ids` vs `selected_options`; MCQ problems with no correct answers configured are marked `pending_review` (can't fail the student on an unconfigured question). Written submissions always start as `pending_review`.
-  - Aggregated `ExamAttempt.score` re-evaluates over the exam's full problem list, so skipped questions count `0` in the denominator. `pending_review` submissions are excluded from both numerator and denominator until a teacher grades them, so an in-flight written grade doesn't depress the visible total.
-  - Once all submissions for an attempt leave `pending`/`running`/`pending_review`, the aggregator fires a single "Exam Graded" notification, deduped via `exam_attempts.graded_notified`.
-- Manual grading: teachers pull pending written answers from `GET /teacher/grading/pending` and submit a score via `PUT /submissions/:id/grade` (`{score, status, teacher_feedback}`), which re-runs the attempt aggregator. Gated to the exam owner.
-- Judge0 base URL is set at startup via `judge0.Init(cfg.Judge0URL)` — point `JUDGE0_URL` at a self-hosted instance for production; `ce.judge0.com` is rate-limited and not for real classroom use.
+- Real grading is triggered server-side by `POST /student/exams/:id/submit`. During submission, a `Submission` row is created **per answer in a loop** (individual row failures are skipped, not rolled back — the loop is not transactional), then each is graded in a fire-and-forget goroutine dispatched by type (`Grade` for coding, `GradeMCQ`, `GradeWritten`). There is no worker queue or retry, so a backend crash mid-grade can leave a submission stuck in `running`.
+  - **Coding:** each `TestCase` is sent to Judge0 with `input`. Output is normalized (CRLF/CR → LF, trailing whitespace per line stripped, surrounding whitespace trimmed) before an equality check. Judge0 status `3` (accepted) and `4` (wrong answer) both count as "ran". `score = passed_count / total_count * 100`. A coding problem with **zero** test cases is auto-marked `accepted` at 100.
+  - **MCQ:** set equality of `correct_option_ids` vs `selected_options` — all-or-nothing, no partial credit. An MCQ with no correct answers configured is marked `pending_review` (can't fail a student on an unconfigured question).
+  - **Written:** no automatic scoring — always starts as `pending_review`, awaiting manual grading.
+  - **Aggregation** (`FinalizeAttempt`): waits until no submission is `pending`/`running`, then re-evaluates over the exam's full problem list weighted by `problem.points` (defaulting to 10 if ≤ 0). Skipped questions count `0` in the denominator; `pending_review` submissions are excluded from **both** numerator and denominator until graded, so an in-flight written grade doesn't depress the visible total. Once no `pending_review` remain, a single "Exam Graded" notification fires, deduped via `exam_attempts.graded_notified`.
+- **Manual grading:** teachers pull pending answers from `GET /teacher/grading/pending` and submit a score via `PUT /submissions/:id/grade` (`{score, status, teacher_feedback}`), which re-runs the aggregator. Gated to the exam owner.
+- **Sandbox:** there is no in-house sandbox — all untrusted code runs on the Judge0 instance. Base URL is set at startup via `judge0.Init(cfg.Judge0URL)`; point `JUDGE0_URL` at a self-hosted instance for production — the public `ce.judge0.com` is rate-limited and not for real classroom use.
 
 **Supported languages** (`internal/judge0/client.go`):
 
@@ -457,29 +513,29 @@ Base URL: `http://localhost:8080/api`. Liveness: `GET /healthz` (no auth, return
 
 ## Background Jobs
 
-`internal/reminder/scheduler.go` runs as a goroutine started by `reminder.Start()` in `main.go`. After a 15-second warm-up it ticks every minute and, for every published exam (`is_draft = false`), runs three sweeps:
+`internal/reminder/scheduler.go` runs as a goroutine started by `reminder.Start()` in `main.go`. After a 15-second warm-up it ticks every minute (each tick panic-recovered) and, for every published exam (`is_draft = false`), runs three sweeps:
 
-1. **In-app reminder, T-60 min** — exams with `start_time ∈ (now, now+60min]` and `reminder_sent_at IS NULL`. Fans out a `Notification` to enrolled students whose profile has `notify_exam_reminders = true`. Stamps `reminder_sent_at`.
+1. **In-app reminder, T-60 min** — exams with `start_time ∈ (now, now+60m]` and `reminder_sent_at IS NULL`. Fans out a `Notification` to enrolled students whose profile has `notify_exam_reminders = true`. Stamps `reminder_sent_at`.
 2. **Email, T-60 min** — exams with `start_time BETWEEN now+58m AND now+62m` and `email_reminder1h_sent_at IS NULL`. Filter: `notify_exam_email`. Stamps `email_reminder1h_sent_at`.
 3. **Email, T-0** — exams with `start_time BETWEEN now-2m AND now+2m` and `email_reminder_start_sent_at IS NULL`. Same filter. Stamps `email_reminder_start_sent_at`.
 
-All deduplication is column-based, so restarting the process cannot re-send. The "Exam Graded" notification is *not* emitted from this scheduler — it lives in the grading aggregator (see above), gated by `exam_attempts.graded_notified`.
+All deduplication is column-based, so restarting the process cannot re-send. If `SMTP_HOST` is empty, the email sweeps log the message body to stdout instead of delivering.
 
-If `SMTP_HOST` is empty, the email sweeps log the message body to stdout instead of attempting delivery.
+> **Exam auto-submit is client-side.** The exam-taking UI submits the attempt when the countdown reaches zero. There is **no** server-side background job that force-submits an expired/abandoned in-progress attempt — a known limitation. The "Exam Graded" notification is emitted by the grading aggregator (see above), not by this scheduler.
 
 ---
 
 ## Database Migrations
 
-APEX runs two parallel migration tracks. Which one mutates schema depends on `SKIP_AUTOMIGRATE`.
+APEX has two migration tracks; which one mutates schema depends on `SKIP_AUTOMIGRATE`.
 
 **Local / dev (`SKIP_AUTOMIGRATE` unset or `false`):** `internal/database/database.go` runs three passes on every boot:
 
-1. **`RunMigrations`** — explicit, idempotent SQL executed **before** `AutoMigrate`. Use this for any change to an existing table (add column nullable, backfill, set NOT NULL, set DEFAULT, drop FK, sweep orphans, drop legacy tables).
-2. **`AutoMigrate`** — owned by GORM, for new tables only.
+1. **`RunMigrations`** — explicit, idempotent SQL executed **before** `AutoMigrate` (each block gated by `tableExists()` so fresh DBs stay quiet). Use this for any change to an existing table (add column nullable, backfill, set NOT NULL / DEFAULT, drop FK, sweep orphans, drop legacy tables).
+2. **`AutoMigrate`** — owned by GORM, over the 15 models. This is what materializes the schema baseline today.
 3. **`RunPostMigrations`** — runs after `AutoMigrate` so it can reference GORM-created tables (e.g. adds `fk_problems_folder` after `folders` exists, sweeping orphan refs first).
 
-**Production (`SKIP_AUTOMIGRATE=true`):** `AutoMigrate` is disabled and `RunSQLMigrations` runs the versioned files in `internal/database/migrations/sql/` via `golang-migrate`. The same logic is exposed as a standalone CLI in `cmd/migrate`:
+**Production (`SKIP_AUTOMIGRATE=true`):** `RunMigrations`, `AutoMigrate`, and `RunPostMigrations` are all skipped, and only the versioned files in `internal/database/migrations/sql/` run via `golang-migrate`. The same logic is exposed as a CLI in `cmd/migrate`:
 
 ```bash
 go run ./cmd/migrate up                  # apply all pending migrations
@@ -488,11 +544,11 @@ go run ./cmd/migrate down                # roll back one migration
 go run ./cmd/migrate force <version>     # mark a version applied without running it (recovery only)
 ```
 
-The Docker image ships `cmd/migrate` as `/app/migrate`, and `docker-compose.yml` runs it as a one-shot service (`migrate: entrypoint: ["/app/migrate", "up"]`) before the backend starts.
+> **Baseline caveat.** The only versioned file today, `0001_init`, is an intentional no-op (`SELECT 1`) that just marks version 1 — the real schema baseline is still materialized by GORM `AutoMigrate`. The versioned track therefore owns **incremental** changes (`0002+`) but cannot build the schema from an empty database on its own. `SKIP_AUTOMIGRATE=true` is only safe against a database whose baseline schema already exists (e.g. from a prior AutoMigrate run). Before a true from-scratch production deploy, generate a real baseline migration (e.g. a `pg_dump` of the AutoMigrated schema) as `0001`.
 
-**Adding a new migration:** put a paired `NNNN_name.up.sql` / `NNNN_name.down.sql` in `internal/database/migrations/sql/`. Both must be idempotent (`IF EXISTS` / `IF NOT EXISTS`) and the `down` must actually reverse the `up`. After adding, run `go run ./cmd/migrate up`, then `go run ./cmd/migrate version`, then sanity-check row counts per Rule 4 of [ORM_RULES.md](ORM_RULES.md).
+**Adding a new migration:** put a paired `NNNN_name.up.sql` / `NNNN_name.down.sql` in `internal/database/migrations/sql/`. Both must be idempotent (`IF EXISTS` / `IF NOT EXISTS`) and `down` must reverse `up`. After adding, run `go run ./cmd/migrate up`, then `version`, then sanity-check row counts per Rule 4 of [ORM_RULES.md](ORM_RULES.md).
 
-> See [ORM_RULES.md](ORM_RULES.md) for the incident that motivated this and the full set of rules. **Never** add `gorm:"default:X"` to a struct field on an already-populated table without a matching SQL migration — it silently rewrites existing rows.
+> See [ORM_RULES.md](ORM_RULES.md) for the incident that motivated this. **Never** add `gorm:"default:X"` to a struct field on an already-populated table without a matching SQL migration — it silently rewrites existing rows.
 
 ---
 
@@ -503,7 +559,7 @@ The Docker image ships `cmd/migrate` as `/app/migrate`, and `docker-compose.yml`
 go run main.go                     # dev
 go build -o apex .                 # main binary
 go build -o migrate ./cmd/migrate  # migration CLI
-go build -o seed ./cmd/seed        # demo-data seeder
+go build -o seed ./cmd/seed        # demo-data seeder (output is gitignored)
 go vet ./...                       # static checks
 golangci-lint run                  # full lint (matches CI)
 go test ./... -race -count=1       # race-checked test run
@@ -542,7 +598,7 @@ Frontend tests use Vitest + jsdom + Testing Library (`frontend/src/test/setup.ts
 
 Both services ship as production-ready Docker images:
 
-- **Backend** (`Dockerfile`) — multi-stage build, statically linked `CGO_ENABLED=0` Go binary with `-trimpath -ldflags="-s -w"`, copied into `gcr.io/distroless/static-debian12:nonroot`. The image contains three binaries (`/app/apex`, `/app/migrate`, `/app/seed`) plus `/app/internal/database/migrations` for the migration files. Because the runtime image has no shell, the container `HEALTHCHECK` invokes `/app/apex --healthcheck`, which self-probes `GET /healthz` on `$PORT`.
+- **Backend** (`Dockerfile`) — multi-stage build, statically linked `CGO_ENABLED=0` Go binaries with `-trimpath -ldflags="-s -w"`, copied into `gcr.io/distroless/static-debian12:nonroot`. The image contains three binaries (`/app/apex`, `/app/migrate`, `/app/seed`) plus `/app/internal/database/migrations` for the migration files. Because the runtime image has no shell, the container `HEALTHCHECK` invokes `/app/apex --healthcheck`, which self-probes `GET /healthz` on `$PORT`.
 - **Frontend** (`frontend/Dockerfile`) — Bun build, then `dist/` is served by `nginx:1.27-alpine` with a custom `nginx.conf`. `VITE_*` env vars are baked in at build time via Docker build args.
 - **`docker-compose.yml`** wires the full stack — `postgres` (healthchecked) → `migrate` (one-shot, `restart: "no"`, depends on Postgres healthy) → `backend` (depends on `migrate` completing successfully) → `frontend`. The CI workflow `docker.yml` smoke-builds both images on every PR and push to `main`.
 
@@ -550,7 +606,7 @@ Both services ship as production-ready Docker images:
 
 - Generate a strong `JWT_SECRET` (`openssl rand -hex 32`) and set it via your orchestrator's secret store.
 - Provide a managed Postgres 16 (Neon, Railway, RDS, etc.) and set `DATABASE_URL` (takes precedence over `DB_*` for both `apex` and `cmd/migrate`). Use `sslmode=require` for managed providers.
-- Set `SKIP_AUTOMIGRATE=true` and run `apex-migrate up` as a pre-deploy step (the bundled `migrate` compose service is the reference implementation).
+- If using `SKIP_AUTOMIGRATE=true`, ensure the baseline schema already exists (see the [migration caveat](#database-migrations)) and run `migrate up` as a pre-deploy step (the bundled `migrate` compose service is the reference implementation).
 - Run a Judge0 instance you control — the public `ce.judge0.com` is rate-limited and not for production.
 - Configure `SMTP_*` and `APP_URL` so password-reset and exam-reminder emails resolve correctly. Without `SMTP_HOST` all emails silently fall back to stdout logging.
 - Set `GOOGLE_CLIENT_ID` (backend) **and** `VITE_GOOGLE_CLIENT_ID` (frontend build arg) to the same web client ID; whitelist `APP_URL` in the Google Cloud Console.
@@ -568,10 +624,11 @@ Both services ship as production-ready Docker images:
 | Cannot reach Postgres on `localhost:5432`                  | Compose maps the container to host port `5433` by default (override with `POSTGRES_HOST_PORT`).     |
 | `unsupported language` from Judge0                         | The frontend sent a language not in `LanguageMap`. Add the alias in `internal/judge0/client.go`.    |
 | Every exam disappears from student view after a migration  | You added `gorm:"default:true"` on an existing table. Read [ORM_RULES.md](ORM_RULES.md) and revert. |
+| Fresh production DB ends up with no tables                 | You set `SKIP_AUTOMIGRATE=true` against an empty DB; `0001_init` is a no-op baseline. Run AutoMigrate once or add a real baseline migration first. |
 | Password-reset email never arrives                         | `SMTP_HOST` empty → link is in backend stdout. Set SMTP creds for real delivery.                    |
 | Google sign-in returns 401 / 503                           | 503 = `GOOGLE_CLIENT_ID` not set on backend. 401 = backend / frontend client IDs don't match.       |
 | Bun install fails in CI but works locally                  | CI pins Bun to `1.1.38`; pin your local Bun to match (`bun upgrade --version 1.1.38`).              |
-| Submission stuck in `running` forever                      | Backend crashed mid-grade. Grading is fire-and-forget; mark the submission and re-trigger, or restart and accept the data loss for that attempt. |
+| Submission stuck in `running` forever                      | Backend crashed mid-grade. Grading is fire-and-forget; re-trigger, or restart and accept the loss for that attempt. |
 | Exam scheduled but reminder never sent                     | The reminder ticks once a minute and dedups via `reminder_sent_at`; if the column already has a timestamp, clear it (`UPDATE exams SET reminder_sent_at = NULL WHERE id = ?`). Check student profiles have `notify_exam_reminders = true`. |
 | Distroless container fails `HEALTHCHECK`                   | The check runs `/app/apex --healthcheck` against `$PORT`; verify `PORT` matches the published container port and `/healthz` returns 200. |
 
@@ -579,12 +636,28 @@ Both services ship as production-ready Docker images:
 
 ## Related Artifacts
 
-- **`book/`** — Full graduation thesis in LaTeX (IEEE-standard XeLaTeX, `main.tex` → `main.pdf`). Use this for narrative context — design decisions, related-work comparison, and the user-facing walkthrough — rather than as developer documentation.
-- **`presentation/`** — Defense slide deck (`APEX-Defense-slides+notes.pptx`, with an HTML mirror in `index.html`), suitable for a 15-minute talk over the same material.
+- **[`book/`](book/)** — Full graduation thesis in LaTeX (IEEE-standard XeLaTeX, `main.tex` → `main.pdf`). Use this for narrative context — design decisions, related-work comparison, and the user-facing walkthrough — rather than as developer documentation.
+- **[`presentation/`](presentation/)** — Defense slide deck (`APEX-Defense-slides+notes.pptx`, with an HTML mirror in `index.html`) plus the `screenshots/` used across this README.
 - **[`ORM_RULES.md`](ORM_RULES.md)** — Required reading before touching the schema. Codifies the incident that motivated the migration philosophy.
+
+---
+
+## Contributing
+
+Contributions and issues are welcome. Please:
+
+1. Open an issue describing the change before large PRs.
+2. Keep the CI green — `go vet ./...`, `golangci-lint run`, `go test ./...`, and `bun run lint && bun run build && bun run test` in `frontend/`.
+3. Read [ORM_RULES.md](ORM_RULES.md) before any schema change.
+
+---
+
+## Security
+
+This is a graduation project, not a hardened production system — see [Project Status](#project-status) for known limitations (no auth rate limiting, 6-char password minimum, JWT in `localStorage`, fire-and-forget grading). If you discover a vulnerability, please open a private report to the maintainer rather than a public issue. No secrets are committed to this repository (only `.env.example` templates).
 
 ---
 
 ## License
 
-No license file is included. Treat the repository as **all rights reserved** until one is added.
+Released under the **Apache License 2.0** — see [`LICENSE`](LICENSE). Copyright © 2026 Amr Samy.

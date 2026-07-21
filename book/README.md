@@ -3,8 +3,8 @@
 A complete, self-contained graduation thesis for the **APEX** classroom examination
 portal, typeset in **XeLaTeX** with IEEE documentation conventions (Times-family body
 font via TeX Gyre Termes, IEEE numeric citations via `biblatex`/`biber`, "Fig." figure
-labels). This is a *separate* book from the original `../book/`; it was rewritten from
-scratch with self-authored TikZ/pgfplots graphs.
+labels). It was written from scratch with self-authored TikZ/pgfplots graphs rather
+than an external diagram toolchain.
 
 ## Build
 
