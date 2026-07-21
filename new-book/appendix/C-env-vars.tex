@@ -1,0 +1,162 @@
+\chapter{Environment Variables}\label{ch:ap-c}
+
+APEX follows the twelve-factor discipline of keeping all deployment-specific configuration in the process environment rather than in code~\cite{twelvefactor}. Every backend setting is read once at boot by \texttt{config.Load()} in \texttt{internal/config/config.go}; a companion \texttt{config.init()} calls \texttt{godotenv.Load()} so a local \texttt{.env} file is transparently promoted into the environment before \texttt{Load()} runs. This appendix documents every variable the backend consults, the four build-time variables the frontend bakes in, and the one Compose-only convenience variable, each faithful to the source rather than to convention.
+
+\section{How configuration is read}
+
+With a single exception, every backend variable flows through the helper \texttt{getEnv(key, fallback)}, which returns the environment value when non-empty and the compiled-in fallback otherwise. Consequently an \emph{empty} value and an \emph{absent} value are treated identically: exporting \texttt{DB\_HOST=} is the same as not exporting it at all, and both yield \texttt{localhost}. The exception is \texttt{JWT\_SECRET}, which has no fallback and is validated eagerly.
+
+The validation of \texttt{JWT\_SECRET} is the only place \texttt{Load()} can terminate the process. The guard rejects three conditions in one predicate---an empty value, the literal placeholder \texttt{dev-secret-change-in-prod}, and any value shorter than 32 characters---and on any of them calls \texttt{log.Fatal}, so the server never starts with a weak or default HMAC key:
+
+\begin{lstlisting}[language=Go,caption={The fail-fast secret guard in config.Load()},label={lst:jwt-guard}]
+jwtSecret := os.Getenv("JWT_SECRET")
+if jwtSecret == "" || jwtSecret == "dev-secret-change-in-prod" || len(jwtSecret) < 32 {
+    log.Fatal("JWT_SECRET must be set to a strong random value (>=32 chars)")
+}
+\end{lstlisting}
+
+Two variables interact rather than stand alone. \texttt{DATABASE\_URL}, when set, is returned verbatim by both \texttt{Config.DSN()} (for the GORM/pgx connection) and \texttt{Config.MigrateURL()} (for \texttt{golang-migrate}), short-circuiting all six discrete \texttt{DB\_*} variables; this is the production path for managed providers such as Neon or Railway. \texttt{ALLOWED\_ORIGINS} is split on commas, trimmed, and merged with \texttt{APP\_URL} into the single CORS allow-list slice consumed by \texttt{middleware.CORS}, so \texttt{APP\_URL} is always an allowed origin even when \texttt{ALLOWED\_ORIGINS} is empty.
+
+\section{Backend variables}
+
+\Cref{tab:ap-c-backend} lists every variable read by the backend. The \emph{Required?} column distinguishes the one hard requirement (\texttt{JWT\_SECRET}) from variables that are optional only because a compiled-in default exists or because an empty value degrades gracefully.
+
+\begin{center}
+\begin{xltabular}{\linewidth}{>{\ttfamily\small}p{3.5cm} c >{\ttfamily\footnotesize}p{2.9cm} X}
+  \caption{Backend environment variables (from \texttt{internal/config/config.go} and \texttt{.env.example}).}\label{tab:ap-c-backend}\\
+  \toprule
+  \normalfont Name & \normalfont Required? & \normalfont Default & \normalfont Purpose \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \normalfont Name & \normalfont Required? & \normalfont Default & \normalfont Purpose \\
+  \midrule
+  \endhead
+  \midrule
+  \multicolumn{4}{r}{\footnotesize\itshape continued on next page}\\
+  \endfoot
+  \bottomrule
+  \endlastfoot
+
+  JWT\_SECRET & \textbf{Yes} & \normalfont\itshape none &
+  HS256 signing key for the 24-hour session token~\cite{rfc7519}. Must be $\geq$32 characters and must not be the placeholder \texttt{dev-secret-change-in-prod}; any violation aborts startup via \texttt{log.Fatal} (\cref{lst:jwt-guard}). \\
+
+  DATABASE\_URL & No & \normalfont\itshape empty &
+  Full PostgreSQL connection URL. When non-empty it takes precedence over every \texttt{DB\_*} variable for both the application and \texttt{cmd/migrate}. The production path for Neon/Railway; use \texttt{sslmode=require} in the query string. \\
+
+  DB\_HOST & No & localhost & PostgreSQL host, used only when \texttt{DATABASE\_URL} is empty. \\
+  DB\_PORT & No & 5432 & PostgreSQL port (discrete-vars path). \\
+  DB\_USER & No & postgres & PostgreSQL user (discrete-vars path). \\
+  DB\_PASSWORD & No & postgres & PostgreSQL password; omitted from the DSN when empty. \\
+  DB\_NAME & No & apex & Database name (discrete-vars path). \\
+  DB\_SSLMODE & No & disable & \texttt{sslmode} for the DSN; set to \texttt{require} for managed providers. \\
+
+  PORT & No & 8080 & HTTP listen port. Also probed by the \texttt{-{}-healthcheck} self-probe and reported at \texttt{GET /healthz}. \\
+
+  SKIP\_AUTOMIGRATE & No & \normalfont\itshape empty (false) &
+  Parsed case-insensitively; \texttt{true} disables GORM \texttt{AutoMigrate} so the versioned \texttt{golang-migrate} track (\texttt{cmd/migrate}) becomes the sole schema authority. Set \texttt{true} in production. \\
+
+  MIGRATIONS\_DIR & No & \normalfont\ttfamily\scriptsize file://internal/database/\allowbreak migrations/sql &
+  Source directory for the versioned SQL migrations, consumed by the migration runner and \texttt{cmd/migrate}; override for non-default deployment layouts. \\
+
+  JUDGE0\_URL & No & \normalfont\ttfamily\scriptsize https://ce.judge0.com &
+  Base URL of the Judge0 code-execution service~\cite{judge0}. The default targets the public, rate-limited instance; self-hosting is strongly recommended for real use. \\
+
+  APP\_URL & No & \normalfont\ttfamily\scriptsize http://localhost:5173 &
+  Primary frontend origin. Embedded in password-reset email links (\texttt{<APP\_URL>/auth/reset?token=...}) and always merged into the CORS allow-list. \\
+
+  ALLOWED\_ORIGINS & No & \normalfont\itshape empty &
+  Comma-separated additional CORS origins (e.g.\ preview deployments), trimmed and appended to \texttt{APP\_URL}. \\
+
+  GOOGLE\_CLIENT\_ID & No & \normalfont\itshape empty &
+  Google Identity Services web client ID used to verify sign-in tokens~\cite{oidc-core}. When empty, \texttt{POST /auth/google} returns \texttt{503}. Must match the frontend's \texttt{VITE\_GOOGLE\_CLIENT\_ID}. \\
+
+  SMTP\_HOST & No & \normalfont\itshape empty &
+  Outbound mail host. When empty, all email bodies (reminders, reset links) are logged to stdout instead of sent; in-app notifications are unaffected. \\
+  SMTP\_PORT & No & 587 & Mail submission port; ignored when \texttt{SMTP\_HOST} is empty. \\
+  SMTP\_USER & No & \normalfont\itshape empty & SMTP username; ignored when \texttt{SMTP\_HOST} is empty. \\
+  SMTP\_PASS & No & \normalfont\itshape empty & SMTP password / app-password; ignored when \texttt{SMTP\_HOST} is empty. \\
+  SMTP\_FROM & No & \normalfont\itshape empty & Envelope/From address; ignored when \texttt{SMTP\_HOST} is empty. \\
+\end{xltabular}
+\end{center}
+
+\subsection{Notes on individual variables}
+
+\textbf{Secrets.} \texttt{JWT\_SECRET} is the only value whose absence is fatal; treat it as a rotation-worthy secret and generate it with, for example, \texttt{openssl rand -hex 32}. \texttt{DB\_PASSWORD} and the \texttt{SMTP\_*} credentials should likewise come from a secret manager rather than a committed file.
+
+\textbf{Graceful degradation.} Three subsystems are deliberately optional and fail soft rather than hard: an empty \texttt{GOOGLE\_CLIENT\_ID} disables only the Google sign-in endpoint; an empty \texttt{SMTP\_HOST} redirects email to the log; and an empty \texttt{ALLOWED\_ORIGINS} simply leaves \texttt{APP\_URL} as the sole cross-origin entry. This lets a developer clone the repository and run a fully functional local instance with nothing but a valid \texttt{JWT\_SECRET} and a reachable database.
+
+\textbf{Schema authority.} \texttt{SKIP\_AUTOMIGRATE} and \texttt{MIGRATIONS\_DIR} exist because of the migration war story recounted in \cref{ch:ap-c} of the main text: in production, disabling \texttt{AutoMigrate} and delegating to the versioned SQL track removes GORM's ability to silently rewrite existing rows.
+
+\section{Frontend variables}
+
+The React client is a static bundle, so its configuration is resolved at \emph{build} time by Vite and inlined into the emitted JavaScript; changing a \texttt{VITE\_*} value therefore requires a rebuild, not merely a restart. \Cref{tab:ap-c-frontend} lists them, drawn from \texttt{frontend/.env.example} and the fact sheet.
+
+\begin{center}
+\begin{xltabular}{\linewidth}{>{\ttfamily\small}p{4.6cm} c >{\ttfamily\footnotesize}p{2.2cm} X}
+  \caption{Frontend build-time environment variables.}\label{tab:ap-c-frontend}\\
+  \toprule
+  \normalfont Name & \normalfont Required? & \normalfont Default & \normalfont Purpose \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \normalfont Name & \normalfont Required? & \normalfont Default & \normalfont Purpose \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endlastfoot
+
+  VITE\_API\_URL & No & /api &
+  Base path/URL the client uses for API calls. The default \texttt{/api} works with the Vite dev proxy and a co-located reverse proxy in production. \\
+
+  VITE\_GOOGLE\_CLIENT\_ID & No & \normalfont\itshape empty &
+  Google Identity Services web client ID for the sign-in button; must equal the backend's \texttt{GOOGLE\_CLIENT\_ID} or token verification fails. \\
+
+  VITE\_GITHUB\_URL & No & \normalfont\itshape empty &
+  Optional repository link rendered in the landing-page footer. \\
+
+  VITE\_CONTACT\_EMAIL & No & \normalfont\itshape empty &
+  Optional contact address rendered in the landing-page footer. \\
+\end{xltabular}
+\end{center}
+
+Under Docker, the \texttt{VITE\_*} values are passed as build arguments to \texttt{frontend/Dockerfile} and baked into the \texttt{dist/} assets served by nginx; they cannot be changed by setting container environment variables at run time.
+
+\section{Compose-only variable}
+
+One further variable is not read by application code at all but by \texttt{docker-compose.yml}: \texttt{POSTGRES\_HOST\_PORT} (default \texttt{5433}) maps the host-side port onto the container's internal \texttt{5432}, avoiding a clash with a PostgreSQL server already running on the developer's machine. It never reaches the Go process.
+
+\section{Minimal working configuration}
+
+The smallest valid backend configuration is a single required secret plus a reachable database; every other value can inherit its default for local development. \Cref{lst:ap-c-env} shows a representative \texttt{.env} distilled from \texttt{.env.example}.
+
+\begin{lstlisting}[caption={A minimal development \texttt{.env}.},label={lst:ap-c-env}]
+# Required: >=32 chars, not the placeholder. openssl rand -hex 32
+JWT_SECRET=replace-me-with-a-strong-random-secret-32+chars
+
+# Database (discrete vars; or set DATABASE_URL to override all of these)
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=apex
+DB_SSLMODE=disable
+
+# Server. Set SKIP_AUTOMIGRATE=true in production.
+PORT=8080
+SKIP_AUTOMIGRATE=
+
+# Code execution (self-host for production use)
+JUDGE0_URL=https://ce.judge0.com
+
+# Frontend origin / CORS
+APP_URL=http://localhost:5173
+ALLOWED_ORIGINS=
+
+# Optional: SMTP (empty host -> emails logged to stdout)
+SMTP_HOST=
+SMTP_PORT=587
+
+# Optional: Google sign-in (empty -> /auth/google returns 503)
+GOOGLE_CLIENT_ID=
+\end{lstlisting}

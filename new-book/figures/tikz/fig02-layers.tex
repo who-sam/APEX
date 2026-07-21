@@ -1,0 +1,65 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=10mm,
+    layer/.style={apexbox, text width=32mm, minimum height=30mm,
+      align=center, font=\sffamily\scriptsize, inner sep=5pt},
+    tag/.style={apexlabel, draw=apexgrey, rounded corners=2pt, fill=apexlight,
+      minimum height=10mm, text width=18mm, align=center, font=\sffamily\scriptsize},
+  ]
+  \def\hd#1{{\sffamily\small\bfseries\color{apexblue}#1}}
+  \def\it#1{{\sffamily\scriptsize\color{apexgrey!25!black}#1}}
+
+  % Incoming request
+  \node[tag] (req) {HTTP\\request};
+
+  % Layer 1 -- Router
+  \node[layer, right=of req] (router)
+    {\hd{1. Router}\\[4pt]
+     \it{public vs.\\ protected groups}\\[3pt]
+     \it{\texttt{/api} dispatch}};
+
+  % Layer 2 -- Middleware
+  \node[layer, right=of router] (mw)
+    {\hd{2. Middleware}\\[4pt]
+     \it{CORS allowlist}\\[3pt]
+     \it{JWT authenticate}\\[3pt]
+     \it{RequireRole}};
+
+  % Layer 3 -- Handler
+  \node[layer, right=of mw] (handler)
+    {\hd{3. Handler}\\[4pt]
+     \it{bind + validate}\\[3pt]
+     \it{ownership check}\\[3pt]
+     \it{business logic}};
+
+  % Layer 4 -- Data (two backing stores)
+  \node[apexstore, right=of handler, text width=32mm, minimum height=13mm,
+        align=center, font=\sffamily\scriptsize] (db)
+    {\hd{4. Data}\\[3pt]
+     \it{GORM / PostgreSQL}};
+  \node[apexext, below=6mm of db, text width=32mm, minimum height=11mm,
+        align=center, font=\sffamily\scriptsize] (j0)
+    {\it{Judge0 client (\texttt{isolate})}};
+
+  % Response
+  \node[tag, below=6mm of router] (resp) {JSON\\response};
+
+  % Forward pipeline arrows
+  \draw[apexarrowblue] (req) -- (router);
+  \draw[apexarrowblue] (router) -- (mw);
+  \draw[apexarrowblue] (mw) -- (handler);
+  \draw[apexarrowblue] (handler) -- (db);
+  \draw[apexarrow] (handler.south) |- (j0.west);
+
+  % Rejection / return path
+  \draw[apexarrow] (mw.south) |- (resp)
+    node[apexlabel, pos=0.25] {401 / 403};
+  \draw[apexarrow] (db.south) |- ([yshift=-1mm]resp.east);
+
+\end{tikzpicture}%
+}
+\caption{Four-layer request lifecycle through the Gin backend.}
+\label{fig:layers}
+\end{figure}

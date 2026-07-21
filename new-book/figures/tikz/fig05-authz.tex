@@ -1,0 +1,52 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=6mm and 12mm,
+    every node/.style={font=\sffamily\small},
+    gate/.style={apexbox, minimum width=28mm, minimum height=14mm, align=center},
+    reject/.style={draw=apexred, fill=apexred!10, rounded corners=2pt,
+        align=center, font=\sffamily\scriptsize, minimum height=9mm, minimum width=24mm,
+        text=apexred!60!black},
+    pass/.style={apexlabel, text=apexgreen!55!black, font=\sffamily\scriptsize\bfseries},
+    failedge/.style={-{Latex[length=2.4mm]}, draw=apexred, thick},
+    okedge/.style={-{Latex[length=2.4mm]}, draw=apexgreen!70!black, thick},
+]
+
+% Ingress
+\node[apexext, minimum width=22mm, minimum height=14mm] (req)
+    {Incoming\\HTTP request};
+
+% Three gates on a row
+\node[gate, right=of req] (g1)
+    {\textbf{Gate 1}\\Authentication\\{\scriptsize\itshape valid HS256 JWT?}};
+\node[gate, right=of g1]  (g2)
+    {\textbf{Gate 2}\\Role check\\{\scriptsize\itshape RequireRole:}\\{\scriptsize\itshape teacher\,/\,student}};
+\node[gate, right=of g2]  (g3)
+    {\textbf{Gate 3}\\Resource ownership\\{\scriptsize\itshape owns class/exam?}\\{\scriptsize\itshape enrolled\,/\,attempt owner?}};
+
+% Success terminal
+\node[apexstore, right=of g3, minimum width=24mm, minimum height=14mm] (h)
+    {\textbf{Handler}\\executes};
+
+% Reject terminals below the gates
+\node[reject, below=14mm of g1] (r401) {\textbf{401}\\Unauthorized};
+\node[reject, below=14mm of g2] (r403b) {\textbf{403}\\Forbidden};
+\node[reject, below=14mm of g3] (r403c) {\textbf{403}\\Forbidden};
+
+% Forward pass edges (green)
+\draw[apexarrow] (req) -- (g1);
+\draw[okedge] (g1) -- node[pass, above]{pass} (g2);
+\draw[okedge] (g2) -- node[pass, above]{pass} (g3);
+\draw[okedge] (g3) -- node[pass, above]{pass} (h);
+
+% Failure branches (red, downward)
+\draw[failedge] (g1) -- node[apexlabel, text=apexred!60!black, right]{invalid / missing} (r401);
+\draw[failedge] (g2) -- node[apexlabel, text=apexred!60!black, right]{wrong role} (r403b);
+\draw[failedge] (g3) -- node[apexlabel, text=apexred!60!black, right]{not owner} (r403c);
+
+\end{tikzpicture}%
+}
+\caption{Three-gate authorization model.}
+\label{fig:authz}
+\end{figure}

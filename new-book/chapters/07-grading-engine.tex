@@ -1,0 +1,779 @@
+\chapter{Code Execution and the Auto-Grading Engine}\label{ch:ch07}
+
+This chapter documents the component at the centre of APEX: the pipeline that takes a
+student's source code, runs it safely, judges it fairly, and turns the result into a score.
+It is the crown jewel of the system and the piece that justifies the whole project's
+existence, because a classroom portal that cannot grade code correctly is just a quiz tool
+with a text editor bolted on. Where the rest of APEX is careful CRUD---classes, exams,
+enrolments, notifications---the grading engine is where the genuinely hard engineering
+lives: running untrusted code without being compromised, comparing free-form program output
+without penalising correct answers on cosmetic grounds, and coordinating several
+concurrent grading tasks into a single, correct, once-only exam score.
+
+The chapter traces one code submission end to end, from the moment a student presses
+\emph{Submit} to the moment the ``Exam Graded'' notification lands, quoting the real
+implementation at every stage. It then broadens out to the two other answer formats---
+multiple-choice, which is auto-graded by set equality, and written answers, which enter a
+manual-grading queue---because a defining claim of APEX is that all three formats flow
+through \emph{one} pipeline and aggregate into \emph{one} attempt score. The whole flow is
+summarised in \cref{fig:grading-seq}; the sections below expand each box of that figure into
+its underlying code.
+
+Two design principles recur throughout and are worth stating up front. First,
+\textbf{APEX never runs untrusted code on its own host}: every execution is delegated over
+HTTP to Judge0~\cite{judge0,dosilovic2018judge0}, which runs the code inside the
+\texttt{isolate} sandbox~\cite{isolate}. Second, \textbf{APEX judges output by content, not
+by bytes}: a nine-line normalisation routine strips away the whitespace differences that
+cause the most common false negatives in output-comparison grading, a fairness concern the
+auto-assessment literature has flagged for two decades~\cite{douce2005autoassess}. These two
+ideas---delegate execution, own the judging---shape everything that follows.
+
+\section{Execution Model: Delegating to a Sandbox}\label{sec:grading-sandbox}
+
+\subsection{Why the sandbox is not ours}
+
+Running a student's arbitrary program is the single most dangerous thing an assessment
+platform does. A submission is, by definition, untrusted code: it may loop forever, allocate
+until the machine swaps to death, fork-bomb the process table, try to read the server's
+secrets, or open a socket to exfiltrate data. Executing such code directly on the
+application host---whether through \texttt{os/exec} or a hand-rolled container---makes the
+grader itself the attack surface, and writing a correct sandbox from scratch is one of the
+hardest problems in systems security. APEX declines that problem entirely.
+
+Instead, execution is delegated to \textbf{Judge0}~\cite{judge0}, an open-source
+``code execution as a service'' whose design and rationale are described by da Silva Dos Reis and others~\cite{dosilovic2018judge0}.
+Judge0 accepts a JSON document of \texttt{\{language, source\_code, stdin\}} over HTTP,
+compiles and runs the code, and returns \texttt{\{stdout, stderr, compile\_output, status,
+time, memory\}}. Crucially, Judge0 runs each submission inside
+\textbf{\texttt{isolate}}~\cite{isolate}, the sandbox originally built for the International
+Olympiad in Informatics to grade contestants' programs safely. \texttt{isolate} uses Linux
+namespaces and control groups (\texttt{cgroups}) to give the untrusted process an isolated
+view of the filesystem and network and to cap its CPU time and memory. The security posture
+follows directly: the APEX backend sits \emph{outside} the sandbox and communicates with it
+only by an HTTP request and response. Untrusted student code never touches the application
+host, and the most security-critical component in the system is the one piece the team
+deliberately did not write.
+
+The trade-off is deliberate and accepted: grading now depends on a network hop and on Judge0's
+availability. If Judge0 is unreachable, execution fails and the caller receives an explicit
+error rather than a wrong grade (\Cref{sec:grading-client}). The team judged that
+correctness and safety outweigh self-sufficiency---a defensible position for a grading
+system, where a wrong ``accepted'' verdict is far worse than a temporary outage.
+
+By default the backend targets the public endpoint \texttt{https://ce.judge0.com}, but the
+base URL is configurable through the \texttt{JUDGE0\_URL} environment variable and wired at
+start-up via \texttt{judge0.Init(cfg.Judge0URL)}. The public Community Edition endpoint is
+rate-limited and not intended for production; a real deployment self-hosts Judge0. Note that
+Judge0 is reached as an \emph{external} HTTP service and is therefore not one of the four
+Docker Compose services described in \cref{ch:ch10}.
+
+\subsection{The language map}\label{sec:grading-langs}
+
+APEX supports six execution languages. The mapping from the language string sent by the
+frontend to Judge0's numeric language identifier is a single map in
+\texttt{internal/judge0/client.go}, reproduced in \cref{lst:langmap}. Several human-friendly
+aliases collapse onto the same identifier---\texttt{python} and \texttt{python3} both resolve
+to 100, and \texttt{cpp} and \texttt{c++} both resolve to 105---so the six distinct
+languages are exposed through ten map keys.
+
+\begin{lstlisting}[language=Go,caption={The language-to-Judge0-ID map (\texttt{client.go}).},label={lst:langmap}]
+var LanguageMap = map[string]int{
+	"python":     100,
+	"python3":    100,
+	"javascript": 102,
+	"js":         102,
+	"typescript": 101,
+	"ts":         101,
+	"java":       91,
+	"c":          103,
+	"cpp":        105,
+	"c++":        105,
+}
+\end{lstlisting}
+
+The six languages and their identifiers are listed in \cref{tab:grading-langs}. A language
+string absent from the map is not silently passed to Judge0: \texttt{RunCode} returns an
+internal sentinel result (status identifier \texttt{-1}) carrying the message
+``\texttt{unsupported language}'', and the HTTP handlers additionally pre-validate the
+language against \texttt{LanguageMap} before any network call is made, so an unknown
+language is rejected with a \texttt{400 Bad Request} rather than a gateway error.
+
+\begin{table}[htbp]
+\centering
+\caption{Supported execution languages and their Judge0 language identifiers.}
+\label{tab:grading-langs}
+\begin{tabular}{@{}L{4.5cm}L{4cm}c@{}}
+\toprule
+\textbf{Language} & \textbf{Accepted keys} & \textbf{Judge0 ID} \\
+\midrule
+Python     & \texttt{python}, \texttt{python3} & 100 \\
+JavaScript & \texttt{javascript}, \texttt{js}   & 102 \\
+TypeScript & \texttt{typescript}, \texttt{ts}   & 101 \\
+Java       & \texttt{java}                      & 91  \\
+C          & \texttt{c}                         & 103 \\
+C\texttt{++} & \texttt{cpp}, \texttt{c++}       & 105 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At the user-interface layer the coverage is deliberately asymmetric, which is worth
+stating precisely. The standalone live-coding playground exposes all six languages for
+free experimentation, whereas the exam-builder's coding-question editor currently offers
+four of them---Python, JavaScript, C, and C\texttt{++}---as authoring targets. This is a
+front-end configuration choice, not a limitation of the grader: the execution and grading
+backend accepts any of the six keys in \cref{tab:grading-langs} regardless of which surface
+produced the submission, so widening the exam-builder set is a one-line change to the editor
+rather than any change to the pipeline described in this chapter.
+
+\subsection{The Judge0 client}\label{sec:grading-client}
+
+Every execution in APEX---playground runs, sample-test feedback, and real grading---funnels
+through one function, \texttt{RunCode} in \texttt{internal/judge0/client.go}. It marshals the
+request, performs a single HTTP \texttt{POST}, and decodes the response into a compact
+\texttt{CodeResult}. The core is shown in \cref{lst:runcode}.
+
+\begin{lstlisting}[language=Go,caption={The single point of contact with the sandbox (\texttt{client.go}).},label={lst:runcode}]
+func RunCode(code, language, stdin string) CodeResult {
+	langID, ok := LanguageMap[language]
+	if !ok {
+		return CodeResult{StatusID: -1, Stderr: "unsupported language: " + language}
+	}
+
+	reqBody := request{LanguageID: langID, SourceCode: code, Stdin: stdin}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return CodeResult{StatusID: -1, Stderr: "failed to marshal request"}
+	}
+
+	url := BaseURL + "/submissions?wait=true&base64_encoded=false&fields=stdout,stderr,compile_output,status,time,memory"
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return CodeResult{StatusID: -1, Stderr: "judge0 unreachable"}
+	}
+	defer resp.Body.Close()
+	// ... read body, unmarshal, parse time (seconds -> ms) and memory (kb) ...
+}
+\end{lstlisting}
+
+Several details of the request are deliberate and defensible:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Synchronous execution (\texttt{wait=true}).} The single \texttt{POST} blocks
+  until Judge0 has finished compiling and running the code, and the verdict comes back in the
+  same response. There is no client-side poll loop and no callback URL to manage. A
+  \textbf{30-second} client timeout guards against a hung sandbox; if it fires, \texttt{RunCode}
+  returns the \texttt{-1} sentinel.
+  \item \textbf{Plain text, not base64 (\texttt{base64\_encoded=false}).} Source code and
+  standard input are sent as raw JSON strings. Judge0 supports base64 transport, but APEX opts
+  out for simplicity; the modest cost is that exotic byte sequences could in principle be
+  mangled, which is acceptable for classroom source code.
+  \item \textbf{Field projection (\texttt{fields=...}).} The response is trimmed to exactly the
+  six fields APEX consumes, keeping the payload small.
+  \item \textbf{Metric extraction.} Judge0 reports execution time as a seconds string and
+  memory as a number; \texttt{RunCode} parses the former into integer milliseconds
+  (\texttt{seconds}$\times 1000$) and the latter into kilobytes, populating
+  \texttt{CodeResult.TimeMs} and \texttt{CodeResult.MemoryKb}. These are \emph{measured} and
+  recorded, a point revisited in \Cref{sec:grading-limits}.
+\end{itemize}
+
+The status identifiers Judge0 returns drive the rest of the pipeline. \Cref{tab:grading-status}
+lists the ones APEX interprets. Two entries deserve emphasis now and are explained fully in
+\Cref{sec:grading-loop}: status \texttt{3} (Accepted) and status \texttt{4} (Wrong Answer)
+are \emph{both} treated by APEX as ``the program ran cleanly,'' because APEX performs its own
+output comparison and does not defer to Judge0's built-in diff.
+
+\begin{table}[htbp]
+\centering
+\caption{Judge0 status identifiers and APEX's interpretation.}
+\label{tab:grading-status}
+\begin{tabular}{@{}cL{5.2cm}L{4.6cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Judge0 meaning} & \textbf{APEX action} \\
+\midrule
+3  & Accepted (ran cleanly)      & Counts as ``ran'' $\rightarrow$ compare normalised output \\
+4  & Wrong Answer (Judge0 diff)  & \emph{Also} counts as ``ran'' $\rightarrow$ re-compare with APEX's own normalised diff \\
+5  & Time Limit Exceeded         & Verdict \texttt{time\_limit\_exceeded} \\
+6  & Compilation Error           & Verdict \texttt{compilation\_error} \\
+11 & Runtime Error               & Verdict \texttt{runtime\_error} \\
+-1 & APEX sentinel (unreachable / marshal / parse failure) & Playground returns \texttt{504}; other paths fail the test \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Three Entry Points, One That Grades}\label{sec:grading-entrypoints}
+
+A student's code can reach the backend through three distinct endpoints, and keeping them
+separate is one of the cleaner decisions in the system. Only one of the three persists a
+graded \texttt{Submission}; the other two are ephemeral feedback paths that write nothing to
+the database. \Cref{tab:grading-entrypoints} summarises the split.
+
+\begin{table}[htbp]
+\centering
+\caption{The three code-execution entry points.}
+\label{tab:grading-entrypoints}
+\begin{tabular}{@{}L{4.6cm}L{4.4cm}cL{3.4cm}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Handler} & \textbf{Persists grade?} & \textbf{Purpose} \\
+\midrule
+\texttt{POST /execute}                & \texttt{execute.Execute}      & No  & Playground scratchpad \\
+\texttt{POST /submissions/run}        & \texttt{submission.RunSolution} & No & Sample-test feedback \\
+\texttt{POST /student/exams/:id/submit} & \texttt{exam.SubmitAttempt}   & Yes & The real, graded submission \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The practical consequence is that a student can press ``Run'' fifty times during an exam at a
+cost of zero database rows and zero grading work. Running code is feedback; submitting is the
+grade; they are different code paths on purpose.
+
+\subsection{The playground path}
+
+The cheapest path is the playground handler, \texttt{execute.Execute} in
+\texttt{internal/execute/handler.go}. It binds a \texttt{\{language, code, stdin\}} request,
+pre-validates the language against \texttt{LanguageMap}, calls \texttt{RunCode}, and returns
+the raw output. The one subtlety is its error mapping: the internal \texttt{-1} sentinel is
+surfaced as an HTTP \texttt{504 Gateway Timeout}, a precise signal that \emph{the sandbox
+service} failed rather than that \emph{the student's code} was wrong.
+
+\begin{lstlisting}[language=Go,caption={The playground handler maps the sandbox sentinel to 504 (\texttt{execute/handler.go}).},label={lst:execute}]
+if _, ok := judge0.LanguageMap[req.Language]; !ok {
+	c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported language: " + req.Language})
+	return
+}
+
+result := judge0.RunCode(req.Code, req.Language, req.Stdin)
+if result.StatusID == -1 {
+	c.JSON(http.StatusGatewayTimeout, gin.H{"error": result.Stderr})
+	return
+}
+c.JSON(http.StatusOK, gin.H{
+	"stdout": result.Stdout, "stderr": result.Stderr,
+	"status_id": result.StatusID, "time_ms": result.TimeMs, "memory_kb": result.MemoryKb,
+})
+\end{lstlisting}
+
+\subsection{The sample-test feedback path}
+
+The second non-persisting path is \texttt{submission.RunSolution}
+(\texttt{internal/submission/handler.go}), which powers the ``Run sample tests'' button during
+an exam. It first enforces resource ownership---the third authorisation gate described in
+\cref{ch:ch06}: a teacher may run only against a problem they own, and a student may run only
+against a problem belonging to an exam assigned to a class they are enrolled in, verified by a
+join across \texttt{exam\_classes} and \texttt{class\_members}. It then loads only the
+\emph{sample} test cases (\texttt{WHERE is\_sample = true}), ordered by \texttt{order\_index},
+and evaluates them through \texttt{RunAgainstTestCases}. Nothing is written; the student
+receives per-test input, expected output, and actual output so they can debug before
+committing to a real submission. Because \texttt{RunAgainstTestCases} applies the \emph{same}
+\texttt{normalizeOutput} routine as the real grader (\Cref{sec:grading-normalize}), the
+feedback a student sees while iterating matches the verdict they will later be graded by.
+
+\section{The Coding Grader}\label{sec:grading-coding}
+
+The graded path begins in \texttt{exam.SubmitAttempt}, which creates one \texttt{Submission}
+row per answer at status \texttt{pending} and dispatches a grader according to the problem
+type. For a coding problem, that grader is \texttt{judge0.Grade}. The full sequence---from the
+Monaco editor through this grader to the final notification---is depicted in
+\cref{fig:grading-seq}.
+
+\input{figures/tikz/fig04-grading-seq}
+
+\subsection{The fire-and-forget dispatch}\label{sec:grading-dispatch}
+
+Each submission is graded in its own bare goroutine. \texttt{SubmitAttempt} creates the row and
+then launches the appropriate grader with the \texttt{go} keyword, routing by problem type:
+
+\begin{lstlisting}[language=Go,caption={Per-submission grader dispatch in \texttt{SubmitAttempt}.},label={lst:dispatch}]
+switch submissionType {
+case "mcq":
+	go judge0.GradeMCQ(sub.ID)
+case "written":
+	go judge0.GradeWritten(sub.ID)
+default:
+	go judge0.Grade(sub.ID)
+}
+\end{lstlisting}
+
+The \texttt{go} keyword means the HTTP handler does not wait for grading to finish: the request
+returns \texttt{201 Created} immediately, carrying the attempt identifier and the list of
+created submission identifiers, while grading proceeds in the background. The student sees an
+``Exam Submitted'' notification at once; the ``Exam Graded'' notification arrives later, once
+every goroutine has completed.
+
+This model is deliberately simple and it works at the concurrency of a single classroom, but
+it carries a durability gap that the project documents openly (\texttt{README.md} line
+39). The dispatch is \textbf{fire-and-forget}: there is no work queue, no supervisor, and no
+retry. As the next subsection shows, \texttt{Grade} immediately flips the submission to
+\texttt{running}; if the backend process crashes or is redeployed mid-grade, that goroutine
+dies with the process and the row is left stuck in \texttt{running} forever. Because the
+attempt finaliser refuses to proceed while any sibling submission is still
+\texttt{pending} or \texttt{running} (\Cref{sec:grading-aggregate}), the attempt never
+finalises and the student never receives the ``Exam Graded'' notification. The failure mode is
+discussed in full, together with its proposed fix, in \Cref{sec:grading-queue}.
+
+\subsection{Loading test cases and the empty-set edge case}
+
+\texttt{Grade} begins by loading the submission, flipping its status to \texttt{running}, and
+loading \emph{all} test cases for the problem ordered by \texttt{order\_index}. There is
+deliberately no \texttt{is\_sample} filter here---this is the real grade, so both sample and
+hidden tests run. One edge case is handled defensively: a problem with \emph{no} test cases
+configured is auto-accepted at score \texttt{100.0}, on the principle that a teacher who forgot
+to add tests should not thereby fail the student.
+
+\begin{lstlisting}[language=Go,caption={Grader set-up and the no-test-case edge case (\texttt{grader.go}).},label={lst:grade-setup}]
+database.DB.Model(&submission).Update("status", "running")
+
+var testCases []models.TestCase
+database.DB.Where("problem_id = ?", submission.ProblemID).Order("order_index asc").Find(&testCases)
+
+if len(testCases) == 0 {
+	database.DB.Model(&submission).Updates(map[string]any{
+		"status": "accepted",
+		"score":  100.0,
+	})
+	return
+}
+\end{lstlisting}
+
+\subsection{The grading loop}\label{sec:grading-loop}
+
+The heart of the coding grader is the loop that runs the student's code against each test case
+and records a per-test verdict. It is quoted in full in \cref{lst:grade-loop}.
+
+\begin{lstlisting}[language=Go,caption={The per-test-case grading loop (\texttt{grader.go}).},label={lst:grade-loop}]
+for _, tc := range testCases {
+	result := RunCode(submission.Code, submission.Language, tc.Input)
+
+	actualOutput := normalizeOutput(result.Stdout)
+	expectedOutput := normalizeOutput(tc.ExpectedOutput)
+	// StatusID 3 = Accepted; treat StatusID 4 (Wrong Answer) as valid-run-but-compare.
+	ran := result.StatusID == 3 || result.StatusID == 4
+	isPassed := ran && actualOutput == expectedOutput
+
+	if isPassed {
+		passed++
+	}
+
+	status := "accepted"
+	if !isPassed {
+		switch result.StatusID {
+		case 6:
+			status = "compilation_error"
+		case 5:
+			status = "time_limit_exceeded"
+		case 11:
+			status = "runtime_error"
+		default:
+			status = "wrong_answer"
+		}
+	}
+
+	tr := models.TestResult{
+		SubmissionID:    submission.ID,
+		TestCaseID:      tc.ID,
+		Passed:          isPassed,
+		ActualOutput:    actualOutput,
+		ExecutionTimeMs: result.TimeMs,
+		MemoryKb:        result.MemoryKb,
+		Status:          status,
+	}
+	database.DB.Create(&tr)
+
+	if result.TimeMs > maxTimeMs {
+		maxTimeMs = result.TimeMs
+	}
+	if result.MemoryKb > maxMemoryKb {
+		maxMemoryKb = result.MemoryKb
+	}
+}
+\end{lstlisting}
+
+For each test case, the loop performs four conceptual steps. First, it sends the student's code
+and this test's input to Judge0 through \texttt{RunCode}. Second, it passes \emph{both} the
+program's actual standard output \emph{and} the test's expected output through the same
+\texttt{normalizeOutput} routine---applied symmetrically, which is the fairness guarantee
+analysed in \Cref{sec:grading-normalize}. Third, it decides whether the test passed. Fourth,
+it writes one \texttt{TestResult} row recording the outcome, the actual output, and the
+measured time and memory, and it tracks the maximum time and memory seen across all tests.
+
+The pass decision hides a subtle and important design choice. The predicate
+\texttt{ran := result.StatusID == 3 || result.StatusID == 4} treats \emph{both} Judge0's
+``Accepted'' (3) and its ``Wrong Answer'' (4) as ``the program executed cleanly.'' The reason
+is that Judge0 performs its \emph{own} byte-exact diff and may return status 4 purely because
+of a trailing newline---exactly the false negative APEX refuses to honour. So APEX ignores
+Judge0's accept/reject decision and re-judges with its own normalised equality check:
+\texttt{isPassed := ran \&\& actualOutput == expectedOutput}. In effect, \textbf{Judge0 is
+treated as an executor---run this safely and tell me what it printed---not as a judge}. The
+judging belongs to APEX. Only genuine execution failures (compilation error 6, time-limit 5,
+runtime error 11) are surfaced as failure verdicts; anything else that ran but did not match is
+recorded as \texttt{wrong\_answer}.
+
+\subsection{Output normalisation: nine lines of fairness}\label{sec:grading-normalize}
+
+Output-comparison grading has one notorious weakness, identified in the literature as far back
+as the first systematic surveys of automated assessment~\cite{douce2005autoassess}: a program
+that computes the \emph{right} answer can be marked wrong because of invisible whitespace. A
+student prints \texttt{42\textbackslash n} where the expected answer is \texttt{42} with no
+trailing newline; a student on Windows emits \texttt{\textbackslash r\textbackslash n} line
+endings where the teacher typed \texttt{\textbackslash n}; a stray trailing space follows a
+correct number. Under naive byte-for-byte comparison every one of these is a false negative.
+This is the single most common unfairness on any output-diffing platform, and eliminating it is
+the entire job of \texttt{normalizeOutput}, reproduced in full in \cref{lst:normalize}.
+
+\begin{lstlisting}[language=Go,caption={\texttt{normalizeOutput}---applied symmetrically to actual and expected output (\texttt{grader.go}).},label={lst:normalize}]
+// normalizeOutput strips CR, trailing whitespace on each line, and trims edges
+// so Judge0 output (often \r\n with trailing newline) compares cleanly to
+// teacher-entered expected output.
+func normalizeOutput(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		lines[i] = strings.TrimRight(ln, " \t")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+\end{lstlisting}
+
+The routine applies four normalisation rules, in order, and each one closes a specific class of
+false negative:
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item \texttt{ReplaceAll("\textbackslash r\textbackslash n", "\textbackslash n")} converts
+  Windows CRLF line endings to Unix LF, so a student typing on Windows---or a teacher who pasted
+  expected output out of a Windows editor---does not fail on invisible carriage returns.
+  \item \texttt{ReplaceAll("\textbackslash r", "\textbackslash n")} folds any lone carriage
+  return (classic-Mac line endings) into a newline as well: belt and suspenders.
+  \item Splitting on \texttt{\textbackslash n} and applying
+  \texttt{TrimRight(ln, " \textbackslash t")} to \emph{each} line strips trailing spaces and
+  tabs from every line, so a stray space after a printed value is not treated as a correctness
+  error.
+  \item \texttt{TrimSpace} on the whole joined string removes leading and trailing whitespace
+  from the entire output, absorbing the final trailing newline that \texttt{print} and
+  \texttt{println} routinely append, as well as any leading blank line.
+\end{enumerate}
+
+The fairness guarantee rests on one property: because the \emph{same} function is applied to
+both the actual output and the expected output before comparison, the comparison is symmetric.
+It measures the \emph{correctness of content}, not the \emph{byte-exactness of whitespace}.
+Without these nine lines, a student who computed the right answer would routinely fail on a
+trailing newline, a CRLF line ending, or a trailing space---and each of those is a formatting
+artefact, not a wrong answer.
+
+It is equally important to state plainly what this normalisation does \emph{not} do. It is
+whitespace-trim-fair, not token-fair: it does not collapse \emph{internal} runs of spaces, so
+\texttt{1  2} and \texttt{1 2} still differ, and it carries no floating-point tolerance, so
+\texttt{3.14} and \texttt{3.140000001} still differ. It solves the most common false negative,
+not every conceivable one. That is a deliberate scoping decision rather than an oversight: the
+routine is small enough to verify by eye, and its behaviour is predictable, which for a
+fairness-critical function is itself a virtue.
+
+\subsection{Scoring and aggregation into the submission}\label{sec:grading-score}
+
+Once every test case has been run, the grader computes a proportional score and writes the
+outcome back to the \texttt{Submission} row:
+
+\begin{lstlisting}[language=Go,caption={Coding score and final submission update (\texttt{grader.go}).},label={lst:grade-score}]
+score := float64(passed) / float64(total) * 100.0
+finalStatus := "wrong_answer"
+if passed == total {
+	finalStatus = "accepted"
+}
+
+database.DB.Model(&submission).Updates(map[string]any{
+	"status":            finalStatus,
+	"passed_count":      passed,
+	"total_count":       total,
+	"score":             score,
+	"execution_time_ms": maxTimeMs,
+	"memory_kb":         maxMemoryKb,
+})
+\end{lstlisting}
+
+Coding submissions therefore earn \textbf{partial credit}: passing seven of ten tests yields a
+score of \texttt{70.0}, and the submission's \texttt{status} is \texttt{accepted} only if every
+test passed, otherwise \texttt{wrong\_answer}. The counts \texttt{passed\_count} and
+\texttt{total\_count} are stored for display, and the \emph{worst-case} (maximum) execution time
+and memory across all tests are recorded on the submission. Notably, the per-test-case
+\texttt{points} field that exists in the \texttt{TestCase} schema is \emph{not} used by the
+coding grader---coding is scored as a flat \texttt{passed / total} fraction, and points
+weighting happens one level up, at the problem level, during attempt aggregation
+(\Cref{sec:grading-aggregate}).
+
+Finally, if the submission is standalone---not part of an exam attempt, i.e.
+\texttt{ExamAttemptID == nil}, as with a bank-question practice run---a per-submission ``result''
+notification fires immediately. If instead the submission belongs to an exam attempt, that
+per-submission notification is suppressed and control passes to \texttt{maybeFinalizeAttempt}, so
+the student receives \emph{one} exam-level notification rather than one per question.
+
+\subsection{Limits: measured but not yet pushed}\label{sec:grading-limits}
+
+The \texttt{Problem} model carries two resource-limit fields---\texttt{time\_limit\_ms}
+(default \texttt{2000}) and \texttt{memory\_limit\_kb} (default \texttt{262144}, i.e.\ 256~MB)---
+intended to let a teacher tighten the sandbox per problem. In the current implementation these
+fields are \emph{not} forwarded to Judge0: \texttt{RunCode} sends no \texttt{cpu\_time\_limit}
+or \texttt{memory\_limit}, so the effective limits are Judge0's own defaults. APEX
+\emph{measures} time and memory from each response and records them on every \texttt{TestResult}
+and \texttt{Submission}, but it does not yet \emph{push} the per-problem ceilings down. The
+system remains safe---a runaway loop still becomes a time-limit-exceeded verdict under Judge0's
+default ceiling---but a teacher who sets a one-second limit does not presently get it enforced.
+Wiring these two fields into the request body is a small, known task rather than a design flaw.
+
+\section{The Other Two Formats}\label{sec:grading-other}
+
+APEX's defining structural claim is that coding, multiple-choice, and written answers all flow
+through one pipeline and aggregate into one attempt score. The two non-coding graders live
+alongside \texttt{Grade} in \texttt{grader.go} and share its dispatch, notification, and
+finalisation machinery.
+
+\subsection{Multiple-choice: auto-graded by set equality}\label{sec:grading-mcq}
+
+\texttt{GradeMCQ} judges a multiple-choice answer by \textbf{exact set equality} between the
+teacher's correct option identifiers and the student's selected option identifiers. Both are
+stored as JSON arrays---\texttt{Problem.CorrectOptionIDs} and
+\texttt{Submission.SelectedOptions}---which the grader unmarshals into two Go sets, trimming and
+dropping empty entries. The answer is correct only if the two sets are exactly equal:
+same cardinality, and every correct identifier selected.
+
+\begin{lstlisting}[language=Go,caption={Set-equality decision in \texttt{GradeMCQ} (\texttt{grader.go}).},label={lst:mcq}]
+isCorrect := len(correctSet) == len(selectedSet)
+if isCorrect {
+	for id := range correctSet {
+		if !selectedSet[id] {
+			isCorrect = false
+			break
+		}
+	}
+}
+\end{lstlisting}
+
+MCQ grading is \textbf{all-or-nothing}: a correct answer scores \texttt{100.0} with status
+\texttt{accepted}, an incorrect one scores \texttt{0.0} with status \texttt{wrong\_answer}, and
+there is no partial credit for selecting a subset of a multi-answer question. One protective
+special case precedes the comparison: if a teacher has configured \emph{no} correct answers
+(\texttt{len(correctSet) == 0}), the submission is marked \texttt{pending\_review} at score
+\texttt{0} rather than failed, on the principle that a student must not be failed on a question
+whose answer key was never set. A JSON parse failure on either field marks the submission
+\texttt{error}. As with coding, standalone submissions fire an immediate notification, while
+exam submissions defer to \texttt{maybeFinalizeAttempt}.
+
+\subsection{Written answers: the manual-grading queue}\label{sec:grading-written}
+
+\texttt{GradeWritten} performs no automatic judgement at all. It records the student's answer,
+sets the submission to \texttt{pending\_review} at score \texttt{0} with \texttt{total\_count} of
+1, and calls \texttt{maybeFinalizeAttempt}. In effect it enrols the answer into a
+\emph{manual-grading queue}: a written answer never auto-fails a student; it always waits for a
+human. This is the correct default for free-form prose, which no output diff can grade.
+
+Teachers drain that queue through two endpoints in \texttt{internal/submission/handler.go}.
+\texttt{GetSubmission} lets an authorised reader---the student who owns the submission, or the
+teacher who owns the exam---retrieve a submission with its per-test results; notably, it exposes
+the \texttt{input} and \texttt{expected\_output} of a test \emph{only} when that test is a
+sample (\texttt{if rv.IsSample}), so hidden test cases are never leaked to students even on the
+results screen. \texttt{GradeSubmission} handles the actual manual grade via
+\texttt{PUT /submissions/:id/grade}, gated to the exam owner:
+
+\begin{lstlisting}[language=Go,caption={Manual grading applies a score override and re-finalises the attempt (\texttt{submission/handler.go}).},label={lst:manualgrade}]
+if exam.TeacherID != teacherID {
+	c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to grade this submission"})
+	return
+}
+
+sub.Score = req.Score
+sub.Status = req.Status
+sub.PassedCount = int(req.Score)
+sub.TotalCount = 100
+if req.TeacherFeedback != nil {
+	sub.TeacherFeedback = *req.TeacherFeedback
+}
+database.DB.Save(&sub)
+
+if sub.ExamAttemptID != nil {
+	judge0.FinalizeAttempt(*sub.ExamAttemptID)
+}
+\end{lstlisting}
+
+The teacher supplies a \texttt{score}, a \texttt{status}, and optional
+\texttt{teacher\_feedback}, and the handler writes them onto the submission. Crucially it then
+calls \texttt{judge0.FinalizeAttempt}, the public wrapper over \texttt{maybeFinalizeAttempt}, so
+that grading a written answer immediately recomputes the whole attempt score and---if it was the
+last outstanding answer---fires the ``Exam Graded'' notification. This is exactly why the
+aggregator is written as a re-summation rather than an incremental update: a manual grade lands
+long after the automatic ones, and re-aggregating from the children makes that late arrival
+correct without any special-casing.
+
+\section{Attempt Aggregation}\label{sec:grading-aggregate}
+
+Every grader---coding, MCQ, and written---ends by calling \texttt{maybeFinalizeAttempt}. This
+function is the orchestrator that turns many per-question submissions into one exam score and one
+notification, coordinating several concurrent goroutines without a lock.
+
+\subsection{The barrier: only the last goroutine proceeds}
+
+The function's first act is a guard. It counts sibling submissions still in \texttt{pending} or
+\texttt{running} state and returns immediately if any remain:
+
+\begin{lstlisting}[language=Go,caption={The concurrency barrier in \texttt{maybeFinalizeAttempt} (\texttt{grader.go}).},label={lst:barrier}]
+var pending int64
+database.DB.Model(&models.Submission{}).
+	Where("exam_attempt_id = ? AND status IN ?", *attemptID, []string{"pending", "running"}).
+	Count(&pending)
+if pending > 0 {
+	return
+}
+\end{lstlisting}
+
+Several goroutines, each grading one answer, all call this same function as they finish, but only
+the \emph{last} one to complete finds zero pending submissions and proceeds past the guard. This
+is how independent goroutines coordinate into a single finalisation without a mutex or a shared
+counter: the database row-count \emph{is} the coordination primitive. It also explains the
+finalisation half of the fire-and-forget gap---a submission stuck in \texttt{running} because its
+goroutine died keeps this count above zero forever, and the attempt never finalises.
+
+\subsection{Re-summing over the exam's full problem list}
+
+Past the barrier, the aggregator recomputes the attempt score from scratch. It loads the
+\emph{exam's full problem list}---not the submissions---and folds each problem's contribution
+into an earned/total ratio:
+
+\begin{lstlisting}[language=Go,caption={Points-weighted re-aggregation over the problem list (\texttt{grader.go}).},label={lst:aggregate}]
+for _, p := range problems {
+	s, hasSub := subByProblem[p.ID]
+	if hasSub && s.Status == "pending_review" {
+		continue
+	}
+	pts := float64(p.Points)
+	if pts <= 0 {
+		pts = 10
+	}
+	totalPoints += pts
+	if hasSub {
+		earnedPoints += s.Score / 100.0 * pts
+	}
+}
+pct := 0.0
+if totalPoints > 0 {
+	pct = earnedPoints / totalPoints * 100.0
+}
+\end{lstlisting}
+
+Three behaviours in this loop are subtle and each is deliberate:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Skipped questions stay in the denominator at zero.} Because the loop iterates the
+  exam's problem list rather than the student's submissions, a problem the student never answered
+  still adds its points to \texttt{totalPoints} while contributing nothing to
+  \texttt{earnedPoints}. A student cannot inflate their percentage by leaving questions blank.
+  \item \textbf{Pending-review answers are excluded from both numerator and denominator.} A
+  written answer awaiting manual grading is \texttt{continue}d over entirely, so an ungraded essay
+  does not depress the visible score to look like a failure before the teacher has read it. Once
+  the teacher grades it and re-runs the aggregator, it re-enters both sums.
+  \item \textbf{Points weighting happens here, at the problem level.} Each problem contributes in
+  proportion to its \texttt{Points} (defaulting to 10 when unset or non-positive), so a 20-point
+  hard problem and a 5-point easy one weigh proportionally. The submission's own \texttt{score} is
+  a 0--100 percentage; scaling it by \texttt{pts / 100} converts it into earned points.
+\end{itemize}
+
+The computed percentage is written to \texttt{ExamAttempt.score}. Because the whole score is
+recomputed from the children every time, the function is idempotent and safe to call any number
+of times---there is no running total to double-count, and manual grading simply re-runs it.
+
+\subsection{The single, deduplicated notification}
+
+The final stage fires exactly one ``Exam Graded'' notification, and only under the right
+conditions. The aggregator counts any submissions still in \texttt{pending\_review}; if written
+answers remain ungraded, it updates the score but withholds the notification. Only when no
+\texttt{pending\_review} submissions remain, the attempt's \texttt{status} is \texttt{submitted},
+and the attempt has not already been notified does it fire---using the boolean column
+\texttt{exam\_attempts.graded\_notified} as an idempotency flag, set true before the notification
+is created so it can never be sent twice.
+
+\begin{lstlisting}[language=Go,caption={Once-only ``Exam Graded'' notification, deduplicated by \texttt{graded\_notified} (\texttt{grader.go}).},label={lst:notify}]
+if attempt.Status != "submitted" || attempt.GradedNotified {
+	return
+}
+database.DB.Model(&attempt).Update("graded_notified", true)
+notification.Create(attempt.UserID, "result",
+	"Exam Graded",
+	fmt.Sprintf("Your submission for \"%s\" has been graded. Score: %.0f%%", attempt.Exam.Title, pct),
+	fmt.Sprintf("/dashboard/exam/%d/review", attempt.ExamID),
+)
+\end{lstlisting}
+
+The result is a clean invariant: no matter how many questions an exam contains or in what order
+their goroutines finish, the student receives one submission notification when they submit and one
+grading notification when the last answer---automatic or manual---is graded.
+
+\section{Sample versus Hidden Test Cases}\label{sec:grading-samplehidden}
+
+The distinction between sample and hidden test cases runs through the whole pipeline and is what
+prevents students from reverse-engineering the answer key. Each \texttt{TestCase} carries an
+\texttt{is\_sample} boolean, and the three code paths treat it differently:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Sample tests are visible.} The ``Run sample tests'' path
+  (\texttt{RunSolution}) filters \texttt{is\_sample = true} and returns input, expected output,
+  and actual output, giving students pre-submission feedback.
+  \item \textbf{Hidden tests are opaque.} The real grader (\texttt{Grade}) applies no
+  \texttt{is\_sample} filter and runs every test, so hidden tests count toward the score but are
+  never surfaced during the exam.
+  \item \textbf{Results reveal only samples.} On the results screen,
+  \texttt{GetSubmission} attaches \texttt{input} and \texttt{expected\_output} to a result only
+  when its test case is a sample; for hidden tests the student sees pass/fail and timing but never
+  the input or the expected output.
+\end{itemize}
+
+Test-case management is teacher-owned and side-effecting. \texttt{AddTestCase},
+\texttt{UpdateTestCase}, and \texttt{DeleteTestCase} in \texttt{internal/testcase/handler.go}
+each verify ownership---the teacher must own the bank problem, or own the exam the problem belongs
+to---before mutating a test. Critically, any change that could alter grading (adding a test,
+deleting a test, or editing a test's input or expected output on a problem attached to an exam)
+triggers \texttt{examsvc.ResetExamAttempts(*problem.ExamID)}, so that prior attempts graded
+against the old test set are invalidated rather than left silently inconsistent. This connects the
+grading engine to the destructive-edit reset mechanism described in \cref{ch:ch04}.
+
+\section{The Honest Gap: Fire-and-Forget Durability}\label{sec:grading-queue}
+
+The most significant limitation of the grading engine is the one already foreshadowed: grading is
+dispatched as a bare goroutine (\texttt{go judge0.Grade(sub.ID)}) with no durable queue, no
+supervisor, and no retry. The failure mode is precise and worth stating exactly. \texttt{Grade}
+flips the submission to \texttt{running} before contacting Judge0; if the backend process crashes
+or is redeployed while a grade is in flight, the goroutine dies with the process and the row is
+left permanently in \texttt{running}. Because \texttt{maybeFinalizeAttempt} refuses to proceed
+while any sibling is \texttt{pending} or \texttt{running}, the whole attempt never finalises and
+the student never receives their grade. There is also no concurrency cap: a large exam could spawn
+hundreds of simultaneous Judge0 requests and exhaust the public endpoint's rate limit. This gap is
+documented openly in the project's README.
+
+The mitigating context is scale. At the concurrency of a single classroom---tens of students, not
+thousands---the model works, and the simplicity of returning the HTTP response instantly while
+grading proceeds in the background is a real benefit. The gap is a considered trade-off, not an
+accident.
+
+The fix is well understood and follows directly from a property the current design already has:
+\textbf{grading is idempotent}. \texttt{Grade} recomputes every result from the submission's stored
+\texttt{code} and the problem's test cases and overwrites the previous results, so re-running it is
+always safe. The durable version replaces the bare goroutine with the enqueue of a job into a
+persistent work queue---a database-backed jobs table, or a broker such as Redis---consumed by a
+bounded pool of workers. On start-up, a recovery sweep re-enqueues anything stuck in
+\texttt{running}, and because re-grading is idempotent, the replay is safe. The bounded pool
+simultaneously caps concurrency against Judge0. None of this changes the grading logic in this
+chapter; it changes only how that logic is scheduled and made durable, which is why it sits on the
+roadmap rather than blocking the current classroom-scale deployment.
+
+\section{Summary}\label{sec:grading-summary}
+
+This chapter traced a code submission from the Monaco editor to a graded, notified exam attempt.
+The design rests on a clean separation of concerns: execution is delegated to
+Judge0~\cite{judge0,dosilovic2018judge0} and its \texttt{isolate} sandbox~\cite{isolate}, so
+untrusted code never touches the application host, while the \emph{judging}---output
+normalisation, pass/fail determination, proportional scoring, and points-weighted
+aggregation---is owned entirely by APEX. The nine-line \texttt{normalizeOutput} routine is the
+fairness keystone, applied symmetrically to actual and expected output so that grading measures
+content rather than whitespace~\cite{douce2005autoassess}. Around the coding grader, MCQ answers
+are auto-judged by set equality and written answers enter a manual-grading queue, and all three
+formats aggregate through \texttt{maybeFinalizeAttempt} into a single attempt score and a single,
+deduplicated notification. The one material weakness---fire-and-forget dispatch without a durable
+queue---is disclosed plainly, along with an idempotency-based fix that the existing design already
+makes straightforward. Together these pieces deliver the project's central promise: three answer
+formats, one grading pipeline, one score.

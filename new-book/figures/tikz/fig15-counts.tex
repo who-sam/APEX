@@ -1,0 +1,37 @@
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[
+    xbar,
+    width=0.86\textwidth,
+    height=5.2cm,
+    xmin=0, xmax=54,
+    bar width=13pt,
+    y=15pt,
+    enlarge y limits=0.25,
+    symbolic y coords={Execution languages,Core entities,Route modules,Frontend pages},
+    ytick=data,
+    nodes near coords,
+    nodes near coords align={horizontal},
+    every node near coord/.append style={font=\scriptsize, color=apexblue!80!black},
+    tick label style={font=\scriptsize},
+    xtick=\empty,
+    axis x line*=none,
+    axis y line*=left,
+    y axis line style={draw=none},
+    tick style={draw=none},
+  ]
+    \addplot[
+      draw=apexblue!70!black,
+      fill=apexblue,
+    ] coordinates {
+      (6,Execution languages)
+      (15,Core entities)
+      (13,Route modules)
+      (47,Frontend pages)
+    };
+  \end{axis}
+\end{tikzpicture}
+\caption{APEX by the numbers.}
+\label{fig:counts}
+\end{figure}

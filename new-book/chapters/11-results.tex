@@ -1,0 +1,442 @@
+\chapter{Results and Evaluation}\label{ch:ch11}
+
+The preceding chapters described what APEX \emph{is} and how each subsystem was
+built. This chapter asks a different, harder question: how good is the delivered
+artefact, and how do we know? Evaluating a graduation project fairly means
+resisting two temptations --- inflating the result with invented benchmarks, and
+deflating it out of false modesty. The stance taken here is that every claim must
+either trace to a fact already established in the source (a line count, an index, a
+configuration constant, a shipped endpoint) or be labelled explicitly as
+illustrative or as a future measurement. Nothing in this chapter is a fabricated
+user study or a synthetic benchmark presented as if it were measured.
+
+The evaluation proceeds along four axes. \Cref{sec:res-scale} quantifies the
+\emph{scale and scope} of what was actually built. \Cref{sec:res-functional} audits
+\emph{functional completeness} against the requirements catalogued in
+\Cref{ch:ch03}, giving a full traceability of requirement to delivery status.
+\Cref{sec:res-usability} evaluates \emph{usability} against Nielsen's heuristics and
+positions the System Usability Scale as the instrument for the empirical study that a
+classroom deployment would run next. \Cref{sec:res-performance} characterises
+\emph{performance} qualitatively, because APEX's dominant
+latency term lives inside an external service and was not instrumented under
+controlled load. \Cref{sec:res-timeline} places the work on its calendar, and
+\Cref{sec:res-verdict} closes with a candid ``what works / what is limited''
+reckoning that ties back to the gaps owned throughout the book.
+
+\section{Scale and Scope of the Delivered System}
+\label{sec:res-scale}
+
+The most objective measure of a software project's output is the size and shape of
+its codebase. APEX is not a prototype or a proof of concept: it is a working,
+two-role, mixed-format examination portal with a real database schema, a real
+sandboxed grading pipeline, and a real single-page front end. \Cref{fig:loc}
+reports its source size by component.
+
+\input{figures/tikz/fig08-loc}
+
+The backend comprises approximately \textbf{6{,}116} lines of Go across the
+feature-scoped \texttt{internal/} packages, and the front end approximately
+\textbf{17{,}423} lines of TypeScript and TSX under \texttt{frontend/src}. The
+roughly $2.8\!:\!1$ ratio of front-end to back-end code is characteristic of the
+architecture rather than incidental: APEX deliberately pushes every security- and
+correctness-critical decision to the server --- authentication, the three
+authorization gates, grading, and all answer state --- and keeps the client a
+presentation and orchestration layer. A compact, auditable Go core carrying the
+logic that ``fails an exam'', wrapped in a larger but lower-risk React surface that
+renders 47 pages of it, is exactly the distribution one wants for an assessment
+system where the browser is treated as untrusted.
+
+Line counts alone under-describe a system, so \cref{fig:counts} summarises APEX
+along four structural dimensions that better convey its breadth.
+
+\input{figures/tikz/fig15-counts}
+
+Each of these numbers is a verified structural fact, not a marketing figure:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{15 core entities} --- the GORM models registered in
+        \texttt{database.AutoMigrate}, from \texttt{User} and \texttt{Class} through
+        \texttt{Exam}, \texttt{Problem}, \texttt{TestCase}, \texttt{ExamAttempt},
+        \texttt{Submission}, and \texttt{TestResult} to the supporting
+        \texttt{Notification}, \texttt{Announcement}, \texttt{Folder}, and
+        \texttt{PasswordResetToken}. These are not toy tables: three of them carry
+        unique composite indexes (\texttt{idx\_class\_user},
+        \texttt{idx\_user\_exam\_attempt}, \texttt{idx\_exam\_class}) that encode
+        genuine business invariants at the storage layer.
+  \item \textbf{13 route modules} --- the \texttt{RegisterRoutes} calls wired in
+        \texttt{main.go}: auth, class, student, exam, problem, testcase, submission,
+        execute, notification, profile, teacher, announcement, and folder. Each is a
+        self-contained feature package following the same four-layer request
+        lifecycle.
+  \item \textbf{47 feature pages} --- the front-end surface a user can actually
+        reach, spread across the \texttt{auth}, \texttt{courses}, \texttt{dashboard},
+        \texttt{exams}, \texttt{grading}, \texttt{landing}, \texttt{playground},
+        \texttt{results}, \texttt{settings}, and \texttt{social} feature directories.
+  \item \textbf{6 execution languages} --- Python, JavaScript, TypeScript, Java, C,
+        and C++, mapped to Judge0 language IDs in the \texttt{LanguageMap} of
+        \texttt{internal/judge0/client.go}; an unknown language is rejected as
+        \texttt{unsupported language} rather than silently mis-run.
+\end{itemize}
+
+Taken together, these figures answer the ``is it real?'' question quantitatively.
+APEX is a mid-sized full-stack application whose complexity is concentrated where it
+belongs: fifteen persisted entities, thirteen server modules enforcing a uniform
+authorization discipline, and a client broad enough to cover the entire
+teacher-and-student workflow.
+
+\section{Functional Completeness Against Requirements}
+\label{sec:res-functional}
+
+\Cref{ch:ch03} catalogued the requirements as they were actually realised, with each
+functional requirement (FR) traced to an implementing component. The evaluation
+question here is the inverse of that traceability: taking the requirement set as the
+yardstick, how much of it was delivered, and with what caveats? \Cref{tab:res-fr}
+answers this for the twelve teacher, eight student, and seven platform functional
+requirements. The status column uses three levels: \emph{Delivered} means the
+capability ships and is reachable; \emph{Delivered, with limitation} means the
+capability ships but a named gap qualifies it; there are no
+\emph{Not delivered} rows, because the requirements chapter was written to record
+only functionality that reached the shipped system rather than an aspirational
+wish-list.
+
+\begin{table}[htbp]
+\centering
+\caption{Functional-requirement coverage of the delivered system.}
+\label{tab:res-fr}
+\small
+\begin{tabularx}{\textwidth}{@{}L{1.5cm} L{2.9cm} X@{}}
+\toprule
+\textbf{Req.} & \textbf{Status} & \textbf{Evidence / caveat} \\
+\midrule
+FR-T1--T3 & Delivered & Class CRUD, the three-type exam builder, and the
+folder-organised question bank all ship as the \texttt{class}, \texttt{problem},
+\texttt{testcase}, and \texttt{folder} modules. \\
+FR-T4 & Delivered & Draft/publish gating is enforced; publishing requires a
+\texttt{start\_time}. This is the requirement whose earlier mishandling caused the
+\texttt{is\_draft} incident (\cref{ch:ch05}), now fixed and rule-bound. \\
+FR-T5--T6 & Delivered & Multi-class assignment validates class ownership; per-exam
+shuffle, results-visibility, and passing-score options persist on the \texttt{Exam}. \\
+FR-T7 & Delivered & Coding, MCQ (set-equality), and written grading all run through
+\texttt{internal/judge0}; unconfigured MCQ correctly falls to \texttt{pending\_review}
+rather than failing a student. \\
+FR-T8 & Delivered & The pending-grading queue and \texttt{PUT /submissions/:id/grade}
+recompute the attempt aggregate on each manual grade. \\
+FR-T9--T11 & Delivered & Announcements fan out notifications; the teacher dashboard,
+results explorer, per-class statistics, exam preview, and pending-work grade-gating
+all ship. \\
+FR-T12 & Delivered & Destructive edits trigger the transactional \texttt{reset\_at}
+wipe-and-notify path in \texttt{internal/exam/reset.go}. \\
+\addlinespace
+FR-S1--S4 & Delivered & Invite-code join, the idempotent one-attempt start,
+server-side autosave/resume, and per-attempt shuffle all ship. Autosave payloads are
+opaque JSON in \texttt{draft\_answers}, rehydrated on resume. \\
+FR-S5 & Delivered & The Monaco editor drives six languages with a
+run-against-sample-tests action (\texttt{POST /submissions/run}) that persists no
+graded submission. \\
+FR-S6 & Delivered, with limitation & Submission closes the attempt and grades
+server-side, but grading is a fire-and-forget goroutine with no queue or retry ---
+the durable-queue gap owned in \cref{ch:ch07}. \\
+FR-S7--S8 & Delivered & Per-test result review, teacher feedback, notifications,
+unread counts, and profile/preference management all ship, subject to the teacher's
+results-release settings. \\
+\addlinespace
+FR-P1 & Delivered, with limitation & Email/bcrypt login and 24-hour HS256 JWTs ship;
+Google sign-in ships when \texttt{GOOGLE\_CLIENT\_ID} is configured. Limitations: no
+rate limiting on auth, a six-character password minimum, and the token in
+\texttt{localStorage}. \\
+FR-P2--P3 & Delivered & Enumeration-safe password reset (single-use SHA-256 token,
+one-hour expiry) and transactional account deletion both ship. \\
+FR-P4--P5 & Delivered & The in-process reminder scheduler and the once-only ``Exam
+Graded'' notification are deduplicated by database columns, idempotent across
+restarts. \\
+FR-P6 & Delivered & \texttt{GET /healthz} and the \texttt{--healthcheck} self-probe
+support health-checking the shell-less image. \\
+FR-P7 & Delivered & Idempotent dev migrations plus a production-only versioned
+\texttt{golang-migrate} track (\texttt{SKIP\_AUTOMIGRATE=true}) as sole schema
+authority. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The picture is one of \emph{high functional completeness with a small, well-understood
+set of qualified rows}. Of the 27 functional requirements, 24 are delivered without
+caveat and 3 are delivered with an explicitly named limitation. Crucially, the two
+limitations that carry real risk --- fire-and-forget grading (FR-S6) and the
+un-hardened authentication surface (FR-P1) --- are not surprises uncovered by this
+audit; they are the same gaps owned in the security and architecture chapters and
+listed in the project's own README. That consistency is itself an evaluation result:
+the system's documented behaviour matches its actual behaviour.
+
+The non-functional requirements (NFR-1 through NFR-20) trace to cross-cutting
+mechanisms rather than to endpoints, and their delivery was argued in the chapters
+that own them: the fail-fast \texttt{JWT\_SECRET} check and three-gate authorization
+(security), the bounded connection pool and indexed hot paths (data model), the
+single-artefact deploy and twelve-factor configuration~\cite{twelvefactor,distroless}
+(deployment), and the idempotent migration and scheduler discipline
+(deployment/DevOps). The one NFR that is deliberately deferred to future empirical
+work is NFR-12 (measured satisfaction via SUS), discussed next.
+
+\section{Usability Evaluation}
+\label{sec:res-usability}
+
+APEX was not subjected to a formal, statistically powered usability study within the
+project timeline; claiming otherwise would overstate the evidence. What can be
+reported rigorously is an \emph{expert heuristic evaluation}
+against Nielsen's ten usability heuristics~\cite{nielsen-heuristics}, tracing each
+relevant heuristic to a concrete, shipped interface mechanism rather than to a
+subjective impression. \Cref{tab:res-heuristics} presents that mapping for the
+heuristics APEX most directly engages.
+
+\begin{table}[htbp]
+\centering
+\caption{Heuristic evaluation: Nielsen's heuristics traced to shipped mechanisms.}
+\label{tab:res-heuristics}
+\small
+\begin{tabularx}{\textwidth}{@{}L{4.6cm} X@{}}
+\toprule
+\textbf{Heuristic} & \textbf{APEX mechanism} \\
+\midrule
+Visibility of system status &
+A submission's lifecycle state (\texttt{pending} $\rightarrow$ \texttt{running}
+$\rightarrow$ graded) is surfaced in the UI; live sample-test runs report pass/fail,
+output, time, and memory before submit; the autosave indicator shows when work was
+last persisted. \\
+\addlinespace
+User control and freedom &
+Server-side autosave with resume: an interrupted attempt continues where it left off
+rather than restarting, and a dropped connection or switched device does not cost the
+student their work (NFR-11). \\
+\addlinespace
+Error prevention &
+A draft exam cannot be published without a \texttt{start\_time}; a submitted attempt
+cannot be resubmitted; the one-attempt-per-\texttt{(student, exam)} unique index makes
+a duplicate attempt impossible at the storage layer. \\
+\addlinespace
+Match between system and the real world &
+The vocabulary mirrors the classroom: classes, invite codes, exams, questions,
+grading, announcements --- the teacher's mental model, not a database schema. \\
+\addlinespace
+Consistency and standards &
+A single component library (shadcn/ui over Radix primitives) and one design system
+across all 47 pages; the same editor (Monaco) for playground and exam. \\
+\addlinespace
+Recognition rather than recall &
+The question bank and folders let a teacher compose exams from previously authored
+material instead of re-remembering and re-typing it. \\
+\addlinespace
+Help users recognise and recover from errors &
+Login returns a single generic ``invalid email or password'' (which is also a
+security choice); per-test result review shows exactly which hidden tests failed and
+the actual versus expected behaviour, so a student can learn from a wrong answer. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Two usability decisions deserve particular emphasis because they resolve tensions
+rather than merely satisfying a heuristic. First, output normalisation in the grader
+(\texttt{normalizeOutput}) is a usability decision disguised as an engineering one: by
+stripping trailing whitespace and normalising line endings symmetrically on the
+student's output and the expected output, it prevents the single most demoralising
+failure mode of naive auto-graders --- a correct answer failed for an invisible
+trailing newline. Second, the exclusion of \texttt{pending\_review} answers from the
+attempt aggregate means a student never sees their visible score transiently dip while
+a written answer awaits human grading; the number they see is accurate at every moment.
+
+\subsection{Toward an Empirical Study: the SUS Instrument}
+\label{sec:res-sus}
+
+Heuristic evaluation finds structural problems but cannot produce a defensible
+satisfaction number. The natural next step, and the one NFR-12 commits to, is a
+System Usability Scale study~\cite{brooke1996sus}: a ten-item questionnaire whose
+alternating positive and negative items are each normalised to a 0--4 contribution,
+summed, and multiplied by 2.5 to yield a single 0--100 score, benchmarkable against a
+well-established industry mean. The protocol APEX is designed to support is a short
+scripted task list exercising both roles --- \emph{build an exam}, \emph{assign it},
+\emph{take it}, \emph{grade a written answer}, \emph{review results} --- followed by
+the SUS questionnaire, with results reported separately by role because the teacher's
+authoring workflow and the student's timed-sitting workflow stress different parts of
+the interface.
+
+This study is deliberately \emph{not} reported here with invented numbers. Nielsen's
+own guidance is that a handful of participants surfaces the majority of an interface's
+usability problems~\cite{nielsen-heuristics}, so even a modest cohort would be a
+meaningful first measurement; but a modest cohort drawn from the author's own
+institution would also carry a self-selection bias that must be acknowledged when the
+study is eventually run. The instrument, the protocol, and the analysis recipe are
+specified so that the measurement is reproducible when a real classroom deployment
+makes a representative sample available.
+
+\section{Performance Characteristics}
+\label{sec:res-performance}
+
+Performance is where candour matters most, because APEX's dominant cost is not in
+APEX. This section characterises performance qualitatively and labels clearly what
+was measured versus what is reasoned from the design.
+
+\subsection{Grading Latency Is Dominated by Judge0}
+\label{sec:res-latency}
+
+The end-to-end latency of grading a coding submission is the sum of three terms: the
+Go handler's own work (a database write of the \texttt{Submission} row and, later,
+\texttt{TestResult} rows), the HTTP round-trip to Judge0, and --- dominating both ---
+Judge0's own compile-and-run time inside the \texttt{isolate}
+sandbox~\cite{judge0,isolate}. Because student code is compiled and executed under
+per-problem limits (default \texttt{2000}\,ms wall time, \texttt{262144}\,KB memory),
+a single test case can legitimately consume up to two seconds of sandbox time, and a
+problem with several test cases multiplies that. The Go side, by contrast, adds only
+the milliseconds of a local database write and an HTTP call, bounded by a 30-second
+client timeout per Judge0 request. The architectural consequence, argued in NFR-6,
+is deliberate: exam \emph{submission} does not block on grading at all. Each
+submission is graded in a background goroutine, so the HTTP response to
+\texttt{POST /student/exams/:id/submit} returns immediately with identifiers, and the
+student is never left staring at a spinner whose duration is set by how slow their
+own code is. The trade-off is the durable-queue gap already named (\cref{ch:ch07}).
+
+The clearest way to state the performance model is this: \emph{APEX's grading
+throughput is Judge0's throughput.} Doubling the sandbox's worker capacity doubles the
+number of submissions that can be graded per unit time; the Go server is not the
+bottleneck for any classroom-sized load, because it does no CPU-heavy work itself. A
+controlled load benchmark against a self-hosted Judge0 --- stepping concurrency and
+measuring the latency distribution and the throughput plateau at the worker count ---
+is the correct experiment to quantify this, and it is registered as future work
+rather than reported here with numbers that were not measured.
+
+\subsection{Image Size, Startup, and API Latency}
+\label{sec:res-images}
+
+Several qualitative performance properties follow directly from design choices
+documented earlier and can be stated without measurement:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Container image size.} The backend is a statically linked
+        (\texttt{CGO\_ENABLED=0}) Go binary, stripped with \texttt{-ldflags="-s -w"}
+        and built \texttt{-trimpath}, copied onto a
+        \texttt{gcr.io/distroless/static-debian12} base that ships essentially only
+        the binary and CA certificates --- no shell, no package manager, no libc.
+        This is about as small and as narrow-attack-surface as a Go service image
+        gets. The one avoidable weight is off-image: a 17\,MB pre-built \texttt{seed}
+        binary committed at the repository root, convenient for first boot but
+        bloating the clone --- an owned gap, not a runtime cost.
+  \item \textbf{Startup.} There is no application-server warm-up: the process reads
+        configuration once, opens a bounded connection pool (25 max-open, 10
+        max-idle), and begins serving. The reminder scheduler waits a 15-second
+        warm-up before its first sweep, so background work never contends with the
+        boot path. In Compose, the one-shot \texttt{migrate} service completing
+        successfully gates the backend, so the server never accepts a request against
+        a stale schema.
+  \item \textbf{Non-grading API latency.} Endpoints that do not call Judge0 ---
+        starting an attempt, autosaving answers, listing exams, reading a result ---
+        are ordinary indexed PostgreSQL reads and writes through GORM, backed by the
+        unique composite indexes on the hot paths (NFR-9). These are expected to
+        respond in the low tens of milliseconds against a co-located database; the
+        precise percentiles are a measurement left for the load study, and the figure
+        just given is presented as an \emph{illustrative} design expectation, not a
+        recorded result.
+\end{itemize}
+
+The overarching performance verdict is that APEX is correctly \emph{sized} for its
+stated target --- a classroom of tens of concurrent students, not a MOOC of tens of
+thousands --- and that its one heavy operation is deliberately isolated behind an
+external service whose capacity the operator controls independently.
+
+\section{Project Timeline}
+\label{sec:res-timeline}
+
+APEX was executed over the 2025--2026 graduation year. \Cref{fig:gantt} shows the
+schedule as it actually unfolded, with the phases overlapping the way real
+engineering does rather than proceeding as a tidy waterfall.
+
+\input{figures/tikz/fig13-gantt}
+
+Three features of the timeline are worth reading off the chart. First, requirements
+and design front-load the schedule but do not finish before implementation begins;
+the backend core (auth, models, routes) starts while design is still settling, which
+is why the requirements chapter is written as a record of what shipped rather than a
+speculative contract. Second, the grading engine and the front end run in parallel
+across the middle of the year --- the two largest and most independent workstreams ---
+reflecting the front-end-heavy code distribution seen in \cref{fig:loc}. Third, and
+most importantly for the project's engineering identity, the \emph{security review and
+hardening} phase (in amber) runs \emph{before} deployment, not after. The four
+findings --- the IDOR on \texttt{/submissions/run}, the stored-XSS via Markdown, the
+weak fallback JWT secret, and the HTML injection in emails --- were all found and
+fixed pre-ship, by design. Testing, CI, and Dockerised deployment cluster at the end,
+and thesis writing runs as a continuous band across the back half of the year.
+
+\section{What Works and What Is Limited}
+\label{sec:res-verdict}
+
+An honest evaluation ends with a plain reckoning. The following two lists are the
+distilled verdict; neither hides behind the other.
+
+\subsection*{What works}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{One pipeline, three formats.} Coding, MCQ, and written questions are
+        assessed in a single timed sitting behind one grading path, with a single
+        attempt aggregate that recomputes correctly over the exam's full problem list
+        and excludes in-flight manual grades from the visible total.
+  \item \textbf{Fair auto-grading.} Sandboxed execution under enforced time and
+        memory limits, symmetric output normalisation that refuses to fail a correct
+        answer on whitespace, and a per-test breakdown that makes every mark
+        explainable to the student.
+  \item \textbf{Defence in depth that fails closed.} Three independent authorization
+        gates (\cref{ch:ch08}) plus a fail-fast secret check that refuses to boot with
+        a weak \texttt{JWT\_SECRET}, and a security review conducted before shipping
+        rather than after an incident.
+  \item \textbf{Resilient exam-taking.} Server-side autosave and single-attempt
+        resume mean a crash, a dead battery, or a switched device does not cost a
+        student their work --- the student environment is treated as untrusted and
+        unreliable, and the server holds the truth.
+  \item \textbf{Boring, reproducible deployment.} One Go binary carrying three roles,
+        a four-service Compose stack with schema-migration ordering, distroless images
+        running as non-root, twelve-factor configuration, and a CI gauntlet that gates
+        every change.
+  \item \textbf{A schema that learned from its own failure.} The \texttt{is\_draft}
+        incident (\cref{ch:ch05}) produced not just a fix but a rule set
+        (\texttt{ORM\_RULES.md}) and a production migration discipline in which a
+        versioned track, not the ORM, is the sole schema authority.
+\end{itemize}
+
+\subsection*{What is limited}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Grading has no durable queue.} \texttt{go judge0.Grade(...)} is a bare
+        goroutine with no persistence and no retry; a crash mid-grade can strand a
+        submission in \texttt{running} and leave an attempt unfinalised
+        (\cref{ch:ch07}). Grading is idempotent, so the fix is a durable work queue ---
+        the single highest-value piece of future work.
+  \item \textbf{The authentication surface is not hardened for public exposure.} No
+        rate limiting on auth (bcrypt cost 10 is the only brake on credential
+        stuffing), a six-character password minimum, and a JWT in \texttt{localStorage}
+        that XSS could lift. Each is a deliberate, documented decision for the thesis
+        snapshot, to be hardened before any public deployment.
+  \item \textbf{Test coverage is thin.} The backend ships no \texttt{*\_test.go}
+        files and the front end a single sanity test; CI already exercises the runners,
+        so adding tests requires no pipeline change, but the current automated
+        confidence is low relative to the manual and heuristic evaluation.
+  \item \textbf{Usability is heuristically, not empirically, evaluated.} The SUS study
+        is specified but not yet run on a representative sample; the numbers must come
+        from a real deployment, not from the author's institution alone.
+  \item \textbf{Performance is reasoned, not benchmarked.} The Judge0-dominated latency
+        model is sound but the controlled load experiment --- concurrency sweep,
+        latency distribution, throughput plateau --- remains future work.
+  \item \textbf{Operational single points.} The reminder scheduler runs in-process on a
+        single instance, and the final production deploy hop is still manual; both are
+        acceptable at classroom scale and named as such.
+\end{itemize}
+
+\section{Summary}
+\label{sec:res-summary}
+
+Measured against its own requirements, APEX is a substantially complete system:
+roughly 6{,}100 lines of Go and 17{,}400 of TypeScript realise 15 entities, 13 route
+modules, and 47 pages, delivering 24 of 27 functional requirements without caveat and
+the remaining three with limitations that were owned rather than discovered. Its
+usability conforms to the heuristics that matter for an assessment tool, with the
+empirical SUS study specified for a future classroom cohort. Its performance model is
+bounded by Judge0's sandbox capacity, with the load benchmark registered as
+future work rather than fabricated here. The project's engineering identity ---
+security before shipping, a schema that learned from a real data-loss incident, and a
+deployment that is deliberately boring --- shows up as much in \emph{how} the gaps are
+handled as in the features that work. The remaining limitations, each concrete and
+each with a known fix, form the agenda carried into \Cref{ch:ch13}.

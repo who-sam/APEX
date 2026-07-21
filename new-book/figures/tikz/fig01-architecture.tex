@@ -1,0 +1,50 @@
+\begin{figure}[htbp]\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[font=\sffamily\small]
+  % ---- Self-hosted (docker-compose) tier --------------------------------
+  \node[apexbox] (spa) {React + Vite SPA\\[1pt]\scriptsize served by nginx};
+  \node[apexbox, right=34mm of spa] (api)
+    {Gin REST API\\[1pt]\scriptsize \texttt{/api/*}\ \ \texttt{/healthz}};
+
+  % in-process reminder goroutine attached to the API
+  \node[draw=apexblue, dashed, fill=apexblue!6, rounded corners=2pt,
+        align=center, font=\sffamily\scriptsize, above=9mm of api] (rem)
+    {reminder goroutine\\(1-minute tick)};
+
+  % PostgreSQL store below the API
+  \node[apexstore, below=16mm of api] (db)
+    {PostgreSQL 16\\[1pt]\scriptsize accessed via GORM};
+
+  % side migration CLI feeding the database
+  \node[apexbox, left=24mm of db] (mig)
+    {\texttt{cmd/migrate}\\[1pt]\scriptsize golang-migrate};
+
+  % ---- External services (NOT compose services) -------------------------
+  \node[apexext, right=42mm of api, yshift=12mm] (judge)
+    {Judge0 CE (external)\\[1pt]\scriptsize inner sandbox: \texttt{isolate}};
+  \node[apexext, right=42mm of api, yshift=-14mm] (smtp)
+    {SMTP (external, optional)\\[1pt]\scriptsize password reset + reminders};
+
+  % ---- Edges ------------------------------------------------------------
+  \draw[apexarrowblue] (spa) -- node[apexlabel, above]{HTTPS / JSON} (api);
+  \draw[apexarrow] (api) -- node[apexlabel, right]{SQL} (db);
+  \draw[apexarrow] (mig) -- node[apexlabel, above]{SQL} (db);
+  \draw[apexarrow] (api.east) -- node[apexlabel, above, sloped]{HTTP (\texttt{JUDGE0\_URL})} (judge.west);
+  \draw[apexarrow] (api.east) -- node[apexlabel, below, sloped]{SMTP} (smtp.west);
+  \draw[apexarrowblue, dashed] (rem) -- (api);
+
+  % ---- Deployment boundaries (background layer) -------------------------
+  \begin{scope}[on background layer]
+    \node[draw=apexgrey, dashed, rounded corners=3pt, inner sep=6mm,
+          fit=(spa)(api)(rem)(db)(mig),
+          label={[font=\sffamily\scriptsize\itshape, anchor=north west]north west:%
+            Self-hosted \texttt{docker-compose} tier}] (compose) {};
+    \node[draw=apexamber, dashed, rounded corners=3pt, inner sep=4mm,
+          fit=(judge)(smtp),
+          label={[font=\sffamily\scriptsize\itshape, anchor=north east]north east:%
+            External (not compose services)}] {};
+  \end{scope}
+\end{tikzpicture}%
+}
+\caption{APEX runtime and deployment architecture.}\label{fig:architecture}
+\end{figure}

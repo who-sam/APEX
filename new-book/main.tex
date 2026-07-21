@@ -1,0 +1,57 @@
+\documentclass{apex-ieee}
+
+\usepackage{pdfpages}
+\addbibresource{refs.bib}
+
+% --- Project metadata -------------------------------------------------
+\newcommand{\bookTitle}{APEX: A Self-Hostable Classroom Portal for Mixed-Format Examinations with Sandboxed Auto-Grading and Live Coding}
+\newcommand{\bookShortTitle}{APEX: Classroom Portal for Auto-Graded Examinations}
+\newcommand{\bookSupervisor}{Prof.\ Dr.\ Ayman El-Sayed Omera}
+\newcommand{\bookDept}{Electrical and Computer Engineering Department}
+\newcommand{\bookFaculty}{Faculty of Engineering}
+\newcommand{\bookUniversity}{Menoufia University}
+\newcommand{\bookYear}{2025--2026}
+\newcommand{\bookDate}{July 2026}
+
+\begin{document}
+
+% --- Printed cover (designed PDF) ------------------------------------
+\includepdf[pages={1}]{cover.pdf}
+
+% --- Front matter ----------------------------------------------------
+\frontmatter
+\pagenumbering{roman}
+\input{frontmatter/abstract}
+\input{frontmatter/acknowledgements}
+\tableofcontents
+\listoffigures
+\listoftables
+\input{frontmatter/abbreviations}
+
+% --- Body ------------------------------------------------------------
+\mainmatter
+\pagenumbering{arabic}
+\input{chapters/01-introduction}
+\input{chapters/02-background}
+\input{chapters/03-requirements}
+\input{chapters/04-architecture}
+\input{chapters/05-data-model}
+\input{chapters/06-implementation}
+\input{chapters/07-grading-engine}
+\input{chapters/08-security}
+\input{chapters/09-testing}
+\input{chapters/10-deployment}
+\input{chapters/11-results}
+\input{chapters/12-user-manual}
+\input{chapters/13-conclusion}
+
+% --- Back matter -----------------------------------------------------
+\appendix
+\input{appendix/A-api-reference}
+\input{appendix/B-schema-ddl}
+\input{appendix/C-env-vars}
+\input{appendix/D-source-listings}
+
+\printbibliography[heading=bibintoc,title={References}]
+
+\end{document}

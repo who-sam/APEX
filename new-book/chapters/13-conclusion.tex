@@ -1,0 +1,386 @@
+\chapter{Conclusion and Future Work}\label{ch:ch13}
+
+This final chapter closes the thesis. It restates what APEX set out to do and
+what was actually built, distils the engineering lessons that were paid for in
+real incidents rather than borrowed from textbooks, and lays out a concrete
+roadmap that turns each known limitation into a scoped piece of future work.
+The intent throughout is to be specific and plain-spoken: the project names its
+rough edges and explains exactly how it would fix each one.
+
+\section{Summary of Contributions}
+
+The central claim of this thesis is that mixed-format programming assessment
+does not need a heavyweight platform to be taken seriously. APEX demonstrates
+this by unifying three assessment formats that have historically lived in three
+separate families of tools --- online judges, quiz engines, and document
+hand-ins --- into a \emph{single} timed sitting with a \emph{single} grading
+pipeline behind all three, packaged as a \emph{single} self-hostable artifact.
+Concretely, the work delivered the following.
+
+\begin{description}
+  \item[A unified mixed-format examination portal.] Teachers author coding,
+    multiple-choice (MCQ), and written (free-text) questions inside one exam,
+    assign it to one or more classes, and set one timer. Students join a class
+    by an eight-character invite code, sit the exam in a Monaco editor with
+    live sample-test feedback, and review per-test results afterward. The
+    system models fifteen first-class entities and exposes forty-seven feature
+    pages across ten frontend feature areas, all behind exactly two roles ---
+    \texttt{teacher} and \texttt{student} --- with no administrator role to
+    complicate the trust model. The scale of the delivered surface is
+    summarised in \cref{fig:loc} and \cref{fig:counts}.
+
+  \item[One grading pipeline behind all three formats.] Rather than three
+    graders bolted together, a single dispatch in the exam-submit handler
+    routes each answer to \texttt{judge0.Grade} (coding),
+    \texttt{judge0.GradeMCQ}, or \texttt{judge0.GradeWritten}, and every path
+    ends by calling the same attempt aggregator, \texttt{maybeFinalizeAttempt}.
+    Coding answers earn proportional partial credit
+    (\(\texttt{passed}/\texttt{total}\times100\)); MCQ answers are graded by
+    exact set-equality; written answers enter a manual-grading queue. The full
+    path from the editor to a final score and a single notification is traced
+    in \cref{fig:grading-seq}.
+
+  \item[A sandboxed, fairness-corrected code execution engine.] Untrusted
+    student code never runs on the application host. It is delegated over HTTP
+    to Judge0~\cite{judge0,dosilovic2018judge0}, which executes it inside the
+    \texttt{isolate} sandbox --- the same sandbox used at the International
+    Olympiad in Informatics. APEX treats Judge0 as an \emph{executor}, not a
+    \emph{judge}: it accepts both Judge0 status \texttt{3} (Accepted) and
+    \texttt{4} (Wrong Answer) as ``the program ran'' and then re-compares the
+    output itself through a nine-line \texttt{normalizeOutput} function applied
+    symmetrically to the student's output and the expected output. Those nine
+    lines eliminate the single most common false negative in I/O-diff grading:
+    a correct answer failing on a trailing newline, a Windows CRLF line ending,
+    or a stray trailing space.
+
+  \item[A self-hostable one-artifact deployment.] The backend compiles to one
+    statically linked Go binary (\texttt{CGO\_ENABLED=0}, built with
+    \texttt{-trimpath -ldflags="-s -w"}) shipped in a
+    \texttt{gcr.io/distroless/static-debian12:nonroot} image that runs as an
+    unprivileged user with no shell. A production instance is therefore just
+    that binary, a PostgreSQL~16 database, and an external Judge0 endpoint; the
+    \texttt{docker-compose.yml} stack composes exactly four services ---
+    \texttt{postgres}, a one-shot \texttt{migrate} job, \texttt{backend}, and
+    an nginx-served \texttt{frontend} --- with Judge0 reached externally via
+    \texttt{JUDGE0\_URL}. The deployment topology is shown in
+    \cref{fig:deploy}.
+
+  \item[Defence-in-depth authorization and a pre-ship security review.] Every
+    request passes a four-layer lifecycle (CORS, authentication, role, handler)
+    and a three-gate authorization model: HS256 JWT authentication, role
+    checks, and per-handler resource-ownership checks. A security review run
+    \emph{before} shipping surfaced four findings --- an IDOR on
+    \texttt{/submissions/run}, a stored-XSS vector through Markdown
+    \texttt{rehype-raw}, a weak fallback JWT secret, and HTML injection in
+    outbound e-mail --- all fixed in a single commit prior to release. The
+    three-gate model and threat model are detailed in \cref{ch:ch08} and
+    depicted in \cref{fig:threat}.
+\end{description}
+
+\Cref{tab:objectives-review} maps the original project objectives onto these delivered
+outcomes.
+
+\begin{table}[htbp]
+\centering
+\caption{Project objectives and the outcome delivered against each.}
+\label{tab:objectives-review}
+\begin{tabularx}{\linewidth}{@{}L{4.3cm}X@{}}
+\toprule
+\textbf{Objective} & \textbf{Delivered outcome} \\
+\midrule
+Run coding, MCQ, and written questions in one timed exam &
+Achieved --- one \texttt{ExamAttempt} per (student, exam), enforced by the
+\texttt{idx\_user\_exam\_attempt} unique index; one submit endpoint creates all
+answer rows atomically. \\
+One grading pipeline behind all formats &
+Achieved --- a single dispatch and a shared aggregator
+(\texttt{maybeFinalizeAttempt}) with idempotent re-aggregation. \\
+Safe execution of untrusted code &
+Achieved --- delegated to Judge0/\texttt{isolate}; the host never executes
+student code~\cite{judge0}. \\
+Fair automatic grading &
+Achieved --- symmetric output normalisation eliminates the trailing-whitespace
+false negative. \\
+Self-hostable with minimal moving parts &
+Achieved --- one distroless binary, PostgreSQL, and an external Judge0; a
+four-service compose stack. \\
+Secure by construction &
+Largely achieved --- three-gate authorization and a pre-ship review; several
+hardening gaps remain and are named in \cref{sec:future}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Lessons Learned}
+
+The most durable lessons of the project were not the ones that went smoothly.
+Three in particular changed how the team writes code, and each is worth
+recording because each was paid for with a real failure or a deliberate
+trade-off rather than absorbed from a manual.
+
+\subsection{The \texttt{is\_draft} Incident and Schema-Change Discipline}
+
+The signature war story of the project --- a single
+\texttt{gorm:"default:true"} struct tag that \texttt{AutoMigrate} applied as a
+\emph{DDL} default to the already-populated \texttt{exams} table, silently
+flipping every published exam out of every student's view with no error and no
+stack trace --- is told in full in \cref{ch:ch05}. Its lesson is a standing
+schema-change discipline: a boolean's zero value must be the safe,
+non-destructive state; ownership of a populated-table change belongs in
+explicit, idempotent SQL rather than a struct tag; and production runs with
+\texttt{AutoMigrate} disabled, leaving a versioned \texttt{golang-migrate}
+track~\cite{golangmigrate} as the sole authority over the schema.
+
+That discipline --- audit every query when you add a filter column, define the
+zero-value behaviour of every boolean before you add it, and verify row counts
+after every migration --- was distilled into the \texttt{ORM\_RULES.md} rules
+file, whose first rule is blunt: \textbf{never rely on \texttt{gorm:"default:X"}
+for a DDL backfill on a populated table}. The general principle is old wisdom
+about the gap between an ORM's convenient abstraction and the DDL it silently
+emits~\cite{gorm,fowler2002patterns,kleppmann2017ddia}; APEX simply learned it
+the expensive way. The two-track migration pipeline that resulted is shown in
+\cref{fig:migration}.
+
+\subsection{The Value of Idempotent Migrations}
+
+The second lesson is a positive one that the first made unavoidable: every
+migration in APEX is written to be safely re-runnable. The dev-mode legacy SQL
+pass (\texttt{RunMigrations}) gates each block behind a \texttt{tableExists(...)}
+check so that a first boot against an empty database does not spew ``relation
+does not exist'' errors, and every column addition uses
+\texttt{ADD COLUMN IF NOT EXISTS} before backfilling. The reminder scheduler
+carries the same property into runtime: every reminder sweep dedups against a
+dedicated timestamp column (\texttt{reminder\_sent\_at},
+\texttt{email\_reminder1h\_sent\_at}, \texttt{email\_reminder\_start\_sent\_at}),
+so a process restart mid-sweep can never re-send a reminder. Idempotency turned
+out to be the cheapest possible form of operational safety: a migration or a
+scheduled job that can be run twice without harm removes an entire category of
+``did that already apply?'' anxiety from every deploy and every crash recovery.
+It is the same principle the durable-queue future work below leans on ---
+because grading recomputes results from the stored submission and test cases, it
+too is idempotent, and idempotent work is safe to retry.
+
+\subsection{Fire-and-Forget Versus Durable Work}
+
+The third lesson is a trade-off the team made with its eyes open, and it defines
+the largest single item of future work. Grading is dispatched as a bare
+goroutine --- \texttt{go judge0.Grade(sub.ID)} --- so the HTTP handler can return
+\texttt{201 Created} immediately; at the concurrency of a single classroom it
+works, but a bare goroutine has no supervisor, no queue, and no retry, so a crash
+mid-grade can strand a submission in \texttt{running} and leave the whole attempt
+permanently unfinalised. The mechanism and its failure mode are traced in full in
+\cref{ch:ch07} and documented openly in \texttt{README.md}. The lesson is not that
+fire-and-forget was wrong for the scale it was built for; it is that
+\emph{durability is a property you must design in deliberately}, and that the
+right time to add a work queue is before you need to scale past one room, not
+after a mid-exam crash. The design of that queue is the first item below, and
+it is made tractable precisely by the idempotency lesson above.
+
+\section{Future Work}\label{sec:future}
+
+The remaining limitations of APEX are known, named, and prioritised. This
+section presents each as a scoped roadmap item: the gap, its current
+mitigation, and the concrete engineering that would close it.
+\Cref{tab:roadmap} gives the priority ordering; the subsections that follow
+give the detail.
+
+\begin{table}[htbp]
+\centering
+\caption{Future-work roadmap: each remaining gap with its current mitigation and
+planned fix.}
+\label{tab:roadmap}
+\begin{tabularx}{\linewidth}{@{}L{3.0cm}L{3.6cm}X@{}}
+\toprule
+\textbf{Gap} & \textbf{Current mitigation} & \textbf{Planned fix} \\
+\midrule
+No auth rate limiting &
+bcrypt cost~10 only &
+Per-IP and per-account limiter on auth routes; front with a WAF. \\
+Fire-and-forget grading &
+Works at classroom scale &
+Durable job queue, bounded worker pool, restart recovery sweep. \\
+JWT in \texttt{localStorage} &
+No cookies, so no CSRF &
+\texttt{httpOnly}~+~\texttt{SameSite} cookies; refresh-token model. \\
+Minimal test coverage &
+CI runs vet, lint, build &
+Handler-level tests per protected route; grader unit tests. \\
+Six execution languages &
+Covers common cases &
+Add languages via \texttt{LanguageMap}; push per-problem limits. \\
+No plagiarism detection &
+Hidden tests unshown &
+MOSS / JPlag structural similarity over submissions. \\
+Single-instance backend &
+Sufficient for one class &
+Stateless horizontal scaling plus metrics/tracing/logging. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Hardening Authentication: Rate Limiting and a WAF}
+
+The authentication endpoints have \emph{no} rate limiting. The only brake on
+credential stuffing today is the deliberate cost of bcrypt at cost~10, and while
+that meaningfully slows an offline or online guessing campaign, it does not stop
+one. The cheapest and highest-value next mitigation is a per-IP \emph{and}
+per-account rate limiter on \texttt{/auth/login}, \texttt{/auth/google}, and
+\texttt{/auth/forgot-password}, implemented as a small Gin middleware backed by
+an in-memory or Redis token bucket, coupled with exponential backoff on repeated
+failures for a given account. For a public deployment, the README's standing
+recommendation is to front the entire API with a web application firewall (WAF)
+or an edge rate limiter so that abusive traffic is shed before it ever reaches
+the application. The companion password-policy change --- raising the six-
+character minimum in line with modern password-strength
+guidance~\cite{nist80063b} --- is a one-line validation change that should ship
+alongside the limiter. Both items sit at the top of the roadmap because,
+together, they are the weakest part of the current authentication story, and
+both align with the relevant guidance in the OWASP Top~Ten and the Application
+Security Verification Standard~\cite{owasp-top10,owasp-asvs}.
+
+\subsection{A Durable Grading Work Queue with Retries}
+
+The largest architectural item is replacing the fire-and-forget grading of
+\cref{ch:ch07} with a durable work queue. Concretely,
+\texttt{go judge0.Grade(sub.ID)} would be replaced by enqueuing a job --- a row in a database-backed \texttt{grading\_jobs}
+table, or a message on a Redis-backed broker such as \texttt{asynq} --- consumed
+by a bounded pool of workers. Three properties follow from this design and
+directly close the fire-and-forget gap:
+
+\begin{itemize}
+  \item \textbf{Crash recovery.} On startup, a recovery sweep re-picks any
+    submission left in \texttt{running} (or any job left in-flight) and
+    re-grades it. This is safe precisely because grading is
+    \emph{idempotent}: \texttt{Grade} recomputes every \texttt{TestResult} from
+    the stored \texttt{submission.Code} plus the problem's test cases and
+    overwrites the previous results, so re-running it produces the same verdict.
+    A stuck submission is no longer stuck forever; it is picked up on the next
+    boot.
+  \item \textbf{Bounded concurrency.} A worker pool caps the number of
+    simultaneous Judge0 requests. Today a 200-student exam could spawn hundreds
+    of concurrent POSTs and trip the public Judge0 CE rate limit; a pool with,
+    say, a configurable maximum turns that burst into an orderly queue.
+  \item \textbf{Retries with backpressure.} Transient Judge0 failures (the
+    \texttt{StatusID = -1} sentinel today surfaces as a stuck or failed grade)
+    become retriable jobs with a bounded retry count and a dead-letter path for
+    permanent failures.
+\end{itemize}
+
+Because the attempt aggregator already re-sums the children on every call and
+guards on ``no siblings pending or running,'' it needs no change to work with a
+queue --- the last worker to finish still finds zero pending and finalises the
+attempt exactly once, deduped by the \texttt{graded\_notified} flag. The queue
+is an additive change, not a rewrite.
+
+\subsection{\texttt{httpOnly} + \texttt{SameSite} Cookie Authentication}
+
+The JWT is currently stored in the browser's \texttt{localStorage} under the key
+\texttt{kernel-token} and sent as an \texttt{Authorization: Bearer} header.
+Because no cookie is involved, the design has \emph{no} CSRF exposure by
+construction --- but any successful cross-site scripting (XSS) would be able to
+read \texttt{localStorage} and lift the token. The chosen trade was a simpler
+deployment; the hardening path is to move the session token into an
+\texttt{httpOnly}, \texttt{Secure}, \texttt{SameSite=Lax} (or \texttt{Strict})
+cookie that JavaScript cannot read, which neutralises the token-theft-via-XSS
+vector at the cost of reintroducing the need for CSRF defences (a
+double-submit token or an origin check on state-changing requests). The same
+change is the natural moment to introduce a proper refresh-token model with a
+server-side revocation table, so that the current 24-hour non-revocable HS256
+token can be invalidated on logout or compromise --- an improvement squarely in
+line with established guidance on the safe use of JWTs and OAuth-style session
+handling~\cite{rfc7519,owasp-jwt,rfc6749,nist80063b}.
+
+\subsection{Real Test Coverage}
+
+Test coverage is the most straightforward gap to close and, arguably, the most
+valuable given how much of the system is security-sensitive. The backend
+currently ships \emph{no} \texttt{*\_test.go} files, and the frontend ships a
+single sanity test. Crucially, no pipeline work is required to add tests: the CI
+already spins up a \texttt{postgres:16-alpine} service and runs
+\texttt{go test ./... -race -count=1}, so the runners are in place and simply
+have nothing to exercise. The priority targets are the ones where a regression
+would be invisible and dangerous: a handler-level test per protected route
+asserting that the three authorization gates reject the wrong role and the wrong
+owner (an ownership-check regression is exactly the class of bug that the
+pre-ship IDOR finding represents); unit tests over \texttt{normalizeOutput}
+covering CRLF, lone CR, trailing whitespace, and trailing-newline cases; and
+tests over \texttt{maybeFinalizeAttempt} asserting that skipped questions stay
+in the denominator, that \texttt{pending\_review} answers are excluded from both
+numerator and denominator, and that the ``Exam Graded'' notification fires
+exactly once. Building this suite would move the project meaningfully up the
+test pyramid described in \cref{fig:testpyramid}, following standard
+software-engineering testing practice~\cite{sommerville-se,pressman-se}.
+
+\subsection{More Execution Languages and Enforced Per-Problem Limits}
+
+APEX supports six execution languages --- Python, JavaScript, TypeScript, Java,
+C, and C++ --- resolved through the \texttt{LanguageMap} that maps a language
+string to a Judge0 numeric identifier. Adding a language is a small, localised
+change: a new entry in \texttt{LanguageMap} pointing at the corresponding Judge0
+language id, and the rest of the pipeline is language-agnostic. Two adjacent
+improvements belong here. First, the per-problem limits that already exist in
+the schema --- \texttt{Problem.TimeLimitMs} (default \texttt{2000}) and
+\texttt{Problem.MemoryLimitKb} (default \texttt{262144}, i.e.\ 256~MB) --- are
+\emph{not} currently pushed down to Judge0; execution is bounded by Judge0's own
+defaults instead. Wiring \texttt{cpu\_time\_limit} and \texttt{memory\_limit}
+into the \texttt{RunCode} request body is a small change that would let a teacher
+who sets a one-second limit actually have it enforced. Second, the grader
+currently sends and receives plain text (\texttt{base64\_encoded=false}); moving
+to base64 transport would make the pipeline robust to exotic byte sequences in
+inputs and outputs.
+
+\subsection{Plagiarism Detection}
+
+APEX has no plagiarism detection today. Because the platform already stores every
+submission's source code alongside its language and the exam it belongs to, it
+is well positioned to run structural-similarity analysis across a cohort's
+submissions after an exam closes. The obvious approach is to integrate a
+document-fingerprinting detector in the style of MOSS~\cite{moss} or a
+token-based structural comparator such as JPlag~\cite{prechelt2002jplag}, both of
+which compare programs by structure rather than surface text and are therefore
+robust to renamed variables and reordered statements. The feature would surface a
+ranked list of suspiciously similar submission pairs to the teacher as a review
+aid --- explicitly a signal for human judgement, not an automatic accusation.
+This pairs naturally with lighter-weight proctoring signals (tab-blur,
+fullscreen-exit, and paste events captured client-side) as a future integrity
+layer.
+
+\subsection{Horizontal Scaling and Observability}
+
+The backend runs today as a single instance, which is entirely sufficient for
+one classroom but is a ceiling for wider deployment. The good news is that the
+application is already close to horizontally scalable: it is a stateless Go
+process (all state lives in PostgreSQL) that follows the twelve-factor
+principles of configuration-through-environment and disposable
+processes~\cite{twelvefactor}. The two things standing between the current design
+and running \(N\) replicas behind a load balancer are both addressed by the work
+above --- the in-process reminder scheduler would need a leader-election lock so
+that only one replica runs the sweeps (or it would move into the same durable
+job system as grading), and grading would move from in-process goroutines to the
+shared work queue so that any worker can grade any submission. Alongside scaling,
+the project needs real observability: structured request logging, Prometheus-
+style metrics on grading latency and queue depth, and distributed tracing across
+the SPA~\(\rightarrow\)~backend~\(\rightarrow\)~Judge0 path. Today the system has
+liveness (\texttt{GET /healthz}) and a self-probing \texttt{--healthcheck} flag
+but no metrics or tracing; adding them is what turns ``it seems to work'' into
+``we can see it working, and we get paged before the student does.''
+
+\section{Closing Statement}
+
+APEX set out to build the smallest system that still takes mixed-format
+classroom assessment seriously, and it succeeded on its own terms: three
+assessment formats in one timed sitting, one grading pipeline behind them, and
+one self-hostable artifact of a Go binary, PostgreSQL, and an external Judge0
+sandbox. Along the way the project learned --- expensively, from a single struct
+tag that hid every exam from every student --- that the boundary between an ORM's
+convenience and the DDL it silently emits is exactly where data integrity is won
+or lost, and it built a schema-change discipline and an idempotent,
+crash-resilient runtime around that lesson. The limitations that remain are not
+hidden: no auth rate limiting, fire-and-forget grading, a token in
+\texttt{localStorage}, thin test coverage, and no plagiarism detection. Each is
+named in this thesis, each has a concrete fix on the roadmap above, and each was
+a deliberate trade for a system that a single instructor can actually stand up
+and run. That honesty is the point. The most useful thing a graduation project
+can leave behind is not the illusion of a finished product but a working system
+whose author knows exactly where its edges are and exactly how to extend them ---
+and that is what APEX is.

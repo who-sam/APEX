@@ -1,0 +1,380 @@
+\chapter{Introduction}\label{ch:ch01}
+
+\section{Context and Background}
+
+Programming is now taught in almost every engineering and computer-science
+curriculum, and the way it is \emph{assessed} has quietly become one of the
+hardest problems an instructor faces. A well-formed programming assessment is
+rarely a single kind of question. To measure whether a student has genuinely
+learned, an instructor typically wants to combine three complementary formats
+in one sitting: a \textbf{coding} task that the student must actually make
+run against hidden inputs; a set of \textbf{multiple-choice} (MCQ) questions
+that probe conceptual understanding quickly and at scale; and one or more
+\textbf{written} (free-text) questions that ask the student to explain,
+justify, or design in prose. Each format answers a question the others cannot.
+Coding proves the student can produce working software; MCQ efficiently covers
+breadth; written answers expose reasoning that a pass/fail test case never
+sees.
+
+The difficulty is that these three formats have historically lived in three
+different families of tools. Learning-management systems (LMSs) such as
+Moodle~\cite{moodle2002} and Canvas~\cite{canvas} are excellent at delivering
+quizzes, collecting essays, and keeping a gradebook, but they do not natively
+compile and run student code against test cases inside a secure sandbox.
+Online judges and competitive-programming platforms such as
+HackerRank~\cite{hackerrank}, and the open-source execution engine
+Judge0~\cite{judge0,dosilovic2018judge0} that many of them build on, are
+excellent at running untrusted code safely and grading it against inputs, but
+they are not classroom management systems: they do not model classes, rosters,
+mixed exams with a single timer, or manual grading of prose. Automated
+assessment of programming assignments has been an active research area for
+decades~\cite{douce2005autoassess,ihantola2010autograding,caceres2014online,wasik2018survey},
+yet the tooling that reaches an ordinary lecturer remains \emph{fragmented}:
+the coding part, the quiz part, and the essay part are authored separately,
+timed separately, and graded into separate gradebooks that do not
+interoperate.
+
+\section{The Problem}
+
+The concrete pain that motivates this project can be stated in one sentence:
+\emph{setting a single mixed-format programming exam today means orchestrating
+several tools that were never designed to work together.} We decompose the
+problem into three specific frictions, summarised in
+\Cref{tab:pain-points}.
+
+\begin{table}[htbp]
+\centering
+\caption{Three frictions in mixed-format programming assessment that APEX
+targets.}
+\label{tab:pain-points}
+\begin{tabularx}{\linewidth}{@{}L{3.1cm}X@{}}
+\toprule
+\textbf{Friction} & \textbf{What it looks like in practice} \\
+\midrule
+Three formats,
+three tools &
+A coding task lives in an online judge, the MCQ section in a quiz tool or an
+LMS, and the written part in a document handed in by e-mail or an upload box.
+Each has its own login, its own timer, its own submission model, and its own
+gradebook. The instructor manually reconciles three partial scores into one
+final grade. \\
+\addlinespace
+Brittle I/O
+diffing &
+Even the auto-gradable coding portion is fragile. The oldest and most common
+grading method compares a program's printed output against an expected output
+byte for byte. A correct program then \emph{fails} because the student's
+language appended a trailing newline, emitted Windows \texttt{CRLF} line
+endings, or printed one stray trailing space. This false negative is the
+single most common unfairness on any code-grading platform. \\
+\addlinespace
+Self-hosting
+is a project &
+An instructor who wants to keep student data on their own infrastructure must
+stand up an execution sandbox, a database, a web server, and the glue between
+them before a single exam can run. The operational effort dwarfs the teaching
+task it was meant to support. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+None of these three frictions is individually unsolved --- LMSs grade quizzes,
+online judges run code, and sandboxes exist --- but no single, small,
+self-hostable artifact resolves \emph{all three at once} for a classroom.
+The result is that the instructor becomes the integration layer, copying
+scores between tools by hand and reconciling three timelines into one exam.
+That manual integration is exactly where mistakes, unfairness, and wasted time
+accumulate.
+
+\section{Motivation}
+
+The motivation for APEX is both pedagogical and practical. Pedagogically, a
+mixed-format exam under a single timer is a more faithful measurement instrument
+than three disconnected sittings: the student experiences one coherent
+assessment, the instructor sees one weighted score, and the coding, conceptual,
+and explanatory dimensions of a topic are examined together rather than in
+isolation. Practically, the project is scoped as a graduation thesis built by a
+small team, so the design is disciplined by a bias towards \emph{restraint} ---
+the smallest system that still takes mixed-format classroom assessment
+seriously.
+
+That bias shows up in two deliberate delegations. First, the project does
+\emph{not} write its own code-execution sandbox. Running untrusted student code
+safely is one of the most security-critical tasks in computing, so APEX
+delegates it entirely to Judge0~\cite{judge0}, which executes each submission
+inside the \texttt{isolate} sandbox~\cite{isolate} --- the same sandbox
+originally built for the International Olympiad in Informatics. The most
+dangerous component in the system is therefore the one component the team did
+\emph{not} implement. Second, the project delivers itself as a single Go
+binary~\cite{go} rather than a constellation of microservices, so that a
+department with one server and modest operational appetite can actually run it.
+These choices are not accidental minimalism; they are the direct answer to the
+third friction in \Cref{tab:pain-points}.
+
+\section{The APEX Vision}
+
+\textbf{APEX} --- an \emph{exam, grading, and live-coding portal for
+classrooms} --- is a self-hostable web application that runs \textbf{coding,
+multiple-choice, and written} exams in \textbf{one timed sitting}, with
+\textbf{one grading pipeline} behind all three formats, deployed as
+\textbf{one Go binary plus PostgreSQL plus Judge0}. The whole system reduces to
+three ideas, each a direct rebuttal of one friction above:
+
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[One attempt.] A student joins a class by an eight-character invite
+  code, then takes a single timed exam that may interleave coding, MCQ, and
+  written questions. There is one timer, one autosave mechanism, and --- backed
+  by a unique database index on the \texttt{(user\_id, exam\_id)} pair ---
+  exactly one attempt per student per exam. Coding is edited in an in-browser
+  Monaco editor~\cite{monaco}, the same editor that powers VS~Code, but the
+  code never runs in the browser: it is sent to the server and on to Judge0.
+  \item[One pipeline.] All three formats flow through a single grading path.
+  Coding submissions are compiled and run against hidden test cases inside the
+  sandbox and scored by proportional partial credit; MCQ answers are graded by
+  exact set-equality; written answers are queued for manual grading by the
+  teacher. A single attempt-aggregation step then weights every question's
+  points into one exam score and fires exactly one ``Exam Graded''
+  notification. Fairness is protected at the boundary by output normalisation
+  that strips \texttt{CRLF}, trailing whitespace, and edge newlines
+  symmetrically from both the student's output and the expected output, so a
+  correct answer cannot fail on invisible whitespace.
+  \item[One artifact.] The backend compiles to a single statically linked Go
+  binary that ships in a \texttt{distroless} container~\cite{distroless}
+  alongside PostgreSQL~\cite{postgres}; the React single-page
+  application~\cite{react,vite} is served by nginx. A four-service Docker
+  Compose stack (\texttt{postgres}, \texttt{migrate}, \texttt{backend},
+  \texttt{frontend}) brings the whole system up; Judge0 is reached as an
+  external HTTP service and is deliberately \emph{not} part of the stack.
+\end{description}
+
+APEX recognises exactly two roles --- \textbf{teacher} and \textbf{student}
+--- and has no administrator role. The reference architecture, layered request
+lifecycle, and grading sequence are developed in detail in later chapters and
+illustrated in \cref{fig:architecture}, \cref{fig:layers}, and
+\cref{fig:grading-seq}.
+
+\section{Project Objectives}
+
+The project set out to satisfy the objectives in
+\Cref{tab:objectives}. Each is stated so that it can be checked against the
+delivered system, and each maps onto one or more later chapters.
+
+\begin{table}[htbp]
+\centering
+\caption{Project objectives and where each is realised in the system.}
+\label{tab:objectives}
+\begin{tabularx}{\linewidth}{@{}L{0.6cm}X L{2.5cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Objective} & \textbf{Realised in} \\
+\midrule
+O1 & Deliver one timed exam that interleaves coding, MCQ, and written
+questions with a single attempt, timer, and autosave. & Exam and student
+modules \\
+O2 & Grade all three formats through one pipeline: sandboxed coding execution,
+set-equality MCQ, and a manual queue for written answers. & Auto-grading
+engine \\
+O3 & Execute untrusted student code safely by delegating to Judge0 /
+\texttt{isolate} rather than running it on the application host. & Judge0
+client \\
+O4 & Make automated grading \emph{fair} by normalising whitespace symmetrically
+so a trailing newline cannot fail a correct answer. & \texttt{normalizeOutput}
+\\
+O5 & Enforce authorization with independent, fail-closed gates: identity,
+role, and per-row resource ownership. & Three-gate model
+(\cref{fig:authz}) \\
+O6 & Be genuinely self-hostable: one Go binary, PostgreSQL, and a small Docker
+Compose stack, with no proprietary dependencies. & Deployment topology
+(\cref{fig:deploy}) \\
+O7 & Manage schema evolution safely, with production migrations owned by a
+versioned migrator rather than by ORM auto-migration. & Migration pipeline
+(\cref{fig:migration}) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Quantitatively, the delivered system comprises roughly \textbf{6{,}100} lines
+of Go and \textbf{17{,}400} lines of TypeScript, organised around
+\textbf{15} first-class data entities, \textbf{13} backend route modules, and
+\textbf{47} feature pages in the front end, and it executes submissions in
+\textbf{six} languages --- Python, JavaScript, TypeScript, Java, C, and C++.
+These counts are revisited and visualised in \cref{fig:loc} and
+\cref{fig:counts}.
+
+\section{Scope and Limitations}
+
+A graduation thesis is most useful when it is honest about its boundaries, so
+this section states plainly what APEX does \emph{not} do, and where the
+delivered system has known rough edges. These limitations are owned openly here
+and are examined in depth in the security and testing chapters rather than
+buried.
+
+\begin{itemize}
+  \item \textbf{Two roles, no administration.} The system models only
+  \texttt{teacher} and \texttt{student}. There is no institution-wide
+  administrator, no cross-teacher reporting, and no organisational hierarchy.
+  This keeps the authorization model small and auditable, at the cost of
+  multi-tenant administration features an enterprise LMS would provide.
+
+  \item \textbf{No rate limiting on authentication.} bcrypt at cost
+  10~\cite{provos1999bcrypt} is the only brake on credential stuffing; a
+  production deployment must be fronted by a WAF or rate limiter. The password
+  minimum is also a modest six characters and should be raised before public
+  exposure.
+
+  \item \textbf{Fire-and-forget grading.} Each submission is graded in a bare
+  background goroutine with no durable work queue and no retry. At classroom
+  concurrency this is acceptable, but a process crash mid-grade can leave a
+  submission stuck in the \texttt{running} state so that its attempt never
+  finalises. The roadmap fix is a durable, idempotent work queue.
+
+  \item \textbf{Token stored in \texttt{localStorage}.} The single-page
+  application keeps its JSON Web Token~\cite{rfc7519} in browser
+  \texttt{localStorage}. This removes cookie-based CSRF surface but means a
+  cross-site-scripting flaw could lift the token; it is a deliberate trade for
+  a simpler deployment.
+
+  \item \textbf{Grading tolerance is whitespace-fair, not token-fair.} Output
+  normalisation eliminates the most common false negative --- trailing
+  whitespace, newlines, and \texttt{CRLF} --- but it does not collapse internal
+  whitespace runs and has no floating-point tolerance. This is a scoping
+  decision, not a defect.
+
+  \item \textbf{Public Judge0 endpoint is not for production.} The default
+  Judge0 base URL is the public Community Edition instance, which is
+  rate-limited; a real deployment must self-host Judge0.
+
+  \item \textbf{Minimal automated test coverage.} The backend ships without
+  Go unit-test files and the front end ships a single sanity test; the
+  continuous-integration pipeline nonetheless exercises build, vet, and lint on
+  every change.
+\end{itemize}
+
+Naming these limitations up front is deliberate. A classroom tool that is
+candid about its failure modes is safer to deploy than one that hides them, and
+several of these items --- particularly the grading queue and the
+authentication rate limiting --- define the most valuable future work
+(\cref{ch:ch13}).
+
+\section{Contributions and Novelty}
+
+APEX does not claim to invent sandboxed code execution, automated grading, or
+learning-management systems; each of those exists in mature form. Its
+contribution is one of \emph{integration and restraint} --- assembling the
+right pieces into the smallest coherent whole for mixed-format classroom
+assessment. Concretely, the project contributes:
+
+\begin{enumerate}
+  \item \textbf{A unified mixed-format exam model.} Coding, MCQ, and written
+  questions coexist in one timed attempt with one autosave and one weighted
+  score, rather than in three separate tools --- directly addressing the
+  fragmentation described in \Cref{tab:pain-points}.
+
+  \item \textbf{A single grading pipeline behind three formats.} One
+  attempt-aggregation step reconciles sandboxed coding results, set-equality
+  MCQ verdicts, and manually graded prose into a single exam score, coordinating
+  concurrent grading goroutines by idempotent re-aggregation rather than
+  locking.
+
+  \item \textbf{A fairness-first grading boundary.} Symmetric output
+  normalisation --- a nine-line function applied identically to student and
+  expected output --- removes the trailing-whitespace false negative that
+  plagues naive I/O diffing, and the identical normalisation drives both the
+  live ``run sample tests'' feedback and the final graded verdict, so students
+  are judged the same way both times.
+
+  \item \textbf{A defence-in-depth authorization model.} Three independent,
+  fail-closed gates --- JWT identity verification (with an explicit HMAC
+  algorithm check to block algorithm-confusion attacks), role checking, and
+  per-row ownership verification inside every handler --- are documented and
+  audited (\cref{fig:authz}, \cref{fig:threat}).
+
+  \item \textbf{A genuinely self-hostable single-artifact deployment.} The
+  backend is one statically linked Go binary in a non-root container
+  with a shell-free self-probing health check, brought up by
+  a four-service Compose stack with a one-shot versioned migrator as the sole
+  schema authority in production.
+
+  \item \textbf{A documented data-integrity discipline.} A real
+  migration incident --- an ORM default that silently hid every exam from
+  students --- is analysed and distilled into an explicit set of
+  schema-change rules, turning a mistake into transferable engineering guidance
+  (\cref{fig:migration}).
+\end{enumerate}
+
+The novelty is therefore not any single algorithm but the \emph{combination}:
+a small, self-hostable portal that treats the three exam formats as one
+assessment and one pipeline, with fairness and authorization designed in rather
+than bolted on.
+
+\section{Intended Users}
+
+APEX is built for two audiences, mirrored by its two roles.
+
+\textbf{Teachers} author mixed-format exams from a question bank organised into
+folders, assign them to one or more classes, set a duration and time window,
+and choose a passing threshold. After a sitting, they auto-grade coding and MCQ
+questions instantly, work through a manual-grading queue for written answers,
+and then announce results to a class. A teacher can reuse bank questions across
+exams, close and reopen exams, and post announcements that fan out as
+notifications to enrolled students.
+
+\textbf{Students} join a class with an invite code, see their assigned and
+upcoming exams, and take a timed exam in one page: typing code into the Monaco
+editor and pressing ``Run'' for immediate, unlimited, un-graded feedback
+against the visible sample tests, answering MCQ and written questions in the
+same attempt, with their progress autosaved. On submission they receive an
+immediate acknowledgement and, once grading completes, a single ``Exam Graded''
+notification and a per-test breakdown --- with hidden test inputs kept
+hidden, so the tests cannot be reverse-engineered.
+
+The end-to-end workflows for both roles, with annotated screenshots, form the
+user manual in \cref{ch:ch12}; the use-case view of these two actors is given
+in \cref{fig:usecase}.
+
+\section{Structure of this Book}
+
+The remainder of this thesis is organised as follows.
+
+\begin{description}[leftmargin=0em,style=nextline,itemsep=2pt]
+  \item[\Cref{ch:ch01} --- Introduction.] The present chapter: the problem,
+  motivation, vision, objectives, scope, and contributions.
+  \item[Chapter~2 --- Background and Literature Review.] Existing
+  learning-management systems~\cite{moodle2002,canvas}, online judges and
+  automated code assessment~\cite{hackerrank,judge0,douce2005autoassess,ihantola2010autograding},
+  sandboxing~\cite{isolate}, and the gap APEX fills.
+  \item[Chapter~3 --- Requirements Engineering.] Functional and non-functional
+  requirements, actors, and use cases (\cref{fig:usecase}).
+  \item[Chapter~4 --- System Architecture and Design.] The four-layer backend,
+  request lifecycle, and design decisions (\cref{fig:architecture},
+  \cref{fig:layers}, \cref{fig:authz}, \cref{fig:exam-state}).
+  \item[Chapter~5 --- Data Model and Persistence.] The fifteen entities, their
+  relationships and unique indexes, and the entity--relationship model
+  (\cref{fig:er}).
+  \item[Chapter~6 --- Implementation.] How the backend and front end are built,
+  the technology stack, and code organisation.
+  \item[Chapter~7 --- Code Execution and the Auto-Grading Engine.] The Judge0
+  integration, \texttt{isolate} sandbox, output normalisation, scoring, and
+  attempt aggregation (\cref{fig:grading-seq}).
+  \item[Chapter~8 --- Security.] The threat model, the three-gate authorization
+  model, JWT and bcrypt~\cite{rfc7519,provos1999bcrypt,owasp-top10}, and the
+  security findings that were fixed before shipping (\cref{fig:threat}).
+  \item[Chapter~9 --- Testing and Quality Assurance.] The test strategy,
+  continuous integration, and a frank account of coverage
+  (\cref{fig:testpyramid}).
+  \item[Chapter~10 --- Deployment and DevOps.] The single-binary,
+  \texttt{distroless}, four-service Compose deployment and the migration
+  pipeline (\cref{fig:deploy}, \cref{fig:migration}, \cref{fig:reminder}).
+  \item[Chapter~11 --- Results and Evaluation.] What was delivered, measured
+  against the objectives, including scale metrics (\cref{fig:loc},
+  \cref{fig:counts}) and the project timeline (\cref{fig:gantt}).
+  \item[\Cref{ch:ch12} --- User Manual.] Step-by-step teacher and student
+  workflows with annotated screenshots.
+  \item[\Cref{ch:ch13} --- Conclusion and Future Work.] What was learned and
+  the roadmap, including the durable grading queue and the authentication
+  hardening flagged in the scope above.
+\end{description}
+
+Appendices provide the API reference, the database schema, the environment-variable
+reference, and selected source listings. Throughout, the guiding
+principle is the one stated at the outset: the smallest system that still takes
+mixed-format classroom assessment seriously, built and documented transparently.

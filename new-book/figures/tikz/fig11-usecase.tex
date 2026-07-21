@@ -1,0 +1,76 @@
+\begin{figure}[htbp]\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    every node/.style={font=\small},
+    actor/.style={
+      inner sep=0pt, outer sep=2pt, minimum height=1.1cm, minimum width=0.7cm,
+      align=center, text=apexblue, font=\small\bfseries
+    },
+    usecase/.style={
+      draw=apexblue!70, thick, fill=apexlight, text=black!85,
+      ellipse, align=center, inner sep=1.5pt, minimum width=3.2cm, minimum height=0.95cm,
+      font=\scriptsize
+    },
+    link/.style={apexgrey, thin},
+]
+
+% ---- Stick-figure actor macro ----
+\newcommand{\stickfig}[3]{% #1=name/anchor, #2=x, #3=y
+  \coordinate (#1) at (#2,#3);
+  \draw[apexblue, very thick] (#2,#3+0.55) circle (0.16);            % head
+  \draw[apexblue, very thick] (#2,#3+0.39) -- (#2,#3-0.18);          % torso
+  \draw[apexblue, very thick] (#2-0.30,#3+0.20) -- (#2+0.30,#3+0.20);% arms
+  \draw[apexblue, very thick] (#2,#3-0.18) -- (#2-0.24,#3-0.60);     % left leg
+  \draw[apexblue, very thick] (#2,#3-0.18) -- (#2+0.24,#3-0.60);     % right leg
+}
+
+% ================= System boundary =================
+\node[
+  draw=apexblue, very thick, rounded corners=32pt, fill=apexcyan!5,
+  minimum width=9.2cm, minimum height=12.6cm,
+] (boundary) at (0,0) {};
+\node[anchor=north, apexblue, font=\bfseries] at (boundary.north) {\ APEX Classroom Portal\ };
+
+% ================= Teacher use cases (left column) =================
+\node[usecase] (uc-classes)  at (-2.0, 5.1) {Manage Classes};
+\node[usecase] (uc-build)    at (-2.0, 3.6) {Build Exams};
+\node[usecase] (uc-bank)     at (-2.0, 2.1) {Manage\\Question Bank};
+\node[usecase] (uc-assign)   at (-2.0, 0.6) {Assign Exams};
+\node[usecase] (uc-grade)    at (-2.0,-0.9) {Grade\\Written Answers};
+\node[usecase] (uc-announce) at (-2.0,-2.4) {Post Announcements};
+\node[usecase] (uc-stats)    at (-2.0,-3.9) {View Results / Stats};
+
+% ================= Student use cases (right column) =================
+\node[usecase] (uc-join)     at ( 2.0, 4.35) {Join Class};
+\node[usecase] (uc-take)     at ( 2.0, 2.85) {Take Timed Exam};
+\node[usecase] (uc-run)      at ( 2.0, 1.35) {Run / Submit Code};
+\node[usecase] (uc-review)   at ( 2.0,-0.15) {Review Results};
+\node[usecase] (uc-notify)   at ( 2.0,-1.65) {Receive\\Notifications};
+
+% ================= Actors =================
+\stickfig{teacher}{-6.6}{0.6}
+\node[actor] at (-6.6,-0.5) {Teacher};
+
+\stickfig{student}{6.6}{0.6}
+\node[actor] at (6.6,-0.5) {Student};
+
+% ================= Associations: Teacher =================
+\draw[link] (teacher) -- (uc-classes.west);
+\draw[link] (teacher) -- (uc-build.west);
+\draw[link] (teacher) -- (uc-bank.west);
+\draw[link] (teacher) -- (uc-assign.west);
+\draw[link] (teacher) -- (uc-grade.west);
+\draw[link] (teacher) -- (uc-announce.west);
+\draw[link] (teacher) -- (uc-stats.west);
+
+% ================= Associations: Student =================
+\draw[link] (student) -- (uc-join.east);
+\draw[link] (student) -- (uc-take.east);
+\draw[link] (student) -- (uc-run.east);
+\draw[link] (student) -- (uc-review.east);
+\draw[link] (student) -- (uc-notify.east);
+
+\end{tikzpicture}%
+}
+\caption{Principal use cases for the Teacher and Student actors.}\label{fig:usecase}
+\end{figure}

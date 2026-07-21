@@ -1,0 +1,493 @@
+\chapter{Testing and Quality Assurance}\label{ch:ch09}
+
+Quality assurance for APEX rests on two pillars that must be described
+plainly and separately. The first is the \emph{automated quality gate}:
+a GitHub Actions pipeline that compiles, statically analyses, lints,
+builds, and container-smoke-tests every commit before it is allowed to
+reach the \texttt{main} branch. This gate is mature, fast, and enforced.
+The second is the \emph{test suite itself}: at the thesis snapshot the
+backend ships no \texttt{*\_test.go} files and the frontend ships a
+single sanity test. These two facts sit in tension --- a rigorous
+pipeline running over an almost-empty suite --- and this chapter
+confronts that tension rather than papering over it. Following
+Sommerville's guidance that verification and validation are distinct
+activities that together establish fitness for purpose~\cite{sommerville-se},
+we first describe the strategy and the gate, then give an unflinching
+assessment of coverage and a concrete plan for the tests that the
+architecture most needs.
+
+\section{Test Strategy}
+
+The testing philosophy for APEX is organised around the classical test
+pyramid~\cite{fowler2002patterns}: a broad base of fast, isolated unit
+tests, a narrower band of integration tests that exercise real
+collaborators (the HTTP router and a live PostgreSQL instance), and a
+thin cap of end-to-end and manual exploratory testing.
+\Cref{fig:testpyramid} contrasts this aspirational shape with what the
+repository actually contains today, and the gap between the two is
+itself a finding this chapter reports.
+
+\input{figures/tikz/fig12-testpyramid}
+
+Pressman frames test planning as the deliberate allocation of effort to
+where defects are both most likely and most costly~\cite{pressman-se}.
+For a system like APEX, that allocation is not uniform. Large parts of
+the codebase are thin CRUD handlers whose failure modes are shallow and
+would be caught immediately in manual use; other parts --- the grading
+determinism logic, the three authorization gates, output normalization,
+and the migration pipeline --- carry correctness obligations whose
+violations are silent, data-corrupting, and hard to detect by
+inspection. The \texttt{is\_draft} incident (\cref{ch:ch05}) is the
+canonical example: a schema-default migration silently hid every
+existing exam from students with no error logged, and a single
+migration-idempotency assertion on row counts would have caught it. The
+strategy this chapter advocates therefore weights unit and integration
+effort toward exactly those silent-failure hotspots.
+
+\subsection{The Test Pyramid Applied to APEX}
+
+Mapping the three pyramid tiers onto APEX's concrete surfaces gives the
+following picture.
+
+\begin{itemize}
+  \item \textbf{Unit tier (base).} Pure functions with no I/O:
+  \texttt{normalizeOutput} (the symmetric whitespace normalizer applied
+  to both actual and expected program output), the Judge0 status-code
+  mapper, the MCQ set-equality comparison in \texttt{GradeMCQ}, the
+  attempt-aggregation arithmetic in \texttt{maybeFinalizeAttempt}, the
+  JWT claim extraction, and the frontend's form validators and score
+  formatters. These are cheap to test, deterministic, and where the
+  subtle correctness bugs live.
+
+  \item \textbf{Integration tier (middle).} Handlers exercised through
+  the real Gin router against a real PostgreSQL database --- precisely
+  the shape the CI \texttt{backend-test} job already provisions via a
+  \texttt{postgres:16-alpine} service container. This tier is where the
+  three authorization gates, resource-ownership checks, and the
+  migration passes should be verified end to end within the process.
+
+  \item \textbf{End-to-end / manual tier (cap).} Full browser-driven
+  flows through the React SPA, the Monaco editor, and live Judge0
+  execution. Because Judge0 is an external HTTP dependency and the
+  editor is heavyweight, this tier is deliberately thin and, in the
+  current snapshot, entirely manual (\cref{sec:manual}).
+\end{itemize}
+
+The deliberate inversion visible in \cref{fig:testpyramid} --- almost no
+unit or integration tests, with confidence resting instead on static
+analysis and manual use --- is a known anti-pattern (the ``ice-cream
+cone''). Section~\ref{sec:coverage} treats it as the central
+finding of the chapter.
+
+\section{The Continuous Integration Pipeline}
+
+Every push to \texttt{main} and every pull request triggers two GitHub
+Actions workflows~\cite{githubactions}: \texttt{ci.yml} (compilation,
+static analysis, lint, build, and test) and \texttt{docker.yml} (image
+smoke builds). CI is configured with a concurrency group keyed on the
+git ref and \texttt{cancel-in-progress: true}, so a rapid sequence of
+pushes to the same branch cancels superseded runs and only the newest
+commit consumes runner minutes. Together the two workflows constitute a
+six-leg gauntlet that a change must clear before merge. \Cref{tab:cijobs}
+summarises the jobs.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Continuous-integration jobs and their gates.}
+  \label{tab:cijobs}
+  \begin{tabularx}{\linewidth}{@{}L{3.3cm} L{2.6cm} X@{}}
+    \toprule
+    \textbf{Job} & \textbf{Workflow} & \textbf{What it runs} \\
+    \midrule
+    \texttt{backend-test} & \texttt{ci.yml} &
+      \texttt{go mod download}, \texttt{go vet ./...},
+      \texttt{go test ./... -race -count=1} against a live Postgres
+      service. \\
+    \texttt{backend-lint} & \texttt{ci.yml} &
+      \texttt{golangci-lint} via \texttt{golangci-lint-action@v6},
+      \texttt{-{}-timeout=5m}. \\
+    \texttt{frontend-build} & \texttt{ci.yml} &
+      \texttt{bun install -{}-frozen-lockfile}, \texttt{bun run lint}
+      (ESLint), \texttt{bun run build} (Vite). \\
+    \texttt{frontend-test} & \texttt{ci.yml} &
+      \texttt{bun install -{}-frozen-lockfile},
+      \texttt{bun run test} (Vitest single run). \\
+    \texttt{build-backend} & \texttt{docker.yml} &
+      Docker smoke build of the distroless backend image
+      (\texttt{push:false}, GHA layer cache). \\
+    \texttt{build-frontend} & \texttt{docker.yml} &
+      Docker smoke build of the nginx frontend image
+      (\texttt{push:false}, GHA layer cache). \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{The Backend Jobs}
+
+The \texttt{backend-test} job runs on \texttt{ubuntu-latest} with Go
+\texttt{1.25} and provisions a \texttt{postgres:16-alpine} service
+container (database \texttt{apex\_test}, user/password
+\texttt{postgres}/\texttt{postgres}). The service is health-gated with
+\texttt{pg\_isready} at a five-second interval, a three-second timeout,
+and ten retries, so the test steps only begin once the database accepts
+connections. Two environment values matter: \texttt{DATABASE\_URL}
+points the application and migration code at the service container
+(\texttt{postgres://postgres:postgres@localhost:5432/apex\_test\allowbreak
+?sslmode=disable}), and \texttt{JWT\_SECRET} is set to the literal
+\texttt{ci-secret-thirty-two-chars-min-length-ok}. That secret is not
+cosmetic: APEX refuses to start if \texttt{JWT\_SECRET} is empty, shorter
+than 32 characters, or equal to the placeholder
+\texttt{dev-secret-change-in-prod}, so the CI value is deliberately
+crafted to be exactly 32-plus characters of non-placeholder text. Any
+future integration test that boots the app inherits a valid signing key
+and a real database for free.
+
+The three backend steps run in order and each is a hard gate:
+
+\begin{enumerate}
+  \item \texttt{go mod download} --- resolves and caches modules;
+  \texttt{setup-go@v5} is configured with \texttt{cache: true} so the
+  module and build caches persist across runs.
+  \item \texttt{go vet ./...} --- Go's built-in suspicious-construct
+  analyser. It catches printf-format mismatches, unreachable code,
+  struct-tag typos, and lost-cancel context bugs before they reach
+  review.
+  \item \texttt{go test ./... -race -count=1} --- runs the full test
+  suite with the race detector enabled and caching disabled. The
+  \texttt{-race} flag is particularly relevant to APEX because grading
+  runs in fire-and-forget goroutines (\texttt{go judge0.Grade(...)});
+  once real grading tests exist, the race detector will flag any
+  unsynchronised access between a grading goroutine and the
+  aggregation path. \texttt{-count=1} disables Go's test-result cache so
+  the suite genuinely re-executes on every run.
+\end{enumerate}
+
+The \texttt{backend-lint} job is a separate parallel job (so a lint
+failure does not mask a test failure or vice-versa) running
+\texttt{golangci-lint} through the official
+\texttt{golangci-lint-action@v6} with \texttt{-{}-timeout=5m}. Its
+behaviour is pinned by the repository's \texttt{.golangci.yml}, discussed
+next.
+
+\subsection{Static Analysis as a Quality Gate}\label{sec:staticanalysis}
+
+The project takes a deliberate, curated stance on linting rather than
+enabling every available check. The \texttt{.golangci.yml} file sets
+\texttt{disable-all: true} and then enables exactly six linters, so the
+gate is explicit and stable rather than dependent on whatever the
+linter's default set happens to be in a given release:
+
+\begin{itemize}
+  \item \texttt{govet} --- the same vet analysers as the test job, run
+  again in the lint context (belt and suspenders).
+  \item \texttt{staticcheck} --- the flagship Go static analyser; finds
+  dead code, incorrect \texttt{sync} usage, impossible type assertions,
+  redundant conversions, and a large catalogue of correctness smells.
+  \item \texttt{errcheck} --- flags unchecked error returns, with
+  \texttt{check-type-assertions: false} and \texttt{check-blank: false}
+  so that intentionally discarded comma-ok assertions and
+  blank-assigned returns do not create noise.
+  \item \texttt{ineffassign} --- detects assignments to variables that
+  are never subsequently read (a common source of silent logic bugs).
+  \item \texttt{unused} --- reports unused constants, functions, types,
+  and struct fields.
+  \item \texttt{gosimple} --- suggests simpler equivalent constructs,
+  keeping the codebase idiomatic.
+\end{itemize}
+
+Two more settings shape the gate. \texttt{run.tests: true} means the
+linters also analyse \texttt{\_test.go} files, so test code is held to the
+same standard as production code --- a forward-looking choice given that
+the backend suite is yet to be written. And \texttt{issues.exclude-dirs}
+removes \texttt{frontend}, \texttt{book}, \texttt{photos}, and
+\texttt{seed} from analysis, so the Go linter never wastes time on the
+TypeScript SPA, the thesis LaTeX sources, screenshot assets, or the
+committed seed binary. Curating the linter set this way trades a slightly
+smaller catalogue of warnings for a gate that is comprehensible,
+reproducible, and free of the false-positive churn that leads teams to
+ignore lint output entirely.
+
+\subsection{The Frontend Jobs}
+
+The two frontend jobs both run inside the \texttt{frontend/} working
+directory and both pin Bun to \texttt{1.1.38} via
+\texttt{oven-sh/setup-bun@v2}. The pin is intentional and documented:
+CI and the Netlify build are locked to the same Bun version so that the
+lockfile resolves and the build behaves identically in both places,
+eliminating a class of ``works in CI, breaks on deploy'' drift. Both jobs
+begin with \texttt{bun install -{}-frozen-lockfile}, which fails the
+build if \texttt{bun.lockb} is out of sync with \texttt{package.json}
+rather than silently resolving new versions --- a supply-chain and
+reproducibility safeguard.
+
+The \texttt{frontend-build} job then runs \texttt{bun run lint} followed
+by \texttt{bun run build}. The lint step invokes ESLint through the flat
+config in \texttt{eslint.config.js}, which composes the recommended
+JavaScript rules with \texttt{typescript-eslint}'s recommended set and
+adds the \texttt{react-hooks} plugin (enforcing the rules of hooks) and
+\texttt{react-refresh} (warning on non-component exports that would break
+fast refresh). The build step runs \texttt{vite build}, a full
+production TypeScript compile and bundle; because TypeScript is a
+static type system~\cite{typescript}, a successful \texttt{vite build}
+is itself a substantial correctness check --- type errors, missing
+imports, and undefined identifiers all fail the build. In a repository of
+roughly 17{,}400 lines of TypeScript, that compile-time guarantee does a
+large share of the verification work that a dynamically typed frontend
+would need runtime tests to approximate.
+
+The \texttt{frontend-test} job runs \texttt{bun run test}, mapped in
+\texttt{package.json} to \texttt{vitest run} --- a single, non-watch
+execution suitable for CI. The Vitest configuration
+(\texttt{vitest.config.ts}) registers the SWC React plugin, sets the
+\texttt{jsdom} environment (so component tests get a simulated DOM),
+enables \texttt{globals} (so \texttt{describe}/\texttt{it}/\texttt{expect}
+need no import), loads \texttt{./src/test/setup.ts} before the suite, and
+includes any \texttt{src/**/*.\{test,spec\}.\{ts,tsx\}} file. The setup
+file imports \texttt{@testing-library/jest-dom} for its extended DOM
+matchers and stubs \texttt{window.matchMedia} --- which jsdom does not
+implement but which the Tailwind/responsive components query at render
+time --- so component tests do not crash on a missing browser API. The
+infrastructure is therefore fully wired for real component and hook
+tests; only the tests themselves are missing.
+
+\subsection{The Docker Smoke Build}
+
+The \texttt{docker.yml} workflow runs on the same push/PR triggers and
+smoke-builds both container images with \texttt{docker/build-push-\allowbreak
+action@v6}: \texttt{build-backend} builds the root \texttt{Dockerfile}
+(the multi-stage distroless backend) and \texttt{build-frontend} builds
+\texttt{frontend/Dockerfile} (the \texttt{oven/bun} build stage into an
+nginx runtime). Both set \texttt{push: false} --- the images are built and
+discarded, never published --- and both use the GitHub Actions layer
+cache (\texttt{cache-from}/\texttt{cache-to: type=gha}) to keep rebuilds
+fast. The purpose is narrow but valuable: it proves that the production
+images still \emph{build} on every change. As the workflow's own comment
+notes, PR-level Docker builds catch lockfile drift and Go-module changes
+that a source-only test job would miss, because the image build performs
+a clean \texttt{-{}-frozen-lockfile} install and a from-scratch compile in
+an environment with none of a developer's local caches. This is a build
+gate, not a runtime gate: it does not start the containers or exercise
+\texttt{/healthz}, so a change that builds but fails at runtime would pass
+this leg (see \cref{sec:coverage}).
+
+\section{Validation Against Requirements}
+
+Verification asks ``are we building the product right?''; validation asks
+``are we building the right product?''~\cite{sommerville-se}. The
+automated gate above is almost entirely verification. Validation --- that
+the system satisfies the functional and non-functional requirements of
+\cref{ch:ch03} --- is currently
+established by manual and exploratory testing mapped back to the
+requirement set. Each major requirement traces to an observable system
+behaviour that was exercised by hand during development:
+
+\begin{itemize}
+  \item \emph{Mixed-format exams in one sitting} --- validated by
+  building an exam containing coding, MCQ, and written questions,
+  assigning it to a class, and taking it as a student; the single
+  grading pipeline produces one aggregated attempt score.
+  \item \emph{Auto-grading correctness} --- validated by submitting known
+  passing and failing solutions and confirming the per-test breakdown,
+  the \texttt{passed\_count / total\_count * 100} score, and the terminal
+  submission status match expectation.
+  \item \emph{Authorization} --- validated by attempting teacher-only
+  routes as a student and cross-tenant access to another teacher's
+  resources, confirming 401/403 responses (\cref{fig:authz}).
+  \item \emph{Reminder scheduling} --- validated by setting an exam start
+  time inside each sweep window and confirming exactly one in-app
+  notification and one email (logged to stdout when SMTP is off) fire,
+  with the column stamps preventing re-send across a restart.
+\end{itemize}
+
+This requirement-to-behaviour mapping is genuine validation, but it is
+manual and non-repeatable. The clear next step, described below, is to
+promote the highest-value items in this list into the automated
+integration tier so that validation runs on every commit rather than
+only when a developer remembers to perform it.
+
+\section{Honest Assessment of Current Coverage}\label{sec:coverage}
+
+The candid position, stated in the project README and worth repeating
+here without softening, is that \textbf{test coverage is minimal}. The
+Go backend --- roughly 6{,}100 lines across thirteen route modules ---
+contains \emph{no} \texttt{*\_test.go} files, so \texttt{go test ./...}
+in CI currently compiles the packages and reports ``no test files''
+rather than exercising behaviour. The frontend ships exactly one test,
+\texttt{src/test/example.test.ts}, whose entire body asserts
+\texttt{expect(true).toBe(true)}. It is a genuine sanity check --- it
+proves the Vitest runner, the jsdom environment, and the setup file all
+load and execute --- but it verifies nothing about the application.
+
+It is important to be precise about what this does and does not mean.
+The CI pipeline is \emph{not} theatre: \texttt{go vet}, the six-linter
+\texttt{golangci-lint} gate, the TypeScript compile inside
+\texttt{vite build}, ESLint, and the two Docker builds all perform real,
+enforced checks on every commit, and static typing plus static analysis
+catch a substantial class of defects that unit tests would otherwise be
+needed to find~\cite{pressman-se}. What is missing is the
+\emph{behavioural} layer --- the assertions that a given input produces a
+given output --- and its absence is felt most acutely in exactly the
+silent-failure hotspots identified in the strategy. The remainder of this
+section names those hotspots and specifies how each should be tested,
+so that the gap is documented as an actionable backlog rather than a
+vague admission.
+
+\subsection{What Should Be Tested, and How}
+
+\paragraph{Grading determinism (unit).} The coding-grade path must be
+deterministic: identical code, language, and test cases must always yield
+the same status, score, and per-test results. The status-code mapper
+(Judge0 \texttt{3}/\texttt{4} counted as ``ran and compared'';
+\texttt{6}$\rightarrow$\texttt{compilation\_error},
+\texttt{5}$\rightarrow$\texttt{time\_limit\_exceeded},
+\texttt{11}$\rightarrow$\texttt{runtime\_error}, else
+\texttt{wrong\_answer}) is a pure function of the Judge0 response and
+should be table-tested against every documented status ID, including the
+unknown-status default. The scoring arithmetic and the
+``no test cases $\rightarrow$ auto-accepted, score 100.0'' edge case
+should each be asserted directly. Because these tests need no network,
+they can hit the mapper and scorer functions in isolation while a fake
+Judge0 client returns canned responses.
+
+\paragraph{Output normalization (unit).} \texttt{normalizeOutput} is the
+single most leverage-rich unit-test target in the codebase: a bug here
+silently marks correct submissions wrong or vice-versa across every
+coding question. Its four documented transformations --- \texttt{\char92
+r\char92 n}$\rightarrow$\texttt{\char92 n}, lone
+\texttt{\char92 r}$\rightarrow$\texttt{\char92 n}, right-trim of each
+line, and a final whole-string trim --- must each be asserted, along with
+the property that normalization is \emph{symmetric} (applied identically
+to actual and expected output) and \emph{idempotent}
+(\texttt{normalize(normalize(x)) == normalize(x)}). A representative
+table appears in \cref{lst:normtests}.
+
+\begin{lstlisting}[language=Go,caption={Sketch of the table-driven unit tests \texttt{normalizeOutput} should carry.},label={lst:normtests}]
+func TestNormalizeOutput(t *testing.T) {
+    cases := []struct{ name, in, want string }{
+        {"crlf",         "a\r\nb",       "a\nb"},
+        {"lone cr",      "a\rb",         "a\nb"},
+        {"trailing ws",  "a  \nb\t\n",   "a\nb"},
+        {"outer trim",   "\n  a\nb  \n", "a\nb"},
+        {"idempotent",   "a\nb",         "a\nb"},
+    }
+    for _, c := range cases {
+        t.Run(c.name, func(t *testing.T) {
+            if got := normalizeOutput(c.in); got != c.want {
+                t.Fatalf("normalizeOutput(%q) = %q, want %q", c.in, got, c.want)
+            }
+            // symmetry/idempotence: normalizing twice is a fixed point
+            if got := normalizeOutput(c.want); got != c.want {
+                t.Fatalf("not idempotent: %q -> %q", c.want, got)
+            }
+        })
+    }
+}
+\end{lstlisting}
+
+\paragraph{Authorization gates (integration).} The three-gate model ---
+authentication, role, and resource ownership --- is a security invariant
+and belongs in the integration tier, exercised through the real Gin
+router against the CI Postgres service. The matrix of cases is small and
+enumerable: a missing or malformed bearer token yields 401; a token
+signed with the wrong algorithm (non-HMAC) is rejected; a valid student
+token on a teacher-only route yields 403; a valid teacher token accessing
+\emph{another} teacher's exam or submission is denied by the ownership
+check. Each of these maps to a request the test can issue and an HTTP
+status it can assert, and each guards against a regression whose
+real-world consequence is a data-exposure or privilege-escalation bug.
+
+\paragraph{Attempt aggregation (unit/integration).} The
+\texttt{maybeFinalizeAttempt} logic carries several subtle rules that are
+easy to break: it must return early while any sibling submission is still
+\texttt{pending}/\texttt{running}; it must re-aggregate over the exam's
+\emph{full} problem list so skipped questions count zero in the
+denominator; and it must \emph{exclude} \texttt{pending\_review}
+submissions from both numerator and denominator so an in-flight written
+grade does not depress the visible total. Each rule is a distinct test
+with a hand-built set of submission rows and an asserted final
+\texttt{ExamAttempt.score}. The ``Exam Graded'' notification's
+once-only, \texttt{graded\_notified}-deduped firing is a companion
+assertion.
+
+\paragraph{Migration idempotency (integration).} This is the test whose
+absence caused the \texttt{is\_draft} incident (\cref{ch:ch05}). Against a fresh Postgres
+database, the migration passes should run \emph{twice} in succession with
+the second run a no-op, and --- critically --- a test should seed exam
+rows, run the migration, and assert that \emph{row counts and column
+values are unchanged} for pre-existing data (Rule 4 of the project's
+\texttt{ORM\_RULES.md}: verify row counts after migrating). Because the CI
+job already provisions a real Postgres service, this integration test
+needs no new infrastructure --- only the test code.
+
+\paragraph{Frontend components and hooks (unit/component).} With the
+Vitest, jsdom, and Testing Library stack already configured, the frontend
+backlog is component and hook tests for the high-risk surfaces: the Zod
+form schemas in the exam builder, the score and duration formatters, the
+React Query hooks' loading/error states, and the auth store's 401-handling
+(clear state and redirect to \texttt{/auth}). These replace the current
+single tautological assertion with tests that would actually fail if the
+behaviour regressed.
+
+Because CI already \emph{runs} both test commands, none of this backlog
+requires a pipeline change --- the runners are wired and waiting, which
+is the whole point of standing up the gate before the suite. Adding a
+\texttt{grade\_test.go} or a \texttt{*.test.tsx} file is sufficient for
+it to execute on the next commit.
+
+\section{Manual and Exploratory Testing}\label{sec:manual}
+
+Given the state of the automated suite, manual and exploratory testing
+carries much of the day-to-day validation load, and it was conducted
+throughout development in a structured way. Two harnesses support it. The
+\texttt{./start.sh} script brings up the full dev topology with one
+command --- Postgres in Docker, the Go backend via \texttt{go run} (so
+the latest source is always exercised), and the Vite dev server proxying
+\texttt{/api} to the backend --- and drops the developer at the login
+page, making it cheap to reproduce a scenario end to end. The distroless
+production image is validated separately through
+\texttt{docker compose up}, which brings up the four-service stack
+(postgres $\rightarrow$ one-shot migrate $\rightarrow$ backend
+$\rightarrow$ nginx) in dependency order and lets the built binary's
+\texttt{--healthcheck} self-probe confirm liveness without a shell.
+
+Exploratory sessions followed recognisable heuristics: role-swapping
+(perform every teacher action, then attempt it as a student), boundary
+probing (empty exams, exams with no test cases, MCQ questions with no
+correct answers configured, written questions routed to the manual queue),
+and failure injection (submitting code that times out or throws, to
+confirm the status mapping and the per-test breakdown). Several of the
+project's documented gaps were \emph{found} this way rather than
+reasoned about in the abstract --- most notably that a process crash
+mid-grade leaves a submission stuck in \texttt{running} and the attempt
+never finalizes (the fire-and-forget grading model of \cref{ch:ch07}).
+Discovering that failure mode through exploratory use,
+and documenting it rather than hiding it, is itself a quality-assurance
+outcome, and it directly motivates the durable-work-queue item on the
+backlog.
+
+Manual testing is not a substitute for the automated behavioural suite
+that \cref{sec:coverage} specifies --- it is not repeatable, it does not
+run on every commit, and it scales with developer time rather than with
+CI minutes. But paired with a strong static gate and disciplined gap-tracking,
+it provided sufficient validation confidence for a graduation-project
+snapshot, while leaving a clearly enumerated path from the current
+ice-cream-cone shape toward the pyramid that \cref{fig:testpyramid}
+depicts.
+
+\section{Summary}
+
+APEX's quality assurance is a story of an asymmetry stated plainly: a
+mature, enforced, six-leg CI gauntlet --- \texttt{go vet}, a curated
+six-linter \texttt{golangci-lint} gate, the race-enabled test runner
+against a live Postgres service, ESLint, a full TypeScript compile via
+\texttt{vite build}, Vitest, and two Docker smoke builds, all with Bun
+pinned to \texttt{1.1.38} for reproducibility --- running over a
+behavioural suite that is, at the thesis snapshot, essentially empty. The
+static and type-level gates catch a real and substantial class of
+defects, and structured manual and exploratory testing validated the
+system against its requirements and surfaced its documented failure
+modes. The real deficit is the behavioural tier, and this chapter has
+converted that deficit into a concrete, prioritised backlog --- grading
+determinism, output normalization, the authorization gates, attempt
+aggregation, and migration idempotency first --- that the already-wired
+pipeline will execute the moment the tests are written.

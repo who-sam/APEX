@@ -1,0 +1,60 @@
+\begin{figure}[htbp]\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    font=\sffamily\scriptsize,
+    node distance=6mm,
+    every node/.style={align=center},
+    boundary/.style={draw=apexgrey, dashed, rounded corners=4pt, thick,
+        inner sep=6mm, fill=apexlight!40},
+    port/.style={apexlabel, draw=apexgrey, rounded corners=1pt},
+    onceshot/.style={apexbox, fill=apexlight, draw=apexcyan, dashed},
+    imgtag/.style={font=\sffamily\tiny, text=apexgrey},
+  ]
+
+  % ---- Compose services -------------------------------------------------
+  \node[apexstore, minimum width=30mm] (pg) {\textbf{postgres}\\\texttt{postgres:16-alpine}\\healthchecked};
+  \node[onceshot, minimum width=30mm, right=18mm of pg] (mig) {\textbf{migrate}\\one-shot, \texttt{restart:"no"}\\\texttt{/app/migrate up}\\golang-migrate, then exits};
+  \node[apexbox, minimum width=32mm, below=16mm of pg] (be) {\textbf{backend}\\distroless image\\listens on \texttt{:8080}};
+  \node[apexbox, minimum width=32mm, right=18mm of be] (fe) {\textbf{frontend}\\\texttt{nginx:1.27-alpine}\\serves built SPA on \texttt{:80}\\proxies \texttt{/api} $\rightarrow$ backend};
+
+  % ---- Compose boundary -------------------------------------------------
+  \begin{scope}[on background layer]
+    \node[boundary, fit=(pg)(mig)(be)(fe)] (compose) {};
+  \end{scope}
+  \node[anchor=north west, font=\sffamily\small\bfseries, text=apexgrey]
+        at (compose.north west) {\ docker-compose.yml (4 services)};
+
+  % ---- One image, three binaries ---------------------------------------
+  \node[draw=apexblue, densely dotted, rounded corners=2pt, thick,
+        fit=(be), inner sep=3.2mm] (imgfit) {};
+  \node[imgtag, anchor=south east] at (imgfit.north east)
+        {one image bundles \texttt{apex} + \texttt{migrate} + \texttt{seed}};
+
+  % ---- External dependencies (outside boundary) ------------------------
+  \node[apexext, minimum width=26mm, right=26mm of fe.east, yshift=6mm] (judge0)
+        {\textbf{Judge0 CE}\\external HTTP\\\texttt{isolate} sandbox};
+  \node[apexext, minimum width=26mm, below=10mm of judge0] (smtp)
+        {\textbf{SMTP relay}\\external mail};
+
+  % ---- Ports ------------------------------------------------------------
+  \node[port, above=3mm of pg] (pgport) {host \texttt{5433} $\rightarrow$ container \texttt{5432}};
+  \node[port, left=3mm of be, anchor=east] {\texttt{/healthz}};
+
+  % ---- Edges ------------------------------------------------------------
+  % migrate waits for postgres healthy, applies schema
+  \draw[apexarrow] (mig) -- node[apexlabel, sloped]{depends: healthy} (pg);
+  % backend depends on migrate completed, talks to postgres
+  \draw[apexarrowblue] (be.north) -- node[apexlabel, sloped]{depends: completed} (mig.south);
+  \draw[apexarrowblue] (be) -- node[apexlabel]{pgx} (pg);
+  % frontend proxies to backend
+  \draw[apexarrowblue] (fe) -- node[apexlabel]{proxy \texttt{/api}} (be);
+  % backend -> external services (cross the dashed boundary)
+  \draw[apexarrow] (be.east) .. controls +(3.2,-0.2) and +(-1.4,-1.6) ..
+        node[apexlabel, near end]{\texttt{JUDGE0\_URL}} (judge0.south west);
+  \draw[apexarrow] (be.south east) .. controls +(2.6,-1.2) and +(-1.6,0) ..
+        node[apexlabel, near end]{\texttt{SMTP\_HOST}} (smtp.west);
+
+\end{tikzpicture}%
+}
+\caption{Container topology of the four-service Docker Compose stack.}\label{fig:deploy}
+\end{figure}

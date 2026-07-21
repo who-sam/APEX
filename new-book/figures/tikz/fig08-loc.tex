@@ -1,0 +1,40 @@
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[
+      ybar,
+      width=0.82\textwidth,
+      height=6.6cm,
+      bar width=52pt,
+      every axis plot/.append style={bar shift=0pt},
+      xmin=0.4, xmax=2.6,
+      ymin=0, ymax=19500,
+      ytick={0,4000,8000,12000,16000},
+      scaled y ticks=false,
+      yticklabel style={font=\scriptsize, /pgf/number format/1000 sep={,}},
+      ylabel={Lines of code},
+      ylabel style={font=\small},
+      xtick={1,2},
+      xticklabels={Go backend, TypeScript frontend},
+      xticklabel style={font=\small},
+      nodes near coords,
+      nodes near coords style={font=\scriptsize\bfseries,
+        /pgf/number format/1000 sep={,}},
+      axis lines=left,
+      ymajorgrids=true,
+      major grid style={apexlight},
+      tick align=outside,
+    ]
+    \addplot+[draw=apexblue!60!black, fill=apexblue!85,
+        nodes near coords style={text=apexblue!55!black,
+          font=\scriptsize\bfseries, /pgf/number format/1000 sep={,}}]
+      coordinates {(1, 6116)};
+    \addplot+[draw=apexgreen!55!black, fill=apexgreen!80,
+        nodes near coords style={text=apexgreen!40!black,
+          font=\scriptsize\bfseries, /pgf/number format/1000 sep={,}}]
+      coordinates {(2, 17423)};
+  \end{axis}
+\end{tikzpicture}
+\caption{Source-code size by language and component.}
+\label{fig:loc}
+\end{figure}

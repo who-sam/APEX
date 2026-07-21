@@ -1,0 +1,585 @@
+\chapter{Implementation}\label{ch:ch06}
+
+The previous chapter fixed the shape of the system: four request layers, three
+authorization gates, fifteen entities, and a single Gin process fronting
+PostgreSQL and an external Judge0 sandbox. This chapter descends from that
+blueprint to the code that realizes it. It follows the two halves of APEX in
+turn --- the Go backend and the React frontend --- and traces the flows that
+carry the most engineering weight: the teacher's exam builder, the timed
+exam-taking session with server-side autosave and resume, the exam lifecycle
+and attempt state machine, the notification fan-out, and the in-process
+reminder scheduler. The auto-grading pipeline is deliberately \emph{not} covered
+here; it is substantial enough to warrant its own treatment in
+\cref{ch:ch07}, and this chapter references it only where a flow hands off to
+it.
+
+The figures throughout are drawn from the real code paths. Wherever a number,
+identifier, route, or column name appears, it is quoted verbatim from the
+repository rather than paraphrased.
+
+\section{Backend Handler Anatomy}
+
+Every backend package that owns an HTTP surface follows the same internal
+shape. A package such as \texttt{internal/exam} exposes a \texttt{RegisterRoutes}
+function that mounts its endpoints onto the shared \texttt{public} and
+\texttt{protected} route groups, and a set of handler functions that Gin
+invokes per request. The route file is deliberately thin --- it is the single
+place where a reader can see the whole feature's URL surface and its role gate
+at a glance:
+
+\begin{lstlisting}[language=Go,caption={The exam feature's route registration --- one place, one role gate.},label={lst:examroutes-reg}]
+func RegisterRoutes(public, protected *gin.RouterGroup) {
+    exams := protected.Group("/exams")
+    exams.Use(middleware.RequireRole("teacher"))
+    {
+        exams.POST("", CreateExam)
+        exams.GET("", GetExams)
+        exams.GET("/:id", GetExam)
+        exams.PUT("/:id", UpdateExam)
+        exams.DELETE("/:id", DeleteExam)
+        exams.POST("/:id/assign", AssignExam)
+        exams.POST("/:id/close", CloseExam)
+        exams.POST("/:id/reopen", ReopenExam)
+        exams.GET("/:id/results", GetExamResults)
+    }
+}
+\end{lstlisting}
+
+The group is already on the authenticated \texttt{protected} chain, so
+\texttt{middleware.RequireRole("teacher")} is the only additional gate the
+package declares. Gin~\cite{gin} is the HTTP framework throughout; its router
+group mechanism is what lets the two cross-cutting concerns --- authentication
+and role --- be expressed once and inherited by every route below.
+
+Inside the handlers, a consistent four-step spine recurs, mapping directly onto
+the request lifecycle established in the design chapter:
+
+\begin{enumerate}
+  \item \textbf{Bind and validate.} The handler binds the JSON body into a
+    request struct with \texttt{c.ShouldBindJSON}, relying on Gin's
+    \texttt{binding:"required"} tags for the mandatory fields and returning
+    \texttt{400} with a terse, non-leaking message otherwise.
+  \item \textbf{Identify the caller.} \texttt{c.GetUint("user\_id")} reads the
+    subject that the auth middleware placed on the context; the role is read the
+    same way when a handler serves both teacher and student.
+  \item \textbf{Enforce resource ownership.} The handler re-queries the target
+    row scoped to the caller --- almost always as
+    \texttt{Where("id = ? AND teacher\_id = ?", id, teacherID)} --- so that a
+    missing row and a row owned by somebody else are indistinguishable and both
+    surface as \texttt{404}. This is the third authorization gate, and it lives
+    in the handler because only the handler knows what ``owns'' means for its
+    resource.
+  \item \textbf{Mutate, transactionally when needed.} Single-row writes go
+    straight through GORM~\cite{gorm}; multi-table writes are wrapped in
+    \texttt{database.DB.Transaction(func(tx *gorm.DB) error \{ ... \})} so a
+    partial failure rolls back cleanly.
+\end{enumerate}
+
+Two handlers show the pattern at its extremes. \texttt{GradeSubmission} (manual
+grading of a written answer) is a small handler whose entire body is an
+ownership proof: it loads the submission, loads the exam it belongs to, and
+refuses with \texttt{403} unless \texttt{exam.TeacherID} equals the caller.
+Only then does it write the score and re-run attempt finalization:
+
+\begin{lstlisting}[language=Go,caption={Ownership before mutation: a teacher may grade only submissions on exams they own.},label={lst:grade-ownership}]
+// Verify the teacher owns the exam this submission belongs to.
+var exam models.Exam
+if err := database.DB.Select("id", "teacher_id").First(&exam, sub.ExamID).Error; err != nil {
+    c.JSON(http.StatusNotFound, gin.H{"error": "exam not found"})
+    return
+}
+if exam.TeacherID != teacherID {
+    c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to grade this submission"})
+    return
+}
+sub.Score = req.Score
+sub.Status = req.Status
+// ... persist, then hand off to the grading aggregator:
+if sub.ExamAttemptID != nil {
+    judge0.FinalizeAttempt(*sub.ExamAttemptID)
+}
+\end{lstlisting}
+
+At the other end, \texttt{DeleteExam} is the largest transactional handler. An
+exam is the root of a small object graph --- problems, test cases, attempts,
+submissions, test results, and class assignments --- and PostgreSQL foreign
+keys are only partially declared, so the handler deletes children explicitly in
+dependency order inside one transaction: test results (selected through their
+parent submissions), test cases, submissions, attempts, problems, exam--class
+links, and finally the exam row. If any step errors, the whole delete rolls
+back and the client receives \texttt{500} with the underlying message; the
+half-deleted state never becomes visible.
+
+A subtler variant of ownership appears in \texttt{AssignExam}, which links an
+exam to one or more classes. A naive implementation would trust the
+\texttt{class\_ids} array from the request body. Instead the handler counts how
+many of those IDs actually belong to the calling teacher and rejects the whole
+request with \texttt{403} unless every one checks out:
+
+\begin{lstlisting}[language=Go,caption={Batch ownership check in AssignExam --- all class IDs must belong to the caller.},label={lst:assign}]
+var ownedCount int64
+database.DB.Model(&models.Class{}).
+    Where("id IN ? AND teacher_id = ?", req.ClassIDs, teacherID).
+    Count(&ownedCount)
+if int(ownedCount) != len(req.ClassIDs) {
+    c.JSON(http.StatusForbidden, gin.H{"error": "one or more classes do not belong to you"})
+    return
+}
+\end{lstlisting}
+
+This closes an insecure-direct-object-reference class of bug at the point where
+it would otherwise open: a teacher cannot push their exam into a colleague's
+class by guessing a class ID.
+
+\section{The Exam Builder}
+
+The exam builder (\texttt{frontend/src/features/exams/pages/ExamBuilder.tsx})
+is the most stateful screen in the product and the one that exercises the most
+backend endpoints in a single user action. It is a client-orchestrated
+composition: rather than a single ``save exam'' call, the builder drives the
+exam, problem, test-case, and assignment endpoints in sequence, treating the
+backend as a set of primitives and owning the orchestration itself.
+
+The screen holds the entire draft exam in React state --- title, description,
+duration, passing score, the shuffle and show-results toggles, the schedule
+(start and close date/time), the assigned course, the draft flag, and an
+ordered array of \texttt{Question} objects. New questions are created locally by
+\texttt{createQuestion(type)} and only materialize on the server at save time.
+The builder also imports from the teacher's shared question bank: bank problems
+are filtered client-side by a search string and a type filter, selected, and
+mapped into the same \texttt{Question} shape via \texttt{bankProblemToQuestion}.
+
+Validation runs before any network call. \texttt{handleSaveClick} refuses to
+proceed unless there is a non-empty title, a valid assigned course, at least one
+question, and --- critically --- every MCQ has at least one correct option
+selected. The last check is the frontend mirror of a backend guarantee from the
+grading chapter: an MCQ with no configured answer can only ever land in
+\texttt{pending\_review}, so catching it at authoring time spares the teacher a
+queue of un-gradable questions.
+
+When validation passes, \texttt{handleSave} executes a three-phase orchestration:
+
+\begin{enumerate}
+  \item \textbf{Upsert the exam.} On create it \texttt{POST}s to \texttt{/exams};
+    on edit it \texttt{PUT}s to \texttt{/exams/:id} and then deletes every
+    existing problem (a deliberately simple ``replace'' strategy --- the builder
+    re-creates the full problem set rather than diffing it).
+  \item \textbf{Create each problem.} For every question it \texttt{POST}s to
+    \texttt{/exams/:id/problems}, projecting the union-typed \texttt{Question}
+    down to the flat problem payload the backend expects. MCQ questions carry
+    JSON-encoded \texttt{options} and \texttt{correct\_option\_ids}; written
+    questions carry \texttt{max\_word\_count}, \texttt{rubric}, and
+    \texttt{require\_manual\_grading}; coding questions carry
+    \texttt{starter\_code}, \texttt{time\_limit\_ms}, and
+    \texttt{memory\_limit\_kb}. For coding problems it then \texttt{POST}s each
+    non-empty test case to \texttt{/problems/:id/test-cases}, preserving order
+    via an explicit \texttt{order\_index}.
+  \item \textbf{Assign to the class.} Finally it \texttt{POST}s to
+    \texttt{/exams/:id/assign} with the single selected class ID.
+\end{enumerate}
+
+The schedule is assembled from separate date and time-of-day inputs into an ISO
+timestamp; if the teacher sets a start but no close time, the builder derives the
+close as start plus the exam's duration. The draft flag defaults to the
+teacher's stored preference (\texttt{default\_exam\_draft}, itself defaulting to
+\texttt{true}), so exams are born unpublished unless the teacher opts otherwise.
+Because \texttt{shuffle\_questions} is persisted on the exam row, it travels
+with the exam through create, edit, and re-hydration on the edit screen; the
+canonical stored order remains \texttt{order\_index}, which every read path
+preloads in ascending order.
+
+One further subtlety guards data integrity. If the teacher edits an exam that
+students have already attempted (\texttt{attempt\_count > 0}), the builder does
+not silently save. It opens a confirmation dialog, because a structural edit is
+destructive: it triggers the server's reset mechanism, which wipes attempts,
+submissions, and test results and stamps \texttt{exams.reset\_at}. Surfacing
+that consequence at the moment of editing is a small piece of honesty that
+prevents a teacher from erasing a class's work by accident.
+
+\section{Exam Lifecycle and Attempt State Machine}
+
+Two related state machines govern an exam's life, shown together in
+\cref{fig:exam-state}. The upper machine is the \emph{exam} lifecycle as seen by
+the teacher; the lower one is the \emph{attempt} state machine as experienced by
+one student's sitting.
+
+\input{figures/tikz/fig06-exam-state}
+
+An exam is created as a \textbf{draft} (\texttt{is\_draft = true}). Publishing
+is the transition \texttt{is\_draft = false}, and \texttt{UpdateExam} refuses it
+unless the exam has a \texttt{start\_time}: the handler computes whether the
+exam ``will have a start'' after the update and returns
+\texttt{400 "set a start time before publishing"} otherwise. This guard exists
+because an earlier version silently defaulted an unset start to ``now,'' which
+surprised teachers by opening an exam the instant they clicked Publish. The
+derived \texttt{status} a client sees --- \texttt{draft}, \texttt{upcoming},
+\texttt{active}, or \texttt{completed} --- is computed by
+\texttt{computeExamStatus} purely from \texttt{is\_draft}, \texttt{start\_time},
+\texttt{end\_time}, and the current time, never stored, so it can never drift
+out of sync with the schedule.
+
+Two teacher actions bend the timeline after publication. \texttt{CloseExam}
+stamps \texttt{end\_time} to now, ending the window immediately.
+\texttt{ReopenExam} extends \texttt{end\_time} by a requested number of minutes
+and, if the exam had not yet opened, pulls \texttt{start\_time} forward to now so
+the window is genuinely live. The most consequential transition is the dashed
+loop in the figure: a destructive edit moves the exam through the \textbf{reset}
+state --- \texttt{reset\_at} is stamped, attempts and their descendants are
+wiped in a transaction, and class grade announcements are rolled back --- before
+returning to a clean published state.
+
+The attempt machine is where most of the runtime action lives. An
+\texttt{ExamAttempt} row is unique per \texttt{(user\_id, exam\_id)} via
+\texttt{idx\_user\_exam\_attempt}, so a student has at most one attempt per
+exam. \texttt{StartAttempt} is written to be idempotent: it looks up the
+existing attempt and only creates one --- with \texttt{status = "in\_progress"}
+--- when none exists, after checking enrollment, assignment, publication, and
+that the current time falls inside the exam window. Repeated ``start'' calls,
+whether from a double-click or a cross-device resume, converge on the same row
+rather than erroring or forking.
+
+From \texttt{in\_progress} the attempt has one forward transition, \textbf{submit},
+plus a self-loop for autosave (discussed next). \texttt{SubmitAttempt} is
+guarded against replay: if the attempt is already \texttt{submitted} it returns
+\texttt{409 "attempt already submitted"}. On a valid submit it creates one
+\texttt{Submission} per answered question, dispatches each to the grading
+engine by type, flips the attempt to \texttt{submitted} with a
+\texttt{submitted\_at} stamp, and --- notably --- clears the autosave draft by
+setting \texttt{draft\_answers} and \texttt{draft\_saved\_at} back to
+\texttt{NULL} in the same update. The remaining transitions,
+\texttt{grading}/\texttt{running} to \texttt{graded}, are owned entirely by the
+aggregation logic of \cref{ch:ch07} and are shown here only to close the loop.
+
+\section{The Timed Exam-Taking Flow}
+
+\texttt{ExamTaking.tsx} is the single largest component in the frontend and the
+one with the most demanding correctness requirements: it must run a countdown
+that cannot be gamed by a refresh, survive a browser crash or a device switch
+without losing answers, and hand a clean payload to the server exactly once. It
+achieves this with a two-tier persistence strategy --- \texttt{localStorage} as
+an instant offline backup, and a server-side draft as the authoritative,
+cross-device source of truth.
+
+\subsection{Server-Side Autosave}
+
+The authoritative half of persistence is the \texttt{PUT
+/student/exams/:id/autosave} endpoint, backed by two columns on the attempt
+row: \texttt{draft\_answers} (a JSONB payload) and \texttt{draft\_saved\_at} (a
+timestamp). The server treats the draft as \emph{opaque}: the client serializes
+whatever shape its UI needs --- the answers array, the current question index,
+the visited-question set, and the session start time --- and the handler stores
+the raw bytes verbatim, so the payload round-trips unchanged and the server
+never needs to understand the client's model. The handler's only obligations
+are to locate the caller's active attempt, refuse once it has been submitted,
+and validate that the body is well-formed JSON:
+
+\begin{lstlisting}[language=Go,caption={AutosaveAttempt persists an opaque JSON draft on the active attempt.},label={lst:autosave}]
+if attempt.Status == "submitted" {
+    c.JSON(http.StatusConflict, gin.H{"error": "attempt already submitted"})
+    return
+}
+// Read raw body so any client-shape JSON round-trips unchanged.
+body, err := io.ReadAll(c.Request.Body)
+if err != nil || len(body) == 0 {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+    return
+}
+if !json.Valid(body) {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "body must be valid JSON"})
+    return
+}
+now := time.Now()
+database.DB.Model(&attempt).Updates(map[string]any{
+    "draft_answers":  string(body),
+    "draft_saved_at": now,
+})
+\end{lstlisting}
+
+On the client the autosave is debounced. A \texttt{useEffect} watching the
+answers, current index, and visited set schedules a \texttt{setTimeout} of
+1500\,ms; each change resets the timer, so a burst of typing
+produces one write rather than dozens. The call is deliberately best-effort ---
+its \texttt{.catch} swallows failures --- because \texttt{localStorage} already
+covers the offline case, and a transient network error during an exam must never
+interrupt the student. A separate, undebounced effect writes the same snapshot
+to \texttt{localStorage} on every change, so the local copy is always at least
+as fresh as the last render.
+
+\subsection{Resume and Reconciliation}
+
+Resume is where the two tiers meet, and the reconciliation logic is the most
+carefully written part of the component. On load, once the questions are known,
+the component reads both snapshots --- the \texttt{localStorage} session and the
+server's \texttt{draft\_answers} from the attempt included in the
+\texttt{GET /student/exams/:id} response --- and chooses the newer one by
+comparing timestamps (\texttt{draft\_saved\_at} for the server, the session's
+\texttt{startedAt} locally). The winning snapshot's answers are merged by
+\texttt{questionId} onto a freshly initialized answer array, so questions that
+did not exist when the draft was saved still get clean defaults. This is what
+lets a student begin an exam on a laptop, close it, and resume on a phone with
+every answer intact.
+
+Two guards protect the resume path. First, the remaining time is recomputed
+from the stored \texttt{startedAt} against the exam duration --- a snapshot is
+only restored if time actually remains, so a refresh cannot reset the clock.
+Second, if the exam's \texttt{reset\_at} is newer than the snapshot's start
+time, the teacher has destructively edited the exam since the draft was written,
+and the stale cache is discarded outright rather than resurrecting answers to
+questions that no longer exist. The submit path closes the loop by removing the
+\texttt{localStorage} key on success, while the server-side draft is nulled by
+\texttt{SubmitAttempt} itself.
+
+The countdown timer is a one-second \texttt{setInterval} decrementing
+\texttt{timeLeft}; when it reaches zero, a watching effect fires
+\texttt{doSubmit(true)}, an automatic submission indistinguishable from a manual
+one except for the toast it shows. \texttt{doSubmit} is idempotent via a
+\texttt{submitted}/\texttt{isSubmitting} pair of flags so that the auto-submit
+and a last-second manual click cannot both fire. The payload it builds skips
+unanswered questions entirely: only questions with a selected option, non-empty
+text, or non-empty code produce an entry in the \texttt{answers} array sent to
+\texttt{POST /student/exams/:id/submit}.
+
+\section{Question Editors and the Monaco Integration}
+
+Each question type has a dedicated editor component, dispatched by the builder
+from a discriminated union. \texttt{MCQEditor} manages an options list (capped
+at six), tracks which option IDs are correct, toggles single- versus
+multiple-correct, and supports an optional explanation and an inline image
+(uploaded as a base64 data URL, rejected above 2\,MB).
+\texttt{WrittenEditor} is the simplest --- a prompt, a maximum word count
+defaulting to 500, an optional rubric, and a \texttt{require\_manual\_grading}
+switch --- reflecting that written answers always enter the manual queue.
+\texttt{CodingEditor} is the richest: it manages the problem statement, starter
+code across the supported languages (\texttt{python}, \texttt{javascript},
+\texttt{c}, \texttt{cpp}), per-problem time and memory limits, and a list of
+test cases each flagged sample-or-hidden with its own point value. Sample test
+cases are the ones surfaced to students for live feedback; hidden ones run only
+during real grading.
+
+The code surfaces on both sides --- the coding editor for authors and the
+in-exam solution pane for students --- are the same Monaco editor,
+integrated through \texttt{@monaco-editor/react}~\cite{monaco}. Monaco is the
+editor that powers VS Code, and embedding it gives students syntax
+highlighting, bracket matching, and familiar keybindings inside the browser
+with almost no configuration. In \texttt{ExamTaking} it is mounted with a
+minimal, exam-appropriate option set --- minimap disabled, word wrap on,
+\texttt{automaticLayout} enabled so it reflows with the panel, and a theme
+bound to the app's light/dark mode:
+
+\begin{lstlisting}[language=TypeScript,caption={Monaco embedded in the in-exam solution pane.},label={lst:monaco}]
+<Editor
+  height="100%"
+  language={(ans.language || "python3") === "python3" ? "python"
+    : (ans.language || "python3") === "cpp" ? "cpp"
+    : (ans.language || "python3")}
+  value={ans.code || (q.starterCode?.[ans.language || "python3"] || "")}
+  onChange={(v) => updateAnswer(currentIdx, { code: v || "" })}
+  theme={theme === "dark" ? "vs-dark" : "light"}
+  options={{
+    fontSize: 13,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    wordWrap: "on",
+  }}
+/>
+\end{lstlisting}
+
+Beside the editor, students can run their code two ways. ``Run Code'' hits the
+\texttt{/execute} playground with custom stdin and streams back stdout, stderr,
+compile output, and time/memory figures --- a scratchpad that persists no
+submission. ``Run Samples'' calls \texttt{POST /submissions/run}, which
+executes the solution against only the problem's \emph{sample} test cases and
+returns per-test pass/fail, so a student gets immediate feedback without ever
+seeing the hidden tests that decide their grade. Both paths are guarded by the
+same ownership logic as grading: a student may run only against a problem
+belonging to an exam assigned to a class they are enrolled in.
+
+\section{Notifications and Announcements}
+
+APEX has no message broker; notifications are plain rows written synchronously
+in the request that causes them, with an optional email side-channel. The single
+choke point is \texttt{notification.Create}, called from every feature that
+needs to reach a user. It inserts a \texttt{Notification} row and then, in a
+detached goroutine, checks the recipient's \texttt{notify\_email} preference and
+sends an email --- HTML-escaped in both subject-adjacent fields to prevent the
+injection class that a pre-ship security review had flagged:
+
+\begin{lstlisting}[language=Go,caption={notification.Create: one in-app row, best-effort escaped email.},label={lst:notif}]
+if err := database.DB.Create(&notif).Error; err != nil {
+    return
+}
+go func() { // async email if the user opted in
+    var prof models.UserProfile
+    if err := database.DB.Where("user_id = ?", userID).First(&prof).Error; err != nil {
+        return
+    }
+    if !prof.NotifyEmail {
+        return
+    }
+    // ... load user, then send with html.EscapeString on title & body
+    body := fmt.Sprintf("<p><strong>%s</strong></p><p>%s</p>",
+        html.EscapeString(title), html.EscapeString(description))
+    _ = email.Send(user.Email, subject, body, text)
+}()
+\end{lstlisting}
+
+Announcements are the fan-out case. When a teacher posts an announcement to a
+class (\texttt{announcement.Create}, gated to the class owner), the handler
+persists the announcement row and then loops over every enrolled student,
+calling \texttt{notification.Create} once per member with a deep link back to
+the class's announcements tab. Each recipient thus gets both an in-app row and,
+if opted in, an email --- a genuine fan-out driven by the enrollment table
+rather than a broadcast primitive. The same fan-out shape recurs elsewhere: a
+student joining a class notifies the teacher, and a graded exam notifies the
+student, each through the same \texttt{Create} helper.
+
+On the client, notifications are polled rather than pushed. The
+\texttt{useNotificationsQuery} and \texttt{useUnreadCount} hooks are React Query
+subscriptions with a 30\,s \texttt{refetchInterval}, enabled only
+when a token is present. Marking one or all as read mutates through the API and
+invalidates both query keys, so the badge count and the list stay consistent
+without a socket connection. Polling is a deliberate simplicity trade: it costs
+a lightweight request every half-minute in exchange for needing no persistent
+connection infrastructure.
+
+\section{The In-Process Reminder Scheduler}
+
+Exam reminders are the one piece of genuinely time-driven behavior in the
+system, and they run inside the same process as the API rather than as a
+separate cron service. \texttt{reminder.Start}, invoked once from
+\texttt{main.go}, launches a goroutine that sleeps 15\,s to let the
+database connection settle and then ticks every minute on a
+\texttt{time.Ticker}. Each tick calls \texttt{runOnce}, which is wrapped in a
+\texttt{recover} so a panic in one sweep --- a malformed row, a transient query
+error --- logs and is contained rather than killing the ticker.
+
+\cref{fig:reminder} lays out the three column-gated sweeps that each tick
+performs, positioned relative to an exam's start time~$T$.
+
+\input{figures/tikz/fig09-reminder}
+
+All three sweeps share the same idempotency mechanism, and it is the design's
+central idea: each reminder is guarded by a dedicated ``sent-at'' column, and a
+reminder fires only for exams where that column is still \texttt{NULL}. After
+firing, the column is stamped. Because the guard is a persisted column and not
+in-memory state, a process restart cannot cause a re-send --- the reminders are
+idempotent across restarts, not merely within a single process lifetime.
+
+\begin{enumerate}
+  \item \textbf{In-app, T$-$60.} The main query in \texttt{runOnce} selects
+    published exams (\texttt{is\_draft = false}, \texttt{start\_time} not null)
+    whose start falls in \texttt{(now, now+60min]} and whose
+    \texttt{reminder\_sent\_at} is \texttt{NULL}. For each, \texttt{notifyExam}
+    resolves the enrolled students, filters to those with
+    \texttt{notify\_exam\_reminders = true}, and fans out an
+    \texttt{exam\_reminder} notification linking to \texttt{/dashboard/exams}.
+    Even an exam with no classes or members gets its column stamped, so it is
+    not re-scanned on every subsequent tick.
+  \item \textbf{Email, T$-$60.} \texttt{emailSweep1Hour} selects exams whose
+    start falls in the tight \texttt{[now+58min, now+62min]} window with
+    \texttt{email\_reminder1h\_sent\_at} still \texttt{NULL}, filters recipients
+    by \texttt{notify\_exam\_email}, and sends the ``starts in about 1 hour''
+    email before stamping the column.
+  \item \textbf{Email, T$-$0.} \texttt{emailSweepStart} does the same for the
+    \texttt{[now-2min, now+2min]} window around the start itself, guarded by
+    \texttt{email\_reminder\_start\_sent\_at}, with the ``is starting now''
+    subject.
+\end{enumerate}
+
+The narrow windows on the email sweeps (four minutes wide) combine with the
+one-minute tick to guarantee each email is evaluated several times but sent
+once. If \texttt{SMTP\_HOST} is unset, \texttt{email.Send} logs the message body
+to stdout instead of dispatching it, so the whole reminder path is exercisable
+in local development without a mail server. Notably, the ``Exam Graded''
+notification is \emph{not} part of this scheduler --- it belongs to the grading
+aggregator of \cref{ch:ch07}, which is the only place that knows when every
+submission in an attempt has finished grading.
+
+\section{Frontend Architecture}
+
+The frontend is a React~18~\cite{react} single-page application built with
+Vite~\cite{vite} and written in TypeScript~\cite{typescript}, totaling roughly
+17,400 lines. Its organizing principle is \emph{feature folders}: rather
+than grouping by technical kind (all components here, all pages there),
+\texttt{src/features/} holds self-contained slices --- \texttt{auth},
+\texttt{courses}, \texttt{dashboard}, \texttt{exams}, \texttt{grading},
+\texttt{landing}, \texttt{playground}, \texttt{results}, \texttt{settings}, and
+\texttt{social} --- each bundling its own pages, components, types, and helpers.
+The \texttt{exams} feature seen throughout this chapter is the largest, and its
+internal split into \texttt{pages/}, \texttt{components/}, \texttt{lib/}, and
+\texttt{types/} is representative.
+
+\subsection{The API Layer and Data Hooks}
+
+All network access funnels through a single \texttt{apiFetch} helper in
+\texttt{src/lib/api.ts}. It attaches the bearer token from
+\texttt{localStorage["kernel-token"]}, sets the JSON content type, and
+centralizes error handling. Its most important behavior is the global
+\texttt{401} handler: on an unauthorized response, if a token was present, it is
+a stale session --- the helper clears the stored token and role and redirects to
+\texttt{/auth}; if no token was present, it simply throws so a public page can
+handle it. Every other non-2xx response is unwrapped into a typed
+\texttt{ApiError} carrying the backend's error message and status. The rest of
+the file is a flat catalogue of typed, one-line functions --- one per endpoint
+--- so a caller writes \texttt{getStudentExam(id)} rather than assembling a URL.
+
+On top of that thin layer sits TanStack React Query~\cite{reactquery}, wrapped
+in small feature hooks under \texttt{src/hooks/}. This is where the frontend's
+server-state discipline lives. Reads are \texttt{useQuery} subscriptions keyed
+by a stable tuple --- \texttt{["exam", id]}, \texttt{["student-exams"]},
+\texttt{["my-attempts"]} --- and often \texttt{enabled} conditionally on role so
+a student never fires a teacher-only query. Writes are \texttt{useMutation}
+hooks that invalidate the affected keys on success, letting React Query refetch
+and re-render rather than manually reconciling caches:
+
+\begin{lstlisting}[language=TypeScript,caption={A read hook and a write hook: React Query keys plus invalidation.},label={lst:hooks}]
+export function useStudentExam(id: number) {
+  return useQuery({
+    queryKey: ["student-exam", id],
+    queryFn: () => api.getStudentExam(id),
+    enabled: !!id,
+  });
+}
+
+export function useUpdateExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => api.updateExam(id, data),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      qc.invalidateQueries({ queryKey: ["exam", vars.id] });
+    },
+  });
+}
+\end{lstlisting}
+
+The exam-taking flow shows this coordination end to end. When a student first
+opens an exam, the component calls \texttt{startExamAttempt} and then
+invalidates \texttt{["my-attempts"]} and \texttt{["student-exams"]}, so the
+dashboard's ``Start'' button becomes ``Continue'' and the results view learns of
+the in-progress attempt --- all without prop-drilling or a global store, because
+the query cache is the shared state.
+
+\subsection{UI, Styling, and Routing}
+
+The visual layer is built on shadcn/ui~\cite{shadcn} components --- roughly
+thirty Radix-based primitives (dialogs, selects, popovers, switches, scroll
+areas, resizable panels) copied into the repository and styled locally rather
+than pulled from a versioned package --- over Tailwind CSS~\cite{tailwind}.
+Tailwind's utility classes carry essentially all of the styling, including the
+conditional emphasis that matters during an exam: the countdown timer, for
+instance, switches to a destructive color once fewer than five minutes remain,
+expressed inline as a conditional class rather than a separate stylesheet.
+Markdown in problem statements and descriptions is rendered with
+\texttt{react-markdown} and \texttt{remark-gfm}, deliberately without raw-HTML
+passthrough so a problem statement cannot smuggle a script tag.
+
+Routing is handled by \texttt{react-router-dom}~6. The application splits along
+role: a public shell serves the landing, authentication, and password-reset
+routes, while an authenticated dashboard shell nests the feature pages under
+\texttt{/dashboard}. The result is a codebase where a single feature --- exams
+--- can be read almost top to bottom: its routes on the backend, its handlers,
+its React Query hooks, its pages and editors, and the two-tier persistence that
+ties the timed session together, each layer thin enough to hold in one's head
+and each boundary drawn where a real responsibility changes hands.

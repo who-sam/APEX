@@ -1,0 +1,499 @@
+\chapter{System Architecture and Design}\label{ch:ch04}
+
+This chapter describes how APEX is put together. It starts from the outermost
+view --- the running processes and the traffic that flows between them --- and
+then works inward: the lifecycle a single HTTP request follows through the
+backend, the reasoning behind each technology choice, the shape of the public
+API, the physical layout of the source tree, and the design patterns that hold
+the whole thing together. The guiding principle throughout is deliberate
+simplicity: APEX is a graduation project intended to be self-hosted by a single
+instructor or a small department, so every architectural decision is weighed
+against the cost of operating it, not against the demands of hyperscale.
+
+\section{Architectural Overview}\label{sec:arch-overview}
+
+APEX is a conventional client--server web application built around a
+single-page application (SPA) front end and a stateless HTTP API back end that
+persists everything of value to a relational database. What distinguishes it
+from a textbook three-tier system is the deliberate refusal to multiply moving
+parts: there is exactly one server process to run, one database to back up, and
+one external dependency that actually executes untrusted code. Everything else
+is optional.
+
+\Cref{fig:architecture} shows the full runtime and deployment topology. Six
+components appear, and it is worth being precise about which of them are
+first-class services and which are external dependencies, because the
+distinction drives both the security posture and the operational story.
+
+\input{figures/tikz/fig01-architecture}
+
+\begin{itemize}
+  \item \textbf{React + Vite SPA.} The browser-side application, compiled to a
+        static bundle and served by \texttt{nginx} in production. It holds no
+        durable state of its own beyond a JWT in \texttt{localStorage}; every
+        meaningful action is a JSON call to the API.
+  \item \textbf{Gin REST API.} The single Go process (binary \texttt{apex})
+        that owns all business logic. It exposes routes under \texttt{/api/*}
+        plus an unauthenticated \texttt{/healthz} liveness endpoint. This
+        process is the heart of the system and the subject of most of this
+        chapter.
+  \item \textbf{PostgreSQL 16.} The single source of durable truth, reached
+        exclusively through the GORM object--relational mapper. No component
+        other than the API and the migration tool ever touches it directly.
+  \item \textbf{Judge0 CE (external).} The sandboxed code-execution service
+        that compiles and runs student submissions inside the \texttt{isolate}
+        jail. Crucially, Judge0 is \emph{not} a \texttt{docker-compose} service;
+        it is reached over HTTP at the URL named by \texttt{JUDGE0\_URL}
+        (defaulting to the public \texttt{https://ce.judge0.com}). Treating the
+        single most security-sensitive component --- the one that runs
+        arbitrary code --- as an external service reached through one URL is an
+        intentional isolation boundary.
+  \item \textbf{SMTP relay (external, optional).} Used for password-reset links
+        and exam reminders. It degrades gracefully: when \texttt{SMTP\_HOST} is
+        empty, every message that would have been sent is logged to standard
+        output instead, so the system remains fully functional without a mail
+        provider configured.
+  \item \textbf{\texttt{cmd/migrate}.} A separate one-shot binary, built from
+        the same Go module, that owns schema evolution in production. It applies
+        versioned SQL migrations and exits.
+\end{itemize}
+
+Two further behaviours live \emph{inside} the API process rather than as
+separate services, and \cref{fig:architecture} draws them attached to it. The
+first is the \textbf{reminder goroutine}, a background loop that wakes on a
+one-minute ticker to dispatch exam reminders. The second, not drawn but equally
+important, is the fleet of \textbf{fire-and-forget grading goroutines} spawned
+whenever an exam is submitted. Both are examples of a recurring theme: work
+that a larger system would hand to a dedicated worker or cron daemon is folded
+into the single binary, because for a classroom-scale tool the operational
+saving of ``one process to run and one process to reason about'' outweighs the
+resilience a separate worker fleet would buy.
+
+The deployment boundary in \cref{fig:architecture} is significant. The
+self-hosted tier --- SPA, API, database, and the migration tool --- is what a
+\texttt{docker-compose up} brings up on a single host. The external tier ---
+Judge0 and SMTP --- is reached over the network and is never bundled. This
+separation means that an operator can run the entire teaching platform on one
+modest machine while pointing at a shared or public Judge0 instance, and can
+add email only when they are ready to configure a relay.
+
+\section{The Four-Layer Request Lifecycle}\label{sec:lifecycle}
+
+Every request that reaches the backend passes through the same four conceptual
+layers, in the same order. This uniformity is what keeps a six-thousand-line Go
+codebase navigable: once the layering is understood, any endpoint can be read
+by asking which layer each line belongs to. \Cref{fig:layers} traces the
+pipeline from an incoming HTTP request to a JSON response, including the two
+short-circuit paths where a request is rejected before it reaches the handler.
+
+\input{figures/tikz/fig02-layers}
+
+\subsection{Layer 1 --- Router and route groups}
+
+The transport layer is assembled in \texttt{main.go}. After the process
+initialises its configuration, database connection, and subsystems, it builds a
+Gin engine and installs global middleware:
+
+\begin{lstlisting}[language=Go,caption={Router construction and route-group split in \texttt{main.go}.},label={lst:router}]
+r := gin.Default()
+r.Use(middleware.CORS(cfg.AllowedOrigins))
+
+r.GET("/healthz", func(c *gin.Context) {
+    c.JSON(http.StatusOK, gin.H{"status": "ok"})
+})
+
+public := r.Group("/api")
+protected := r.Group("/api")
+protected.Use(middleware.Auth(cfg.JWTSecret))
+\end{lstlisting}
+
+The design pivots on the two route groups. Both share the \texttt{/api} prefix,
+but \texttt{public} carries no authentication middleware while \texttt{protected}
+applies \texttt{middleware.Auth} to \emph{every} route registered on it. This
+single \texttt{.Use} call is the mechanism that separates ``anyone may call
+this'' (login, signup, password reset) from ``you must present a valid token.''
+The \texttt{/healthz} endpoint is registered directly on the engine, outside
+both groups, so a load balancer or the container runtime can probe liveness
+without a token; it returns \texttt{\{"status":"ok"\}} and deliberately touches
+neither the database nor Judge0, making it a pure ``is the process routing?''
+check.
+
+\subsection{Layer 2 --- Middleware}
+
+Middleware runs before any handler and is where cross-cutting concerns are
+enforced. For a protected request the chain is, from outermost to innermost: the
+Gin \texttt{Logger} and \texttt{Recovery} middleware supplied by
+\texttt{gin.Default()} (the latter converts a handler panic into a 500 rather
+than crashing the process); the CORS filter; the JWT authentication gate; and,
+where a route or subgroup demands it, a role guard. Because rejection happens
+here, a malformed or unauthorised request is turned away with a 401 or 403
+\emph{before} it can reach business logic or the database --- the left-hand
+short-circuit arrow in \cref{fig:layers}.
+
+The CORS middleware is intentionally strict. It allows only the origins
+assembled at startup (\texttt{APP\_URL} plus any comma-separated
+\texttt{ALLOWED\_ORIGINS}), only the methods \texttt{GET}, \texttt{POST},
+\texttt{PUT}, \texttt{DELETE}, and \texttt{OPTIONS}, and only the
+\texttt{Content-Type} and \texttt{Authorization} headers. It sets
+\texttt{AllowCredentials: false}, which is a considered decision: APEX carries
+its token in the \texttt{Authorization} header rather than in a cookie, so there
+are no ambient credentials for a cross-site request to abuse, and preflight
+results are cached for twelve hours to cut down on \texttt{OPTIONS} chatter.
+
+\subsection{Layer 3 --- Handler}
+
+Once a request clears the middleware, the handler runs the actual work. Handlers
+across the codebase follow the same skeleton: read the verified identity from
+the Gin context (\texttt{c.GetUint("user\_id")}), read any path parameters, load
+the target resource and check that the caller is entitled to it, bind and
+validate the JSON body with \texttt{c.ShouldBindJSON}, perform the database work
+through GORM, trigger any background work, and finally serialise a JSON response
+with an appropriate status code. Handlers never trust an identifier taken from
+the request body when deciding ownership; they use only the \texttt{user\_id}
+that the authentication middleware placed on the context.
+
+\subsection{Layer 4 --- Data}
+
+The innermost layer is persistence. In the common case this means the shared
+\texttt{database.DB} handle --- a \texttt{*gorm.DB} configured with a bounded
+connection pool (25 open connections, 10 idle, a five-minute idle timeout and a
+thirty-minute maximum lifetime) --- which GORM translates into SQL against
+PostgreSQL. For coding submissions a second backing store appears at this layer:
+the Judge0 client, which sends code over HTTP to the sandbox. \Cref{fig:layers}
+draws this as a branch off the handler, because a request that grades code
+touches both PostgreSQL and Judge0 before it can respond.
+
+\subsection{An honest note on the layering}
+
+It is worth being candid about what this layering is and is not. It is a
+pragmatic, package-level separation of transport, handler, service, and
+persistence concerns. It is \emph{not} a ports-and-adapters or ``clean''
+architecture: there is no repository interface abstracting the database, and
+handlers reach directly into the global \texttt{database.DB}. The service layer
+is simply the set of packages (\texttt{judge0}, \texttt{notification},
+\texttt{email}, \texttt{reminder}) that handlers call into. For a single-binary
+classroom tool this trade favours readability and low ceremony over the
+testability and swappability that dependency inversion would provide, and the
+book states that plainly rather than dressing it up.
+
+\section{Three-Gate Authorization}
+
+Layering the request lifecycle is only half of the access-control story: on top
+of it APEX applies three independent, fail-closed authorization gates ---
+authentication (\texttt{middleware.Auth}), a role check
+(\texttt{middleware.RequireRole}), and a resource-ownership check inside each
+handler. Because these gates belong conceptually to the request pipeline they
+are named here at an architectural level, but their full treatment --- how each
+one fails closed and why a bug in one cannot open the others --- lives in
+\cref{ch:ch08} and is depicted in \cref{fig:authz}.
+
+\section{Technology Stack and Rationale}\label{sec:stack}
+
+Every stack choice in APEX was made to keep the operational surface small and
+the code readable by a five-person team. \Cref{tab:stack} summarises the
+selections; the subsections that follow justify the load-bearing ones.
+
+\begin{table}[htbp]
+\centering
+\caption{Principal technology choices and their roles.}\label{tab:stack}
+\begin{tabularx}{\linewidth}{@{}L{3.2cm}L{4.3cm}X@{}}
+\toprule
+\textbf{Concern} & \textbf{Choice} & \textbf{Role in APEX} \\
+\midrule
+Backend language & Go 1.25.3 & Compiles to one static binary; simple concurrency \\
+HTTP framework & \texttt{gin-gonic/gin} 1.12 & Routing, middleware, JSON binding \\
+ORM & \texttt{gorm.io/gorm} 1.31 & Struct-to-table mapping, query building \\
+Database & PostgreSQL 16 & Durable relational store \\
+Sandbox & Judge0 CE & Isolated execution of untrusted code \\
+Front end & React 18 + Vite 5 + TypeScript 5 & Typed single-page application \\
+Migrations & \texttt{golang-migrate/migrate/v4} & Versioned schema evolution in production \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Why Go and Gin}
+
+Go~\cite{go} was chosen for a property that shows up repeatedly in the
+deployment story of \cref{ch:ch10}: it compiles the entire backend into a
+single, self-contained, statically linked binary. There is no interpreter to
+install, no runtime to match, and no dependency tree to reconstruct on the
+server --- the artefact is copied and run. Go's goroutines also make the
+concurrency that APEX needs (background grading, the reminder ticker)
+inexpensive to express: a background task is literally the keyword \texttt{go}
+in front of a function call.
+
+Gin~\cite{gin} sits on top of Go's standard \texttt{net/http} and supplies
+exactly the pieces a JSON API needs without imposing a heavyweight framework:
+fast radix-tree routing, a composable middleware chain, route groups, and
+convenience helpers for binding and emitting JSON. The route-group feature in
+particular is what makes the clean public-versus-protected split of
+\cref{lst:router} possible in three lines. Gin does not dictate a project
+structure, which let the team impose the package layout of
+\cref{sec:packages} rather than fight a framework's conventions.
+
+\subsection{Why GORM}
+
+GORM~\cite{gorm} is the most widely used object--relational mapper in the Go
+ecosystem, and it earns its place here by removing the tedium of hand-writing
+SQL for fifteen entities while still allowing raw SQL where it matters. Handlers
+express intent in Go --- \texttt{database.DB.Where("id = ? AND teacher\_id = ?",
+examID, teacherID).First(\&exam)} --- and GORM generates the parameterised
+query, which as a side benefit closes the door on SQL injection for every
+query written this way. GORM's \texttt{AutoMigrate} facility, which reflects
+over the model structs to create tables, accelerates development enormously.
+That same facility is also the origin of the project's most instructive bug ---
+the \texttt{is\_draft} data-loss incident detailed in \cref{ch:ch05} --- which
+is precisely why production disables \texttt{AutoMigrate} and hands schema
+authority to the versioned migration binary instead.
+
+\subsection{Why PostgreSQL}
+
+PostgreSQL~\cite{postgres} is the durable store. The data is inherently
+relational --- users own classes, classes contain members, exams link to
+classes, problems belong to exams, submissions belong to attempts --- and a
+relational database with real foreign keys and unique constraints models this
+faithfully. Three composite unique indexes in particular
+(\texttt{ClassMember(class\_id, user\_id)},
+\texttt{ExamAttempt(user\_id, exam\_id)}, and
+\texttt{ExamClass(exam\_id, class\_id)}) enforce important invariants --- a
+student joins a class at most once, and holds at most one attempt row per exam
+--- at the database level, so that even a race between concurrent requests
+cannot violate them. PostgreSQL's JSONB columns additionally give APEX a place
+to store semi-structured data (MCQ options, autosave payloads, announcement
+attachments) without abandoning the relational model for the fields that
+benefit from schema. Version 16 runs identically in a local Docker container
+and on managed providers such as Neon or Railway, reached through a single
+\texttt{DATABASE\_URL}.
+
+\subsection{Why React, Vite, and TypeScript}
+
+The front end is a React~\cite{react} single-page application written in
+TypeScript~\cite{typescript} and built with Vite~\cite{vite}. React's
+component model suits an application that is essentially many stateful views ---
+an exam builder, a Monaco-based coding view, a grading queue --- reused across
+routes. TypeScript adds static types across roughly seventeen thousand lines of
+front-end code, catching whole classes of shape mismatches between the client
+and the JSON contracts described in \cref{sec:api} before they ever reach the
+browser. Vite provides a fast development server with hot module replacement and
+a production build that emits content-hashed, aggressively cacheable static
+assets. The result of the build is a folder of static files with no server-side
+rendering, which is why it can be served by a stock \texttt{nginx} container.
+
+\subsection{Why one binary that also ships \texttt{migrate} and \texttt{seed}}
+
+A single Go module produces three binaries: \texttt{apex} (the long-running API
+server and in-process scheduler), \texttt{migrate} (a one-shot schema tool), and
+\texttt{seed} (an on-demand demo-data loader). Shipping all three from one
+module, and baking all three into one Docker image, means there is exactly one
+build to trust and one set of dependencies to audit. The production container
+runs \texttt{apex} by default but the compose stack overrides its entrypoint to
+run \texttt{migrate up} for the one-shot migration service, so the same image
+serves two roles. This is the same economy of ``one artefact, one thing to
+reason about'' that motivated the choice of a compiled single-binary language in
+the first place, applied at the level of the deployment.
+
+\section{API Design}\label{sec:api}
+
+APEX exposes a RESTful HTTP API under the base path \texttt{/api}, following the
+resource-oriented style described by Fielding~\cite{fielding2000rest}. Nouns
+name resources (\texttt{/exams}, \texttt{/classes}, \texttt{/submissions}), HTTP
+verbs express intent (\texttt{GET} to read, \texttt{POST} to create,
+\texttt{PUT} to update, \texttt{DELETE} to remove), and every request and
+response body is JSON. Authentication is stateless: a bearer token issued at
+login is presented on each protected call, so the server keeps no session state
+and any instance can serve any request.
+
+\subsection{Modular route registration}
+
+Rather than declaring every route in one place, \texttt{main.go} delegates route
+registration to thirteen feature modules, each of which exposes a
+\texttt{RegisterRoutes(public, protected)} function and decides for itself which
+group and which role guard each of its endpoints needs:
+
+\begin{lstlisting}[language=Go,caption={Modular route registration in \texttt{main.go}.},label={lst:register}]
+auth.RegisterRoutes(public, protected)
+class.RegisterRoutes(public, protected)
+student.RegisterRoutes(public, protected)
+exam.RegisterRoutes(public, protected)
+problem.RegisterRoutes(public, protected)
+testcase.RegisterRoutes(public, protected)
+submission.RegisterRoutes(public, protected)
+execute.RegisterRoutes(public, protected)
+notification.RegisterRoutes(public, protected)
+profile.RegisterRoutes(public, protected)
+teacher.RegisterRoutes(public, protected)
+announcement.RegisterRoutes(public, protected)
+folder.RegisterRoutes(public, protected)
+\end{lstlisting}
+
+The only thing each module receives is the two router groups. There is no
+dependency-injection container and no service registry; the ``wiring'' is
+literally the passing of two \texttt{*gin.RouterGroup} values. This is a
+conscious choice in favour of explicitness --- to learn what routes exist, one
+reads thirteen small \texttt{routes.go} files rather than tracing a
+configuration graph.
+
+\subsection{Public, protected, and role subgroups}
+
+Modules apply access control at three granularities, all built on the two
+top-level groups. The \texttt{auth} module registers its login, signup, and
+password endpoints on the \texttt{public} group and only its account-deletion
+route on \texttt{protected}. Feature modules that belong entirely to one role
+create a subgroup and apply a role guard once, as \texttt{exam} does:
+
+\begin{lstlisting}[language=Go,caption={A whole module gated to one role in \texttt{internal/exam/routes.go}.},label={lst:examroutes}]
+func RegisterRoutes(public, protected *gin.RouterGroup) {
+    exams := protected.Group("/exams")
+    exams.Use(middleware.RequireRole("teacher"))
+    {
+        exams.POST("", CreateExam)
+        exams.GET("", GetExams)
+        exams.GET("/:id", GetExam)
+        exams.PUT("/:id", UpdateExam)
+        exams.DELETE("/:id", DeleteExam)
+        exams.POST("/:id/assign", AssignExam)
+        exams.POST("/:id/close", CloseExam)
+        exams.POST("/:id/reopen", ReopenExam)
+        exams.GET("/:id/results", GetExamResults)
+    }
+}
+\end{lstlisting}
+
+Here \texttt{/exams} is created on the already-authenticated \texttt{protected}
+group and then further restricted so that \emph{every} exam route requires the
+teacher role --- two of the three authorization gates applied declaratively
+before any handler runs. The \texttt{student} module mirrors this with
+\texttt{RequireRole("student")}, and notably reuses the \texttt{exam} package's
+attempt handlers, mounting \texttt{exam.StartAttempt},
+\texttt{exam.AutosaveAttempt}, and \texttt{exam.SubmitAttempt} under
+\texttt{/student/exams/:id/...}: the student module owns those URLs while the
+exam module owns the logic, a clean reuse that avoids duplicating attempt code.
+
+The third granularity is a per-route guard, used where endpoints in a module
+serve mixed audiences. The \texttt{submission} module opens \texttt{POST /run}
+and \texttt{GET /:id} to any authenticated user --- because students run and
+read their own submissions and teachers read submissions on exams they own, with
+ownership resolved inside the handler --- but pins the grade endpoint to
+teachers inline:
+
+\begin{lstlisting}[language=Go,caption={A per-route role guard in \texttt{internal/submission/routes.go}.},label={lst:subroutes}]
+subs := protected.Group("/submissions")
+{
+    subs.POST("/run", RunSolution)
+    subs.GET("/:id", GetSubmission)
+    subs.PUT("/:id/grade", middleware.RequireRole("teacher"), GradeSubmission)
+}
+\end{lstlisting}
+
+Passing \texttt{middleware.RequireRole("teacher")} as an argument to a single
+route shows that Gin allows role guards to be applied group-wide or
+per-endpoint, and APEX uses whichever granularity fits the module.
+
+\subsection{JSON contracts and status codes}
+
+Request and response bodies are plain JSON objects, and the API is disciplined
+about status codes because the SPA relies on them. A successful read returns
+200 with the resource; a successful create returns the created row. Validation
+failures return 400, an absent bearer token or invalid one returns 401, a role
+or ownership violation returns 403, and a missing resource returns 404.
+Semantically meaningful conflicts get their own codes --- submitting an exam
+attempt that is already submitted returns 409 Conflict rather than a generic
+error, so the client can react precisely. A subtle but deliberate refinement is
+that owner-scoped queries return 404 rather than 403 when a teacher references
+another teacher's resource: because the query filters by owner
+(\texttt{WHERE id = ? AND teacher\_id = ?}), the row simply ``does not exist''
+for the caller, which avoids confirming that the identifier is real. Two further
+contract-level choices protect users: login always returns the generic ``invalid
+email or password'' regardless of which field was wrong, and
+\texttt{POST /auth/forgot-password} always returns 200 --- both to avoid leaking
+whether an account exists.
+
+\section{Package Layout and Separation of Concerns}\label{sec:packages}
+
+The backend source lives under \texttt{internal/}, Go's convention for packages
+that may not be imported outside the module. Each package owns one slice of the
+domain and exposes a small surface --- typically a \texttt{RegisterRoutes}
+function and a set of handlers. The organisation is by \emph{feature} rather
+than by technical layer: there is no top-level \texttt{controllers/},
+\texttt{services/}, and \texttt{models/} trichotomy, but rather a package per
+resource that internally spans the transport and handler layers.
+
+\begin{itemize}
+  \item \textbf{Cross-cutting infrastructure:} \texttt{config} (environment
+        loading and connection-string construction), \texttt{database} (the
+        GORM handle, the connection pool, and both migration tracks),
+        \texttt{middleware} (CORS, JWT authentication, role gating), and
+        \texttt{models} (the fifteen GORM structs that are the single source of
+        truth for the schema).
+  \item \textbf{Feature modules:} \texttt{auth}, \texttt{class},
+        \texttt{student}, \texttt{teacher}, \texttt{exam}, \texttt{problem},
+        \texttt{testcase}, \texttt{submission}, \texttt{execute},
+        \texttt{folder}, \texttt{announcement}, \texttt{notification}, and
+        \texttt{profile}. Each maps to a coherent chunk of the teacher or
+        student workflow.
+  \item \textbf{Domain services:} \texttt{judge0} (the sandbox client, the
+        coding/MCQ/written graders, and the attempt aggregator),
+        \texttt{email} (an SMTP wrapper with a stdout fallback), and
+        \texttt{reminder} (the one-minute background ticker). These hold logic
+        that handlers call into but that is not itself an HTTP endpoint.
+\end{itemize}
+
+Alongside \texttt{internal/} sit two command binaries under \texttt{cmd/} ---
+\texttt{cmd/migrate} and \texttt{cmd/seed} --- and the root \texttt{main.go} that
+wires everything together. The separation of concerns is therefore visible in
+the directory tree itself: a reader looking for how exams are assigned opens
+\texttt{internal/exam}, and a reader looking for how code is graded opens
+\texttt{internal/judge0}, without needing to understand the rest of the system.
+
+\section{Design Patterns and Principles}\label{sec:patterns}
+
+Several established patterns and principles recur through the architecture, and
+naming them makes the design intent explicit.
+
+\paragraph{Middleware / chain of responsibility.} The request pipeline of
+\cref{fig:layers} is a chain-of-responsibility~\cite{fowler2002patterns}: each
+middleware either handles the request (by aborting it) or passes it to the next
+link with \texttt{c.Next()}. This is what lets authentication, role checking,
+and CORS be composed independently and reordered without touching handlers.
+
+\paragraph{Twelve-factor configuration.} APEX follows the
+twelve-factor~\cite{twelvefactor} principle of strict separation of
+configuration from code. Every operational setting --- database credentials,
+the JWT secret, the Judge0 URL, SMTP details --- is read from the environment
+through the \texttt{config} package, never hard-coded, and a \texttt{.env} file
+is auto-loaded only as a development convenience. The one setting the process
+refuses to start without is \texttt{JWT\_SECRET}: if it is empty, shorter than
+32 characters, or the literal placeholder \texttt{dev-secret-change-in-prod},
+the process calls \texttt{log.Fatal} and exits. This fail-fast validator makes
+``production booted with the development secret'' impossible by construction,
+and it is the only fast-fail in the entire boot sequence --- every other missing
+setting degrades gracefully.
+
+\paragraph{Stateless services and idempotent operations.} Because the API keeps
+no session state, it is horizontally trivial to reason about, and several
+operations are deliberately idempotent so that a retry or a refresh cannot cause
+harm. Starting an exam attempt, for instance, looks up the attempt for the
+(student, exam) pair and returns the existing one if present, backed by the
+unique index on \texttt{(user\_id, exam\_id)} so that even a concurrent race
+cannot create duplicates. The reminder scheduler records ``already sent'' in
+dedicated timestamp columns rather than in memory, which makes it idempotent
+across process restarts. These choices reflect the data-intensive-application
+discipline~\cite{kleppmann2017ddia} of pushing correctness guarantees down to
+the database wherever a purely in-code check would be racy.
+
+\paragraph{Graceful degradation.} Finally, the architecture is built so that
+optional dependencies stay optional. Missing SMTP configuration logs email
+bodies to stdout; a missing \texttt{GOOGLE\_CLIENT\_ID} makes the Google
+sign-in endpoint answer 503 while every other authentication path keeps working.
+The system is always runnable with the minimum of one database and one secret,
+and each external integration can be switched on independently as an operator is
+ready for it.
+
+\medskip
+
+Taken together, these decisions describe an architecture that is intentionally
+modest in its ambitions and precise in its execution. The remaining chapters
+build on this skeleton: \cref{ch:ch05} details the data model that PostgreSQL
+holds, \cref{ch:ch07} follows a submission through the grading engine sketched
+here, \cref{ch:ch08} audits the three authorization gates, and \cref{ch:ch10}
+shows how the single binary and its companions are packaged and deployed.

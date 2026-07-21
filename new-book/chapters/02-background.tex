@@ -1,0 +1,395 @@
+\chapter{Background and Literature Review}\label{ch:ch02}
+
+This chapter establishes the intellectual and engineering context in which APEX was
+built. It surveys four bodies of work that the system draws on directly: the history and
+methods of automated assessment of programming (\Cref{sec:bg-autoassess}); online judge
+systems and the sandboxing technology that lets them run untrusted code safely
+(\Cref{sec:bg-judges}); learning-management systems and the quiz and coding tooling built
+on top of them (\Cref{sec:bg-lms}); and code-similarity detection, which sits adjacent to
+grading as a fairness concern (\Cref{sec:bg-plagiarism}). The chapter closes with a gap
+analysis (\Cref{sec:bg-gap}) and a comparison table (\Cref{tab:bg-comparison}) that
+positions APEX against representative alternatives across the dimensions that matter for a
+single-department classroom deployment.
+
+The review is deliberately selective. Its purpose is not to catalogue every assessment
+tool ever published, but to show what the mature systems do well, what they trade away,
+and where a small self-hostable portal that unifies three answer formats behind one
+grading pipeline earns its place. Throughout, claims about APEX are grounded in the actual
+implementation rather than aspiration.
+
+\section{Automated Assessment of Programming}\label{sec:bg-autoassess}
+
+\subsection{A short history}
+
+Automatically grading programs is nearly as old as teaching programming. The earliest
+graders date to the 1960s, when batch systems compiled a student's submission and compared
+its printed output to a reference. The idea has proven remarkably durable: the fundamental
+loop---feed an input, capture the output, compare it to what was expected---is still the
+core of every modern coding-assessment platform, APEX included.
+
+The first systematic academic survey of the modern era is Douce, Livingstone and
+Orwell~\cite{douce2005autoassess}, who in 2005 organised the field into three
+``generations'': early command-line graders tied to a single machine; web-based systems
+that decoupled the student from the grading host; and a nascent third generation
+concerned with pedagogy, feedback quality, and integration with course-management tooling.
+Their central observation has aged well: the hard problems in automated assessment are not
+the mechanics of running code but the surrounding concerns---security of execution, quality
+of feedback, and the integration of grading into an actual course.
+
+Five years later, Ihantola et al.~\cite{ihantola2010autograding} produced the reference
+survey for the field, reviewing dozens of tools against a common set of features: supported
+languages, the style of test specification, the resubmission policy, the security model,
+and---critically---how tightly the grader integrated with a learning-management system.
+Their finding was that classroom features and grading features consistently lived in
+different products, and that stitching them together fell to the individual instructor.
+That observation is precisely the gap APEX targets.
+
+The most cited recent survey, Wa\'{s}ik et al.~\cite{wasik2018survey}, examines online
+judges specifically and decomposes them into three recurring components that recur
+throughout this chapter: (1) the \emph{contest or exam scaffold} that presents problems and
+collects submissions; (2) the \emph{language-aware compile-and-run sandbox} that executes
+untrusted code under resource limits; and (3) the \emph{verdict aggregator} that turns
+per-test outcomes into a score. APEX maps cleanly onto this decomposition: its scaffold is
+the Go/Gin backend and React SPA, its sandbox is delegated to Judge0, and its aggregator is
+the \texttt{judge0.Grade} / \texttt{maybeFinalizeAttempt} pipeline analysed in
+\Cref{ch:ch07}.
+
+\subsection{Two families of grader: I/O diffing versus unit testing}
+
+The literature divides auto-grading into two broad families, and the choice between them is
+the single most consequential design decision a grader makes.
+
+\paragraph{Input/output diffing.} The student writes a complete program that reads from
+standard input and writes to standard output. The grader supplies an input, captures the
+program's output, and compares it---textually---against an expected output. This is the
+model of the competitive-programming judges and the one Douce and Wa\'{s}ik describe as
+dominant~\cite{douce2005autoassess,wasik2018survey}. Its virtues are that it is entirely
+language-agnostic (the grader never needs to understand the student's code, only its
+output), simple to specify (a test case is just a pair of strings), and robust against
+students who structure their solution differently than the instructor imagined.
+
+\paragraph{Unit-test execution.} The student writes a function or class conforming to a
+fixed signature, and the grader compiles it against an instructor-authored test harness
+that asserts on return values. This model, used by tools such as
+CodeRunner~\cite{coderunner} and much of the CS-education tooling surveyed by
+Ihantola~\cite{ihantola2010autograding}, gives finer-grained feedback (``your function
+returned the wrong value for a negative argument'') and can grade code that never produces
+console output. Its cost is that the harness is language-specific and the student is
+constrained to an exact interface.
+
+APEX uses I/O diffing, for the reasons the survey literature endorses: it keeps the grader
+uniform across all six supported languages (Python, JavaScript, TypeScript, Java, C, and
+C++) and lets a teacher author a coding problem as nothing more than a list of
+\texttt{(input, expected\_output)} pairs. The well-known weakness of I/O diffing is its
+brittleness: a solution that computes the correct answer can still be rejected on a
+cosmetic mismatch---a trailing newline, a Windows carriage return, or a stray trailing
+space. This ``trailing-newline unfairness'' is the most common false negative on any
+diff-based platform.
+
+APEX's response is a nine-line normalisation function, \texttt{normalizeOutput}, applied
+symmetrically to both the student's actual output and the teacher's expected output before
+comparison. It converts \texttt{CRLF} and lone \texttt{CR} line endings to \texttt{LF},
+trims trailing spaces and tabs on each line, and trims leading and trailing whitespace of
+the whole string. \Cref{lst:bg-normalize} reproduces it. The design intent, developed fully
+in \Cref{ch:ch07}, is to make the comparison measure the \emph{correctness of content}
+rather than the \emph{byte-exactness of whitespace}. It is honest about its scope: it does
+not collapse internal whitespace runs and applies no floating-point tolerance, so it
+addresses the most common false negative rather than every conceivable one.
+
+\begin{lstlisting}[language=Go,caption={The output-normalisation function that mitigates I/O-diff brittleness, applied symmetrically to actual and expected output.},label={lst:bg-normalize}]
+// normalizeOutput strips CR, trailing whitespace on each line, and trims
+// edges so Judge0 output (often \r\n with a trailing newline) compares
+// cleanly to teacher-entered expected output.
+func normalizeOutput(s string) string {
+    s = strings.ReplaceAll(s, "\r\n", "\n")
+    s = strings.ReplaceAll(s, "\r", "\n")
+    lines := strings.Split(s, "\n")
+    for i, ln := range lines {
+        lines[i] = strings.TrimRight(ln, " \t")
+    }
+    return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+\end{lstlisting}
+
+\subsection{Feedback, partial credit, and resubmission}
+
+Beyond the pass/fail verdict, the assessment literature emphasises three pedagogical
+levers. The first is \emph{feedback}: Ihantola et al.\ note that the difference between a
+grader that merely scores and one that teaches lies in what it tells the student about a
+failure~\cite{ihantola2010autograding}. APEX distinguishes visible \emph{sample} test cases
+(\texttt{is\_sample = true}), whose input, expected, and actual output are shown, from
+hidden tests, for which the student sees only pass/fail and timing---preventing
+reverse-engineering of the graded tests while still offering pre-submission feedback.
+
+The second lever is \emph{partial credit}. Rewarding a solution that passes seven of ten
+tests with seventy percent rather than zero is both fairer and more informative. APEX awards
+proportional partial credit on coding problems (\texttt{score = passed / total * 100}) but
+uses all-or-nothing set-equality on multiple-choice questions, reflecting the different
+semantics of the two formats.
+
+The third lever is the \emph{resubmission policy}---how freely a student may iterate.
+APEX separates ``run'' from ``submit'': a student may execute sample tests any number of
+times during an exam at zero database and grading cost, because only the final
+\texttt{POST /student/exams/:id/submit} persists a graded submission. This mirrors the
+iterate-freely, grade-once posture that the survey literature associates with good learning
+outcomes, without the storage and sandbox load of grading every keystroke.
+
+\section{Online Judges and Sandboxing}\label{sec:bg-judges}
+
+\subsection{The online-judge tradition}
+
+Whereas the assessment literature grew out of education research, the online-judge
+tradition grew out of competitive programming, where the correctness and, above all, the
+\emph{security} of the execution sandbox dominate every other concern. Systems such as the
+UVa Online Judge, Codeforces, and HackerRank~\cite{hackerrank} all share the same shape:
+accept a source submission, run it against a battery of tests inside an isolation layer,
+and return a verdict. Wa\'{s}ik et al.~\cite{wasik2018survey} survey this lineage in detail,
+and C\'{a}ceres et al.~\cite{caceres2014online} survey the web architectures behind such
+systems, observing that the durable designs separate the sandbox from the scaffold behind a
+thin HTTP interface---exactly the boundary APEX draws between its Go backend and Judge0.
+
+The reason execution is the crux is stark: a student submission is arbitrary, untrusted
+code. A single line such as \texttt{os.system("rm -rf /")} or a fork bomb, if run on the
+application host, compromises the server. A judge must therefore run every submission inside
+a locked environment with strict CPU, memory, and filesystem limits and no meaningful access
+to the host or network. Writing such a sandbox correctly is one of the hardest and most
+security-sensitive tasks in systems programming, which is why the mature ecosystem has
+converged on a small number of shared, battle-tested implementations rather than each
+platform rolling its own.
+
+\subsection{The \texttt{isolate} sandbox}
+
+The de facto standard sandbox for this purpose is
+\texttt{isolate}~\cite{isolate}, originally developed as the grading sandbox for the
+International Olympiad in Informatics (IOI). \texttt{isolate} builds its ``locked room''
+from Linux kernel primitives: \emph{namespaces} isolate a process's view of the filesystem,
+process table, and network, while \emph{control groups} (cgroups) cap its CPU time and
+memory. The result is a lightweight, per-submission jail that can run untrusted code, kill
+it when it exceeds a limit, and report the time and memory it consumed---while guaranteeing
+that the worst a malicious submission can do is hit a limit and be terminated. Its
+provenance at the IOI, where it grades the submissions of the world's strongest
+high-school programmers under adversarial conditions, is exactly why it is trustworthy: it
+is proven technology, not an improvisation.
+
+\subsection{Judge0 as execution-as-a-service}
+
+\texttt{isolate} is a sandbox, not a service. Wrapping it in a language-aware,
+network-accessible API is the role of Judge0~\cite{judge0,dosilovic2018judge0}, the most
+prominent open-source ``code execution as a service.'' Do\v{s}ilovi\'{c} and
+Me\v{s}trovi\'{c}~\cite{dosilovic2018judge0} describe Judge0 as a system that accepts a
+\texttt{\{language, source\_code, stdin\}} payload over HTTP, compiles and runs the code in
+\texttt{isolate}, and returns \texttt{\{stdout, stderr, status, time, memory\}}. It supports
+dozens of language runtimes behind a uniform REST interface and enforces per-submission
+resource limits through the underlying sandbox.
+
+APEX delegates all code execution to Judge0. This is a deliberate architectural choice,
+not a convenience: the most security-critical component in the entire system---the one that
+runs untrusted code---is the one the team did \emph{not} write, precisely because writing a
+sandbox is how a project gets compromised. The whole of APEX's interaction with the sandbox
+is confined to a single file, \texttt{internal/judge0/client.go}, and reduces to one
+synchronous HTTP call:
+
+\begin{lstlisting}[language=Go,caption={APEX's entire interaction with the sandbox: one synchronous POST to Judge0, which runs the code in isolate.},label={lst:bg-judge0-call}]
+url := BaseURL +
+  "/submissions?wait=true&base64_encoded=false" +
+  "&fields=stdout,stderr,compile_output,status,time,memory"
+client := &http.Client{Timeout: 30 * time.Second}
+resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+\end{lstlisting}
+
+Several properties of this integration are worth noting because they reflect the trade-offs
+the literature anticipates. The call is \emph{synchronous}: \texttt{wait=true} blocks the
+request until Judge0 finishes, guarded by a 30-second client timeout, avoiding the polling
+loops or webhook callbacks that a higher-throughput design would need. The base URL defaults
+to the public \texttt{https://ce.judge0.com} instance but is overridable via the
+\texttt{JUDGE0\_URL} environment variable; the public endpoint is rate-limited and intended
+for evaluation, so a real deployment self-hosts Judge0. APEX maps six language names to
+Judge0's numeric language identifiers and pre-validates the language before ever making the
+call. Notably, APEX treats Judge0 as an \emph{executor} rather than a \emph{judge}: it counts
+both Judge0's ``Accepted'' (status 3) and ``Wrong Answer'' (status 4) as ``the code ran,''
+then re-compares the output itself with \texttt{normalizeOutput}, because Judge0's own diff
+is byte-exact and would reproduce the very trailing-newline unfairness the normalisation
+exists to eliminate. This separation of ``run it safely'' from ``decide if it is correct''
+is the concrete embodiment of the sandbox/scaffold boundary that C\'{a}ceres et
+al.~\cite{caceres2014online} identify as characteristic of durable designs.
+
+\section{Learning-Management Systems and Quiz Tooling}\label{sec:bg-lms}
+
+\subsection{The LMS lineage}
+
+The other parent of APEX is the learning-management system. Moodle~\cite{moodle2002},
+first released in 2002, established the template: an open-source PHP application bundling
+course pages, announcements, a quiz module, and a gradebook into a single self-hostable
+product. Canvas~\cite{canvas} refined the same form factor for large institutions with a
+polished interface and an extensive integration ecosystem. The defining strength of the LMS
+lineage is \emph{breadth}: these systems cover the entire course lifecycle, from enrolling
+students through delivering content to recording final marks.
+
+That breadth is also the source of their limitation for programming courses. LMS quiz
+modules natively handle multiple-choice, matching, and short-answer questions, but
+programming-style assessment is not part of the core model. Moodle's quiz engine, for
+instance, supports MCQ and numeric answers directly, but grading code requires a plugin.
+The consequence, documented across the assessment surveys~\cite{douce2005autoassess,%
+ihantola2010autograding}, is a workflow in which coding, multiple-choice, and written
+assessment live in separate tools with separate gradebooks, and the instructor performs the
+integration by hand.
+
+\subsection{Coding on top of the LMS}
+
+The dominant answer to ``how do I grade code inside my LMS'' is
+CodeRunner~\cite{coderunner}, a mature Moodle question-type plugin that runs student code
+against instructor-defined tests---typically in the unit-test style---inside a sandbox, and
+reports a per-test result within the Moodle quiz. CodeRunner is capable and widely deployed,
+and it is the closest LMS-native analogue to APEX's coding questions. It inherits both the
+strengths of Moodle (rich rostering, gradebook integration, an established administrative
+model) and its costs (a full Moodle installation, PHP hosting, plugin and sandbox
+configuration, and a coding question that remains a bolt-on to a quiz engine designed around
+static question types).
+
+At the other pole sits HackerRank~\cite{hackerrank}, a commercial, cloud-hosted platform
+built judge-first. It offers a polished in-browser coding experience, a large problem bank,
+and strong auto-grading, and it is used both for competitive practice and for technical
+hiring. Its trade-offs are the mirror image of the LMS lineage: mixed-format exams that
+combine coding with substantial written and multiple-choice sections in a single sitting are
+not its centre of gravity, it is neither self-hostable nor free, and its rostering and
+course model are lighter than an LMS provides.
+
+APEX sits deliberately between these poles. Rather than bolting code execution onto a
+quiz engine or bolting a course model onto a judge, it treats the three answer formats
+(coding, MCQ, written) as first-class citizens of a \emph{single} exam attempt: one timer,
+one autosave path, one submission endpoint, and one grading pipeline that dispatches to
+\texttt{Grade}, \texttt{GradeMCQ}, or \texttt{GradeWritten} by problem type before
+re-aggregating a single weighted attempt score. This unification, developed in
+\Cref{ch:ch07}, is the feature that neither the LMS-plus-plugin nor the judge-first
+lineage offers cleanly.
+
+\subsection{Manual grading and mixed formats}
+
+A working classroom needs to grade prose, not only code. Written answers cannot be graded
+by a diff, so any honest mixed-format system needs a manual-grading path. LMS platforms
+have mature manual-grading UIs; pure judges generally do not. APEX carries a manual path as
+a first-class part of the pipeline: written answers, and multiple-choice questions for which
+no correct option was configured, are marked \texttt{pending\_review} and enter a queue that
+teachers drain via \texttt{GET /teacher/grading/pending} and \texttt{PUT /submissions/:id/%
+grade}. Crucially, \texttt{pending\_review} submissions are excluded from both the numerator
+and denominator of the attempt score until a human grades them, so an ungraded essay never
+makes a student's visible score look like a failure before the teacher has looked at it.
+This blending of automatic and manual grading behind one attempt score is precisely the
+integration the assessment surveys found missing between the two lineages.
+
+\section{Code-Similarity and Plagiarism Detection}\label{sec:bg-plagiarism}
+
+Adjacent to grading, and important to its fairness, is the detection of copied
+submissions. The two canonical open systems are MOSS (Measure Of Software Similarity)~%
+\cite{moss} from Stanford and JPlag~\cite{prechelt2002jplag}. Both ingest a corpus of
+student source files and report clusters of suspiciously similar submissions, but they do
+so structurally rather than textually: they tokenise each program and compare token
+sequences, so that superficial obfuscations---renaming variables, reordering independent
+statements, reformatting whitespace, inserting dead comments---do not defeat detection.
+MOSS uses a document-fingerprinting technique (winnowing) to compare token streams at scale,
+while JPlag performs a greedy tiling match over token strings; Prechelt et
+al.~\cite{prechelt2002jplag} report that JPlag reliably identifies plagiarised pairs even
+under such transformations.
+
+Two properties of this work matter for APEX's scope. First, similarity detection is
+\emph{corpus-relative}: it answers ``which of these submissions resemble each other,'' not
+``is this one submission correct,'' and so it is orthogonal to the per-submission grading
+pipeline. Second, it is typically an \emph{offline, teacher-triggered batch} action run over
+a completed cohort rather than an inline check at submission time. APEX does not currently
+ship an integrated similarity check; it is identified as future work in \Cref{ch:ch13}. The
+architectural boundary APEX already draws---storing each submission's source, language, and
+per-test results as durable rows---means a MOSS- or JPlag-style batch export is a natural
+future addition rather than a redesign. Proctoring (webcam capture, screen locking) is a
+separate and ethically contested body of work that APEX deliberately does not pursue; at
+most a future iteration would surface non-invasive signals such as tab-blur or paste events
+to the teacher rather than enforcing them.
+
+\section{Gap Analysis and Positioning}\label{sec:bg-gap}
+
+The surveys and systems above converge on a consistent picture. The assessment literature
+identifies, and has identified for two decades, a persistent gap between \emph{course}
+tooling and \emph{grading} tooling~\cite{douce2005autoassess,ihantola2010autograding}. The
+LMS lineage owns the course but treats code as a bolt-on; the judge lineage owns code
+execution but travels light on rostering, mixed formats, and manual grading. Bridging the
+two has been the subject of a long tail of institutional projects, but the two dominant
+production answers---an LMS with a coding plugin, or a commercial cloud judge---each inherit
+the limitations of their lineage. Four specific gaps motivate APEX's design.
+
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Mixed formats in one sitting.} No mainstream option treats coding, MCQ,
+        and written answers as equal first-class citizens of a single timed attempt with a
+        single score. LMS quizzes bolt code on; judges under-serve prose. APEX makes the
+        unified attempt the centre of the design.
+  \item \textbf{One grading pipeline.} Where mixed grading exists, it is usually the sum of
+        independent subsystems. APEX runs one dispatch-and-aggregate pipeline behind all
+        three formats, with a single weighted attempt score and a single ``Exam Graded''
+        notification.
+  \item \textbf{Self-hostability without operational weight.} Moodle is self-hostable but
+        heavy; Canvas and HackerRank are effectively cloud services. APEX ships as one Go
+        binary plus PostgreSQL plus an external Judge0, deployable via a four-service Docker
+        Compose file, with the security-critical sandbox delegated to a proven external
+        component.
+  \item \textbf{Cost.} The self-hostable, no-licence-fee option (Moodle plus CodeRunner)
+        is operationally demanding; the low-friction options are commercial. APEX targets
+        the empty quadrant: free and self-hostable and low-friction.
+\end{enumerate}
+
+\Cref{tab:bg-comparison} summarises how APEX compares against four representative
+alternatives across the dimensions that a single-instructor or single-department deployment
+actually weighs. The assessment is qualitative and, in the ``mixed formats'' and
+``simplicity'' rows, necessarily subjective; it is meant to make the positioning legible,
+not to claim measurement. The honest caveats belong in the same breath: the four
+comparators are mature, widely deployed, and battle-tested at institutional scale, whereas
+APEX is a graduation project with, by its own account, no backend unit tests, no rate
+limiting on authentication, and a fire-and-forget grading path with no durable work queue
+(all detailed in \Cref{ch:ch08,ch:ch09}). The comparison claims a favourable \emph{shape},
+not superiority on every axis.
+
+\begin{table}[H]
+  \centering
+  \caption{APEX against representative alternatives. ``Yes/No'' is a capability judgement;
+  cost reflects licensing and hosting for a small deployment. Assessments in the mixed-format
+  and simplicity rows are subjective summaries of the discussion above.}
+  \label{tab:bg-comparison}
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\linewidth}{L{3.5cm} C{1.9cm} C{2.1cm} C{1.7cm} C{1.9cm} X}
+    \toprule
+    \textbf{Dimension} & \textbf{APEX} & \textbf{Moodle + CodeRunner} & \textbf{Canvas} &
+    \textbf{Hacker\-Rank} & \textbf{Raw Judge0} \\
+    \midrule
+    Self-hostable
+      & Yes & Yes & No (cloud) & No (cloud) & Yes \\
+    Mixed coding + MCQ + written in one sitting
+      & Yes, first-class & Partial (code is a plugin) & Partial (no code) & Weak & No \\
+    Unified grading pipeline
+      & Yes, one path & Per-subsystem & Per-subsystem & Code only & Code only \\
+    Live-coding editor (Monaco, in-browser)
+      & Yes & Basic & Basic & Yes & None (API only) \\
+    Manual grading queue for prose
+      & Yes & Yes & Yes & Weak & None \\
+    Class rosters / invite codes
+      & Yes & Yes & Yes & Partial & None \\
+    Sandbox for untrusted code
+      & Delegated to Judge0/\texttt{isolate} & Own sandbox config & External tool & Built-in &
+        \texttt{isolate} \\
+    Deployment simplicity
+      & One Go binary + Postgres + Judge0 & Full PHP + plugin + sandbox & N/A (hosted) &
+        N/A (hosted) & Sandbox only, no scaffold \\
+    Cost
+      & Free, self-hosted & Free, heavy ops & Paid licence & Paid & Free (self-host) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+The pattern the table makes visible is the one the surveys predict. The LMS-derived
+options (Moodle, Canvas) are strong on classroom workflow and manual grading but treat code
+as a secondary format; the judge-derived options (HackerRank, raw Judge0) are strong on code
+execution but thin on rostering, mixed formats, and prose grading. APEX's contribution is
+not a new sandbox or a new grading algorithm---it reuses \texttt{isolate} through Judge0 and
+uses textbook I/O diffing---but the \emph{integration}: unifying three answer formats and a
+full classroom workflow behind one grading pipeline in a single self-hostable artifact,
+which is the empty region between the two established lineages. The chapters that follow
+document how that integration is engineered: the requirements it entails
+(\Cref{ch:ch03}), the architecture that realises it (\Cref{ch:ch04}), and the grading
+engine at its core (\Cref{ch:ch07}).

@@ -1,0 +1,90 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\scriptsize,
+  tier/.style={align=center, font=\sffamily\scriptsize},
+  stage/.style={apexbox, text width=44mm, minimum height=9mm, align=left,
+    font=\sffamily\scriptsize},
+  grouplbl/.style={font=\sffamily\scriptsize\bfseries\color{apexblue}},
+]
+
+% =====================================================================
+% LEFT: the aspirational test pyramid (stacked trapezoids), cm units
+% base y=0 (half-width 3.5), apex y=4.5 (half-width 0.9)
+% =====================================================================
+% Tier 1 -- unit (base), y 0..1.5
+\fill[apexgreen!18, draw=apexgreen!70!black, line width=0.6pt]
+  (-3.5,0) -- (3.5,0) -- (2.63,1.5) -- (-2.63,1.5) -- cycle;
+\node[tier] at (0,0.75) {\textbf{Unit tests}\\{\scriptsize fast, isolated, many}};
+
+% Tier 2 -- integration (middle), y 1.5..3.0
+\fill[apexcyan!22, draw=apexblue!70!black, line width=0.6pt]
+  (-2.63,1.5) -- (2.63,1.5) -- (1.77,3.0) -- (-1.77,3.0) -- cycle;
+\node[tier] at (0,2.25) {\textbf{Integration tests}\\{\scriptsize HTTP + DB, fewer}};
+
+% Tier 3 -- E2E / manual (apex), y 3.0..4.5
+\fill[apexamber!22, draw=apexamber!85!black, line width=0.6pt]
+  (-1.77,3.0) -- (1.77,3.0) -- (0.9,4.5) -- (-0.9,4.5) -- cycle;
+\node[tier] at (0,3.75) {\textbf{E2E / manual}\\{\scriptsize slow, few}};
+
+% vertical cost axis
+\draw[apexarrow, gray] (-4.2,0) -- (-4.2,4.5);
+\node[rotate=90, font=\sffamily\scriptsize\itshape, gray, anchor=south] at (-4.5,2.25)
+  {fewer tests, higher cost};
+
+\node[grouplbl] at (0,5.0) {Test pyramid (target shape)};
+
+% =====================================================================
+% RIGHT: the CI gauntlet (vertical sequence of stages)
+% =====================================================================
+\node[grouplbl] (cititle) at (9.3,5.0) {CI gauntlet \texttt{ci.yml} / \texttt{docker.yml}};
+
+% --- backend group ---
+\node[stage, below=3mm of cititle.south, anchor=north,
+  draw=apexblue!70!black, fill=apexlight] (b1)
+  {\textbf{backend-test}\\\texttt{go vet ./...}\\\texttt{go test ./... -race}};
+\node[stage, below=2.5mm of b1, draw=apexblue!70!black, fill=apexlight] (b2)
+  {\textbf{backend-lint}\\\texttt{golangci-lint --timeout=5m}};
+
+% --- frontend group ---
+\node[stage, below=5mm of b2, apexstore] (f1)
+  {\textbf{frontend-build}\\\texttt{bun run lint} (eslint)\\\texttt{bun run build} (vite)};
+\node[stage, below=2.5mm of f1, apexstore] (f2)
+  {\textbf{frontend-test}\\\texttt{bun run test} (vitest)};
+
+% --- docker group ---
+\node[stage, below=5mm of f2, apexext] (d1)
+  {\textbf{docker smoke build}\\backend + frontend images\\(\texttt{push:false}, GHA cache)};
+
+% chain arrows
+\draw[apexarrowblue] (b1) -- (b2);
+\draw[apexarrowblue] (b2) -- (f1);
+\draw[apexarrowblue] (f1) -- (f2);
+\draw[apexarrowblue] (f2) -- (d1);
+
+% group brackets on the right edge
+\draw[decorate, decoration={brace, amplitude=4pt}, apexblue]
+  ($(b1.north east)+(0.15,0)$) -- ($(b2.south east)+(0.15,0)$)
+  node[midway, right=5pt, grouplbl, rotate=-90, anchor=south] {backend};
+\draw[decorate, decoration={brace, amplitude=4pt}, apexblue]
+  ($(f1.north east)+(0.15,0)$) -- ($(f2.south east)+(0.15,0)$)
+  node[midway, right=5pt, grouplbl, rotate=-90, anchor=south] {frontend};
+
+% =====================================================================
+% Honest-gap annotation spanning the bottom
+% =====================================================================
+\node[apexext, draw=apexamber, line width=0.8pt, align=left, anchor=north,
+  text width=165mm, font=\sffamily\scriptsize] at (2.4,-3.55) {%
+  \textbf{\color{apexamber}Honest gap --- the pyramid is aspirational.}\;
+  The backend currently ships \textbf{no \texttt{*\_test.go} files}, and the
+  frontend carries a \textbf{single sanity test}. So \texttt{go test} and
+  \texttt{vitest} pass while exercising almost nothing: the CI \emph{runners}
+  are wired end-to-end, but the pyramid on the left is a \emph{target} shape,
+  not the present one. Adding real tests requires \emph{no} pipeline change.};
+
+\end{tikzpicture}%
+}
+\caption{Quality gates: CI pipeline and the test pyramid.}
+\label{fig:testpyramid}
+\end{figure}

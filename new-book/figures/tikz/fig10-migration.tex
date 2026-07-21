@@ -1,0 +1,75 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=6mm,
+  font=\sffamily\scriptsize,
+  mstep/.style={apexbox, text width=30mm, minimum height=11mm},
+  legacy/.style={apexstore, text width=34mm, minimum height=11mm, align=left, font=\sffamily\scriptsize},
+  auth/.style={apexext, text width=32mm, minimum height=11mm},
+  mdec/.style={draw=apexblue, fill=apexlight, rounded corners=2pt, align=center,
+    font=\sffamily\scriptsize\bfseries, minimum width=20mm, minimum height=9mm},
+]
+
+% --- Boot entry ---
+\node[mstep] (boot) {\textbf{Process boot}\\\texttt{main.go}\\\texttt{database.Init}};
+
+% --- Idempotent legacy SQL pass ---
+\node[legacy, right=10mm of boot] (legacy) {%
+  \textbf{Idempotent legacy SQL}\\\texttt{RunMigrations(DB)}\\[2pt]
+  \footnotesize
+  1. \texttt{ADD COLUMN} nullable\\
+  2. backfill correct value\\
+  3. \texttt{SET NOT NULL}\\
+  4. \texttt{SET DEFAULT}\\
+  5. repair rows\\[1pt]
+  \emph{each block gated by} \texttt{tableExists}};
+
+% --- Decision on SKIP_AUTOMIGRATE ---
+\node[mdec, right=11mm of legacy] (skip) {\texttt{SKIP\_}\\\texttt{AUTOMIGRATE?}};
+
+% --- Dev branch: GORM AutoMigrate ---
+\node[mstep, above right=6mm and 12mm of skip, text width=34mm] (auto) {%
+  \textbf{GORM \texttt{AutoMigrate}}\\
+  new tables only, all 15 models\\
+  then \texttt{RunPostMigrations}\\
+  \emph{(dev / unset $=$ false)}};
+
+% --- Prod branch: golang-migrate ---
+\node[mstep, below right=6mm and 12mm of skip, text width=34mm,
+  draw=apexgreen!70!black, fill=apexgreen!8] (migrate) {%
+  \textbf{Versioned \texttt{golang-migrate}}\\
+  \texttt{cmd/migrate up}\\
+  \texttt{migrations/sql/NNNN\_*}\\
+  \emph{SOLE schema authority (prod, }\texttt{true}\emph{)}};
+
+% --- Arrows ---
+\draw[apexarrowblue] (boot) -- (legacy);
+\draw[apexarrowblue] (legacy) -- (skip);
+\draw[apexarrow] (skip.north) to[out=90,in=180] node[apexlabel, pos=0.55] {false} (auto.west);
+\draw[apexarrow] (skip.south) to[out=-90,in=180] node[apexlabel, pos=0.55] {true} (migrate.west);
+
+% --- is_draft incident callout ---
+\node[apexext, below=13mm of legacy, text width=0.92\textwidth, align=left,
+  draw=apexamber, line width=0.8pt, font=\sffamily\scriptsize] (incident) {%
+  \textbf{\color{apexamber}The \texttt{is\_draft} incident (war story).}\;
+  A \texttt{gorm:"default:true"} tag on \texttt{Exam.IsDraft} made \texttt{AutoMigrate}
+  apply that \emph{DDL default to every existing row}, flipping all exams to
+  \texttt{is\_draft = true}. Student lists filter \texttt{WHERE is\_draft = false},
+  so every exam \emph{silently vanished} — no error logged.\\[2pt]
+  \textbf{Fix:} (a) struct default flipped to safe zero-value \texttt{false} (``published'');\;
+  (b) an explicit \emph{idempotent} SQL block owns the change
+  (\texttt{ADD COLUMN IF NOT EXISTS} $\rightarrow$ backfill $\rightarrow$
+  \texttt{SET NOT NULL} $\rightarrow$ \texttt{SET DEFAULT false} $\rightarrow$ repair);\;
+  (c) production runs with \texttt{AutoMigrate} off (\texttt{SKIP\_AUTOMIGRATE=true}),
+  leaving \texttt{cmd/migrate} the sole schema authority.};
+
+% link the incident to the AutoMigrate node it originated from
+\draw[apexarrow, dashed, draw=apexamber]
+  (auto.south) to[out=-90,in=90] node[apexlabel, pos=0.5] {silent corruption} (incident.north east);
+
+\end{tikzpicture}%
+}
+\caption{Schema-migration pipeline and the is\_draft incident.}
+\label{fig:migration}
+\end{figure}

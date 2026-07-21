@@ -1,0 +1,60 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=6mm and 34mm,
+    every node/.style={font=\sffamily\small},
+    adv/.style={draw=apexred, fill=apexred!10, rounded corners=2pt,
+        align=center, font=\sffamily\scriptsize, text=apexred!55!black,
+        minimum width=48mm, minimum height=15mm},
+    ctrl/.style={apexbox, align=center, font=\sffamily\scriptsize,
+        minimum width=52mm, minimum height=15mm},
+    map/.style={apexarrow},
+]
+
+% Column headers
+\node[apexlabel, font=\sffamily\bfseries\small] (hA) {Adversary classes};
+
+% Left column: four adversaries (red-tinted)
+\node[adv, below=8mm of hA.west, anchor=north west] (a1)
+    {\textbf{(1) Unauthenticated}\\network attacker\\{\scriptsize\itshape no token; probes public surface}};
+\node[adv, below=of a1] (a2)
+    {\textbf{(2) Authenticated student}\\privilege escalation\\{\scriptsize\itshape acts with teacher intent}};
+\node[adv, below=of a2] (a3)
+    {\textbf{(3) Curious student}\\IDOR / CWE-639\\{\scriptsize\itshape probes others' resources by id}};
+\node[adv, below=of a3] (a4)
+    {\textbf{(4) Malicious code}\\submitted for execution\\{\scriptsize\itshape hostile program in a submission}};
+
+% Right column: four controls (apexbox), aligned to the adversary rows
+\node[ctrl, right=of a1] (c1)
+    {\textbf{HS256 JWT + bcrypt(10)}\\authentication\\{\scriptsize\ttfamily middleware.Auth}};
+\node[ctrl, right=of a2] (c2)
+    {\textbf{Role gate}\\{\scriptsize\ttfamily RequireRole("teacher"/"student")}\\{\scriptsize 403 on wrong role}};
+\node[ctrl, right=of a3] (c3)
+    {\textbf{Per-resource ownership checks}\\{\scriptsize in handlers (Gate 3)}\\{\scriptsize owner\,/\,enrolled\,/\,attempt owner}};
+\node[ctrl, right=of a4] (c4)
+    {\textbf{\texttt{isolate} sandbox + Judge0}\\{\scriptsize time / memory limits}\\{\scriptsize 2000\,ms\,/\,262144\,KB per problem}};
+
+% Header over the controls column
+\node[apexlabel, font=\sffamily\bfseries\small] at (hA-|c1) {Mitigating controls};
+
+% Mappings: adversary -> control
+\draw[map] (a1) -- (c1);
+\draw[map] (a2) -- (c2);
+\draw[map] (a3) -- (c3);
+\draw[map] (a4) -- (c4);
+
+% Residual-gaps note beneath the diagram
+\node[apexlabel, draw=apexamber, fill=apexamber!10, rounded corners=2pt,
+    align=left, font=\sffamily\scriptsize, text=black,
+    below=10mm of a4.south west, anchor=north west,
+    text width=110mm] (note)
+    {\textbf{Residual gaps (honest):} no rate limiting on the auth endpoints
+     (bcrypt cost 10 is the only brake on credential stuffing);
+     6-character password minimum. Both are documented, not defended.};
+
+\end{tikzpicture}%
+}
+\caption{Threat model: four adversary classes and their controls.}
+\label{fig:threat}
+\end{figure}

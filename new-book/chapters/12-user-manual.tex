@@ -1,0 +1,491 @@
+\chapter{User Manual}\label{ch:ch12}
+
+This chapter walks through APEX from the operator's chair rather than the
+engineer's. Where earlier chapters explained \emph{how} the four-layer Go
+backend, the Judge0 grading pipeline, and the React single-page application are
+built, this one explains \emph{how to use} the finished system to run a real
+classroom exam. It is organised around the two — and only two — roles the
+platform recognises: \textbf{teacher} and \textbf{student}. There is no
+administrator role and no separate configuration console; every operational
+action is performed through the same web interface documented here.
+
+The screen captures were taken from a local instance brought up with
+\texttt{./start.sh}, which starts PostgreSQL in Docker, the Go binary on
+\texttt{:8080}, and the Vite dev server on \texttt{:5173}
+(\cref{fig:deploy} shows the corresponding container topology). The seed data
+set provides one teacher account, one student account, one demonstration class,
+and one exam of each supported question type (coding, MCQ, and written) so that
+every screen below has representative content. Browser chrome has been cropped
+from the captures; the routes named in the text are the real
+\texttt{react-router-dom} paths served by the SPA.
+
+\section{Getting Started: Accounts and Sign-in}
+
+\subsection{The landing page}
+
+An unauthenticated visitor arrives at the marketing landing page served at
+\texttt{/} (\cref{fig:sc-landing}). It summarises the product — mixed-format
+exams, automatic code grading, and per-test feedback — and offers a single
+call to action, \emph{Get started}, which routes to the authentication screen
+at \texttt{/auth}. No functionality beyond sign-up and sign-in is reachable
+without an account; every \texttt{/dashboard/*} route is guarded on the client
+by an auth check and on the server by the JWT authentication gate
+(\cref{fig:authz}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.1_landing.png}
+  \caption{The public landing page at \texttt{/}.}
+  \label{fig:sc-landing}
+\end{figure}
+
+\subsection{Signing up and signing in}
+
+The authentication screen (\cref{fig:sc-auth}) exposes three paths. A returning
+user signs in with email and password; the credentials are posted to the
+backend, which verifies the bcrypt hash (cost~10) and, on success, returns a
+signed HS256 JSON Web Token~\cite{rfc7519,owasp-jwt} carrying the user's
+identifier, email, role, and name with a 24-hour expiry. A new user chooses
+\emph{Sign up}, which additionally prompts for a role — \emph{teacher} or
+\emph{student} — because that single choice determines every subsequent screen
+the account will ever see. A third button, \emph{Continue with Google}, delegates
+to Google Identity Services~\cite{gids,oidc-core}: the browser obtains a Google
+credential and the backend verifies it against the configured client ID. If the
+Google account is new to APEX and no role was supplied, the backend replies that
+a role is still needed and the client re-prompts before completing registration.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.2_auth-signin.png}
+  \caption{The sign-in and sign-up screen at \texttt{/auth}. The role picker is
+  shown for new sign-ups and for first-time Google accounts.}
+  \label{fig:sc-auth}
+\end{figure}
+
+Passwords must be at least six characters; the email field is validated against
+a standard address pattern before the request is sent. A failed login returns a
+deliberately generic ``invalid email or password'' message so that the response
+does not reveal whether an address is registered. If a user forgets their
+password, the \emph{Forgot password} link triggers a reset flow that always
+reports success (to avoid disclosing which addresses exist) and, when an SMTP
+server is configured, emails a single-use, one-hour reset link; on a
+development instance with no mail server the link is instead written to the
+server log.
+
+\subsection{The two dashboards}
+
+A successful sign-in stores the token in the browser and redirects to
+\texttt{/dashboard}, whose layout is chosen from the role encoded in the token.
+The \textbf{teacher dashboard} (\cref{fig:sc-dash-teacher}) foregrounds the
+teacher's own classes and recent activity and provides entry points to the
+class list, the exam list, the grading queue, and the question bank. The
+\textbf{student dashboard} (\cref{fig:sc-dash-student}) instead foregrounds the
+exams that matter to a learner right now: upcoming exams, exams currently within
+their time window, and recently completed ones. The two roles never share a
+screen; a student has no route to the exam builder, and a teacher has no route
+to the take-exam surface except through the read-only preview described later.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.3_dashboard-teacher.png}
+  \caption{Teacher dashboard: owned classes and recent activity.}
+  \label{fig:sc-dash-teacher}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.4_dashboard-student.png}
+  \caption{Student dashboard: upcoming, active, and completed exams.}
+  \label{fig:sc-dash-student}
+\end{figure}
+
+\section{Teacher Guide}
+
+The teacher's workflow forms a single pipeline: create a class, build an exam,
+assign it to the class, publish it, and — once students have submitted — grade
+any manual answers and announce results. The following subsections follow that
+order.
+
+\subsection{Creating and managing classes}
+
+The \emph{Courses} area (\texttt{/dashboard/courses}) lists the teacher's owned
+classes. \emph{New class} opens a dialog that collects a name and an optional
+section; on save the class is created with an automatically generated,
+eight-character \textbf{invite code} that is unique across the platform
+(\cref{fig:sc-class-list}). This code is the sole enrolment mechanism: there is
+no roster upload and no manual add-student form. The teacher shares the code
+(for example on a slide or in a chat), and students join with it themselves.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.5_class-list-teacher.png}
+  \caption{The teacher's class list, each card showing its eight-character
+  invite code.}
+  \label{fig:sc-class-list}
+\end{figure}
+
+Opening a class shows its detail screen (\cref{fig:sc-class-detail}), which
+gathers three things in one place: the enrolled roster, the exams assigned to
+the class, and the announcements feed. From here the teacher can rename the
+class, change its cover image, adjust the passing threshold, remove a member, or
+post an announcement — which fans out an in-app notification to every enrolled
+student. The \emph{Grades announced} toggle is the switch that later reveals
+results to students; it is examined in \cref{sec:um-results}. A safeguard
+prevents accidentally announcing while manual grading is still outstanding, so
+that no student sees a total that is about to change.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.6_class-detail-teacher.png}
+  \caption{Class detail (teacher view): roster, assigned exams, and
+  announcements.}
+  \label{fig:sc-class-detail}
+\end{figure}
+
+\subsection{Building an exam}
+
+\emph{Exams} (\texttt{/dashboard/exams}) lists the teacher's exams with status
+badges — Draft, Upcoming, Active, or Completed — derived from the draft flag and
+the start and end times. \emph{New exam} opens the \textbf{exam builder}
+(\cref{fig:sc-builder}). The builder is a three-part surface: a header collects
+exam-level metadata (title, description, duration in minutes, start and end
+times, and behavioural toggles such as \emph{shuffle questions} and \emph{show
+results after}); a left rail lists the questions in order; and the right pane
+edits whichever question is selected. The same builder assembles all three
+question types into a single sitting, which is the platform's central idea — a
+student answers coding, multiple-choice, and written questions in one timed
+attempt, and one grading pipeline stands behind all three.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.7_exam-builder.png}
+  \caption{The exam builder: metadata header, question rail, and editing pane.}
+  \label{fig:sc-builder}
+\end{figure}
+
+\subsubsection{Coding questions}
+
+A coding question (\cref{fig:sc-coding-editor}) carries a title, a Markdown
+problem statement, optional starter code, and — most importantly — a list of
+\textbf{test cases}. Each test case pairs an input with an expected output and
+is flagged as either \emph{sample} or \emph{hidden}. Sample test cases are shown
+to the student and can be run during the attempt for immediate feedback; hidden
+test cases are withheld and are executed only when the exam is graded, which is
+what prevents a student from reverse-engineering the full grader. Each question
+also declares an execution time limit (default \texttt{2000}\,ms) and a memory
+limit (default \texttt{262144}\,KB, i.e.\ 256\,MB) that are passed to the Judge0
+sandbox~\cite{judge0,isolate} when the code runs. The scoring is proportional:
+the earned score is the fraction of test cases that pass, so a solution that
+clears three of four tests scores 75\%.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.8_problem-editor-coding.png}
+  \caption{Coding-question editor: statement, starter code, limits, and
+  sample/hidden test cases.}
+  \label{fig:sc-coding-editor}
+\end{figure}
+
+\subsubsection{Multiple-choice questions}
+
+A multiple-choice question (\cref{fig:sc-mcq-editor}) is a list of options, each
+with a \emph{Correct} checkbox. Marking more than one option correct turns the
+question into a multiple-answer question, graded by exact set equality: the
+student earns full marks only if their selected set matches the correct set
+exactly, otherwise zero. The editor requires at least one option to be marked
+correct — if a question is published with no correct answer configured, the
+grader cannot fairly fail anyone on it and instead routes that submission to the
+manual-review queue rather than awarding a wrong-answer zero.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.9_problem-editor-mcq.png}
+  \caption{Multiple-choice editor: options with per-option \emph{Correct}
+  checkboxes.}
+  \label{fig:sc-mcq-editor}
+\end{figure}
+
+\subsubsection{Written questions}
+
+A written question (\cref{fig:sc-written-editor}) collects a prompt, an optional
+grading rubric, and a maximum word count (default 500). Written answers are
+never graded automatically — every written submission begins life in the
+\emph{pending review} state and enters the manual-grading queue, where the
+teacher reads it and assigns a score. Crucially, a written answer that is still
+awaiting a manual grade is excluded from the student's running total, so an
+in-flight essay grade never artificially depresses the score the student sees.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.10_problem-editor-written.png}
+  \caption{Written-question editor: prompt, rubric, and word-count limit.}
+  \label{fig:sc-written-editor}
+\end{figure}
+
+\Cref{tab:um-qtypes} summarises how the three question types differ from the
+teacher's point of view.
+
+\begin{table}[H]
+  \centering
+  \caption{The three question types and how each is graded.}
+  \label{tab:um-qtypes}
+  \small
+  \begin{tabularx}{\linewidth}{@{}L{2.4cm} L{3.4cm} X@{}}
+    \toprule
+    \textbf{Type} & \textbf{Author supplies} & \textbf{How it is scored} \\
+    \midrule
+    Coding &
+      Statement, starter code, time/memory limits, sample and hidden test cases &
+      Automatically: code runs in the Judge0 sandbox against every test case;
+      score is the fraction of tests passed. \\
+    \addlinespace
+    Multiple choice &
+      Options with one or more correct answers, optional explanation &
+      Automatically: exact set-equality on selected vs.\ correct options; all or
+      nothing. Unconfigured answers go to manual review. \\
+    \addlinespace
+    Written &
+      Prompt, optional rubric, maximum word count &
+      Manually: always starts in \emph{pending review}; the teacher assigns a
+      score from the grading queue. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{The question bank}
+
+Authoring good questions is expensive, so a teacher rarely wants to write each
+one from scratch for every exam. The \textbf{question bank}
+(\texttt{/dashboard/question-bank}, teacher only) lets the teacher save
+questions independently of any exam, organise them into folders, and later
+import them into a new exam. Bank questions and exam-attached questions share the
+same underlying storage but are distinguished by a bank flag, so importing a
+question copies it into the exam without disturbing the reusable original.
+
+\subsection{Assigning, publishing, and previewing}
+
+Building a draft exam does not expose it to anyone. Two further steps are
+required. First, the exam must be \textbf{assigned} to one or more classes; the
+assignment step validates that every target class actually belongs to the
+teacher performing it, so a teacher cannot push an exam into a colleague's
+class. Second, the exam must be \textbf{published}. The \emph{Publish} toggle is
+enabled only once the exam has at least one question and a non-empty start time
+(\cref{fig:sc-publish}); an exam with no questions or no schedule stays a draft.
+This gate matters because student-facing queries deliberately hide draft exams —
+the same filter whose accidental corruption is the ``\texttt{is\_draft}'' war
+story recounted in \cref{fig:migration}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.11_publish-toggle.png}
+  \caption{The publish toggle, enabled once the exam has questions and a start
+  time.}
+  \label{fig:sc-publish}
+\end{figure}
+
+Before publishing, the teacher can \emph{Preview} the exam
+(\cref{fig:sc-preview}), which renders it exactly as a student will see it —
+question rail, Monaco editor, and all — but read-only and without creating an
+attempt. Previewing is the recommended last check that starter code compiles,
+sample tests behave, and the wording is unambiguous.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.14_exam-preview.png}
+  \caption{Exam preview: the student-facing view, rendered read-only for the
+  teacher.}
+  \label{fig:sc-preview}
+\end{figure}
+
+\section{Student Guide}
+
+The student's workflow is the mirror image of the teacher's: join a class, wait
+for an exam to open, take it within its window, and later review the result.
+
+\subsection{Joining a class}
+
+A student opens \emph{Courses} and chooses \emph{Join with code}
+(\cref{fig:sc-join}). The eight-character invite code is the only input.
+Enrolment is idempotent — a student can be a member of a given class at most
+once — so re-entering the same code is harmless. Once joined, the class appears
+on the dashboard, and any exam already assigned to that class surfaces under
+\emph{Upcoming}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.15_join-class.png}
+  \caption{Joining a class with its invite code.}
+  \label{fig:sc-join}
+\end{figure}
+
+\subsection{Taking a timed exam}
+
+When an exam is within its window, \emph{Start exam} opens the take screen at
+\texttt{/dashboard/exam/:id} (\cref{fig:sc-take}). The layout is consistent
+across question types: a left rail numbers the questions and shows which are
+answered, the remaining time counts down in the top corner, and a Submit button
+sits at the end. Coding questions render in the Monaco editor~\cite{monaco} —
+the same engine that powers Visual Studio Code — with syntax highlighting and a
+language selector covering the six supported languages (Python, JavaScript,
+TypeScript, Java, C, and C++). Multiple-choice questions render as a checkbox
+list, and written questions render as a textarea with a live word counter that
+enforces the author's limit.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.16_take-coding.png}
+  \caption{Taking a coding question in the Monaco editor, with the question rail
+  and countdown timer.}
+  \label{fig:sc-take}
+\end{figure}
+
+\paragraph{Running sample tests.} On a coding question the student can run their
+code against the \emph{sample} test cases at any time before submitting. This
+sends the current code and chosen language to the backend, which executes it in
+the Judge0 sandbox and returns per-test results — expected versus actual output
+— rendered inline. Only sample tests run on this path; the hidden tests that
+ultimately decide the grade are never revealed here, and a sample run does not
+count as a submission.
+
+\paragraph{Autosave.} The client periodically saves a draft of every answer to
+the server while the attempt is open. Because the draft lives on the server and
+not merely in the browser, a crash, an accidental tab close, or a switch to
+another device does not lose work: reopening the exam restores the saved
+answers. Output comparison during grading is whitespace-tolerant — trailing
+spaces and Windows versus Unix line endings are normalised on both sides — so a
+correct answer is not marked wrong over an invisible newline difference.
+
+\paragraph{Submitting.} \emph{Submit} raises a confirmation dialog
+(\cref{fig:sc-submit-dialog}) — submission is final and ends the attempt, so the
+extra click is deliberate. On confirmation the client sends every answer to the
+server, which records the submissions atomically and immediately begins grading
+them. The student then sees the post-submission screen
+(\cref{fig:sc-postsubmit}), which acknowledges receipt and explains that
+automatically graded questions score right away while any written answers await
+the teacher.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.19_submit-dialog.png}
+  \caption{The submit confirmation dialog.}
+  \label{fig:sc-submit-dialog}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.20_post-submit.png}
+  \caption{The post-submission acknowledgement screen.}
+  \label{fig:sc-postsubmit}
+\end{figure}
+
+\section{Grading and Results}\label{sec:um-results}
+
+\subsection{The manual-grading queue}
+
+Coding and multiple-choice answers are scored automatically within seconds of
+submission, but written answers wait for a human. The teacher's \emph{Grading}
+area (\texttt{/dashboard/grading}, \cref{fig:sc-grading-queue}) lists every
+submission still in \emph{pending review}. Opening one shows the student's
+answer alongside the rubric and inputs for a numeric score and free-text
+feedback (\cref{fig:sc-grading-detail}). Saving a grade both records the score
+and re-aggregates the student's overall exam total; the sequence of steps from
+submission through automatic grading to this manual step is diagrammed in
+\cref{fig:grading-seq}. Only the teacher who owns the exam may grade its
+submissions — the ownership check is the third authorization gate in
+\cref{fig:authz}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.21_grading-queue.png}
+  \caption{The pending-grading queue of written answers awaiting a score.}
+  \label{fig:sc-grading-queue}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.22_grading-detail.png}
+  \caption{Grading a written answer against its rubric, with score and feedback
+  inputs.}
+  \label{fig:sc-grading-detail}
+\end{figure}
+
+\subsection{Reviewing results as a teacher}
+
+The per-exam results screen (\cref{fig:sc-results-student}) presents one row per
+student — total score, percentage, and time taken — giving the teacher an
+at-a-glance view of how a class performed. Selecting a row drills into that
+student's per-question breakdown (\cref{fig:sc-results-detail}), which shows how
+each answer scored, including per-test outcomes for coding questions. This is
+the teacher's audit trail: it is where a disputed grade can be traced back to the
+exact test case that failed.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.23_results-by-student.png}
+  \caption{Per-student results for one exam: score, percentage, and time taken.}
+  \label{fig:sc-results-student}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.24_results-detail.png}
+  \caption{Per-question breakdown for a single student's attempt.}
+  \label{fig:sc-results-detail}
+\end{figure}
+
+\subsection{Announcing and reviewing results as a student}
+
+Results are not visible to students the instant grading finishes. Two conditions
+must hold: the exam's \emph{show results after} behaviour must be on, and the
+teacher must flip \emph{Grades announced} for the class. This two-step gate lets
+a teacher finish manual grading, sanity-check the distribution, and then release
+every student's result together. Once released, the student's \emph{Results} area
+(\cref{fig:sc-review}) lists their attempts; opening one reveals the per-question
+result, the teacher's written feedback, and — for coding questions — the
+outcomes of the sample tests only, keeping the hidden tests confidential for
+reuse in future exams.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{F9.25_student-review.png}
+  \caption{The student's review screen: per-question results and teacher
+  feedback.}
+  \label{fig:sc-review}
+\end{figure}
+
+\section{Notifications, Profile, and Settings}
+
+Beyond the exam pipeline, three supporting surfaces are shared by both roles.
+
+\paragraph{Notifications.} A bell icon in the top bar opens a popover of recent
+notifications, and a dedicated notifications page lists the full history. Each
+notification carries a deep link to the thing it concerns — a new assignment, a
+posted announcement, an imminent exam, or the ``Exam Graded'' event that fires
+once a student's whole attempt has finished grading. Exam reminders are also
+delivered by email: the in-process scheduler sweeps for published exams and
+sends both an in-app and an email reminder roughly an hour before an exam
+starts, and a second email as it begins, honouring each user's notification
+preferences.
+
+\paragraph{Profile.} The profile page lets a user edit their display name, a
+short biography, and an avatar image.
+
+\paragraph{Settings.} The settings page governs how the platform contacts the
+user. Separate toggles control in-app versus email notifications for each
+category — announcements, results, and the exam-reminder emails that the
+scheduler respects. Teachers additionally see per-account defaults, such as the
+default passing threshold applied to new exams and whether new exams start as
+drafts. This page is also where a user can permanently delete their account,
+which cascades through their owned or enrolled data in a single transaction.
+
+\section{Summary}
+
+APEX presents two coherent, role-shaped paths through one shared data model. The
+teacher path runs \emph{create class $\rightarrow$ build mixed-format exam
+$\rightarrow$ assign and publish $\rightarrow$ grade $\rightarrow$ announce}; the
+student path runs \emph{join by code $\rightarrow$ take timed exam in Monaco
+$\rightarrow$ submit $\rightarrow$ review}. The screenshots in this chapter are
+the load-bearing user-facing artefacts of the project, and together they show
+that the architecture described in the preceding chapters resolves, at the
+surface, into a small number of focused screens that a working teacher and a
+working student can operate without training.

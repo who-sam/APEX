@@ -1,0 +1,115 @@
+\begin{figure}[htbp]\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  entity/.style={draw=apexblue!85, fill=apexlight, rounded corners=1.5pt,
+    rectangle split, rectangle split parts=2, rectangle split part align=left,
+    align=left, inner sep=2.6pt, text width=25mm,
+    rectangle split part fill={apexblue!14,apexlight}},
+  jtable/.style={draw=apexgreen!70!black, fill=apexgreen!8, rounded corners=1.5pt,
+    rectangle split, rectangle split parts=2, rectangle split part align=left,
+    align=left, inner sep=2.6pt, text width=25mm,
+    rectangle split part fill={apexgreen!22,apexgreen!7}},
+  uxnote/.style={draw=apexamber, fill=apexamber!14, rounded corners=1pt,
+    font=\tiny, inner sep=2pt, align=left, text width=27mm},
+  card/.style={font=\tiny\bfseries, text=apexblue!75!black, fill=white,
+    inner sep=0.8pt},
+  rel/.style={-{Latex[length=1.8mm]}, draw=apexgrey, semithick},
+  jrel/.style={-{Latex[length=1.8mm]}, draw=apexgreen!60!black, semithick},
+  opt/.style={-{Latex[length=1.8mm]}, draw=apexamber!85!black, semithick, dashed},
+]
+
+% ---- Entities: User cluster (left) ----
+\node[entity] (usr)  at (0,2.6)
+  {\textbf{User}\nodepart{two}\underline{id} PK\\ email (U)\\ role\\ password\_hash};
+\node[entity] (prof) at (-3.6,5.0)
+  {\textbf{UserProfile}\nodepart{two}\underline{id} PK\\ user\_id (U)\\ bio, avatar\_url\\ notify\_*};
+\node[entity] (notf) at (-3.6,2.6)
+  {\textbf{Notification}\nodepart{two}\underline{id} PK\\ user\_id (FK)\\ type, title\\ read};
+\node[entity] (prst) at (-3.6,0.2)
+  {\textbf{PasswordResetToken}\nodepart{two}\underline{id} PK\\ user\_id (FK)\\ token\_hash (U)\\ expires\_at};
+
+% ---- Classes / enrolment ----
+\node[entity] (cls)  at (3.9,5.2)
+  {\textbf{Class}\nodepart{two}\underline{id} PK\\ teacher\_id (FK)\\ invite\_code (U)\\ passing\_threshold};
+\node[jtable] (cmem) at (3.9,2.6)
+  {\textbf{ClassMember}\nodepart{two}class\_id (FK)\\ user\_id (FK)\\ joined\_at};
+\node[entity] (fold) at (3.9,-1.4)
+  {\textbf{Folder}\nodepart{two}\underline{id} PK\\ teacher\_id (FK)\\ name};
+
+% ---- Exams ----
+\node[entity] (ann)  at (7.8,7.4)
+  {\textbf{Announcement}\nodepart{two}\underline{id} PK\\ class\_id (FK)\\ teacher\_id (FK)\\ title, body};
+\node[entity] (exam) at (7.8,5.2)
+  {\textbf{Exam}\nodepart{two}\underline{id} PK\\ teacher\_id (FK)\\ title\\ is\_draft, start\_time};
+\node[jtable] (exc)  at (7.8,2.9)
+  {\textbf{ExamClass}\nodepart{two}exam\_id (FK)\\ class\_id (FK)};
+\node[jtable] (att)  at (7.8,0.2)
+  {\textbf{ExamAttempt}\nodepart{two}\underline{id} PK\\ user\_id (FK)\\ exam\_id (FK)\\ score, status};
+
+% ---- Problems / submissions ----
+\node[entity] (prob) at (11.7,5.2)
+  {\textbf{Problem}\nodepart{two}\underline{id} PK\\ exam\_id (FK?)\\ folder\_id (FK?)\\ type, points};
+\node[entity] (subm) at (11.7,0.2)
+  {\textbf{Submission}\nodepart{two}\underline{id} PK\\ exam\_attempt\_id (FK?)\\ problem\_id (FK)\\ status, score};
+
+% ---- Test cases / results ----
+\node[entity] (tc)   at (15.6,5.2)
+  {\textbf{TestCase}\nodepart{two}\underline{id} PK\\ problem\_id (FK)\\ input, expected\\ is\_sample};
+\node[entity] (tr)   at (15.6,0.2)
+  {\textbf{TestResult}\nodepart{two}\underline{id} PK\\ submission\_id (FK)\\ test\_case\_id (FK)\\ passed};
+
+% ---- Relationships (cardinalities: 1 near parent, * near child) ----
+\draw[rel] (usr) -- node[card,near start]{1} node[card,near end]{1} (prof);
+\draw[rel] (usr) -- node[card,near start]{1} node[card,near end]{*} (notf);
+\draw[rel] (usr) -- node[card,near start]{1} node[card,near end]{*} (prst);
+
+\draw[rel] (usr) -- node[card,pos=0.12]{1} node[card,pos=0.9]{*} (cls);
+\draw[jrel] (usr) -- node[card,pos=0.12]{1} node[card,pos=0.9]{*} (cmem);
+\draw[jrel] (cls) -- node[card,near start]{1} node[card,near end]{*} (cmem);
+
+\draw[rel] (usr.north east) to[out=25,in=200] node[card,pos=0.1]{1} node[card,pos=0.9]{*} (exam.west);
+\draw[jrel] (exam) -- node[card,near start]{1} node[card,near end]{*} (exc);
+\draw[jrel] (cls) -- node[card,pos=0.15]{1} node[card,pos=0.92]{*} (exc);
+
+\draw[rel] (cls.north) to[out=70,in=180] node[card,pos=0.15]{1} node[card,pos=0.9]{*} (ann.west);
+
+\draw[rel] (usr.south east) to[out=-30,in=205] node[card,pos=0.08]{1} node[card,pos=0.93]{*} (att.west);
+\draw[jrel] (exam) -- node[card,near start]{1} node[card,near end]{*} (att);
+
+\draw[rel] (usr.south) to[out=-70,in=180] node[card,pos=0.12]{1} node[card,pos=0.9]{*} (fold.west);
+\draw[rel] (exam) -- node[card,near start]{1} node[card,near end]{*} (prob);
+\draw[opt]  (fold.east) to[out=-8,in=250] node[card,pos=0.08]{1} node[card,pos=0.95]{*} (prob.south west);
+
+\draw[rel] (prob) -- node[card,near start]{1} node[card,near end]{*} (tc);
+
+\draw[rel] (att) -- node[card,near start]{1} node[card,near end]{*} (subm);
+\draw[rel] (prob) -- node[card,near start]{1} node[card,near end]{*} (subm);
+
+\draw[rel] (subm) -- node[card,near start]{1} node[card,near end]{*} (tr);
+\draw[rel] (tc) -- node[card,near start]{1} node[card,near end]{*} (tr);
+
+% ---- Unique composite-index notes ----
+\node[uxnote,below=2.2mm of cmem] (n1)
+  {\textbf{idx\_class\_user} (UNIQUE)\\ ClassMember(class\_id, user\_id)};
+\node[uxnote,right=2.0mm of exc] (n2)
+  {\textbf{idx\_exam\_class} (UNIQUE)\\ ExamClass(exam\_id, class\_id)};
+\node[uxnote,below=2.2mm of att] (n3)
+  {\textbf{idx\_user\_exam\_attempt} (UNIQUE)\\ ExamAttempt(user\_id, exam\_id)};
+\draw[apexamber,densely dotted] (n1) -- (cmem);
+\draw[apexamber,densely dotted] (n2) -- (exc);
+\draw[apexamber,densely dotted] (n3) -- (att);
+
+% ---- Legend ----
+\node[draw=apexgrey!60, rounded corners=1.5pt, fill=white, align=left,
+      font=\tiny, inner sep=3pt, text width=44mm] at (13.6,7.6)
+  {\textbf{Legend}\\[1pt]
+   \tikz{\draw[rel] (0,0)--(0.5,0);}~1..* relationship \quad
+   \tikz{\draw[jrel] (0,0)--(0.5,0);}~join table\\
+   \tikz{\draw[opt] (0,0)--(0.5,0);}~optional (nullable) FK \quad
+   (U)~unique\quad (PK)~primary key};
+
+\end{tikzpicture}%
+}
+\caption{Entity-relationship diagram of the APEX data model.}\label{fig:er}
+\end{figure}

@@ -1,0 +1,25 @@
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.lof
+*.lot
+*.toc
+*.out
+*.run.xml
+*.synctex.gz
+*.xdv
+*.idx
+*.ilg
+*.ind
+# verification harness scratch
+chk-*.*
+mfput.log
+missfont.log
+FACTS.scratch.md
+# keep the final PDF out of the ignore so it can be committed if desired
+!main.pdf

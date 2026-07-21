@@ -1,0 +1,519 @@
+\chapter{Security}\label{ch:ch08}
+
+Security in APEX was treated as a scheduled engineering activity rather than an
+afterthought. A dedicated review was carried out \emph{before} the system left
+development, and every issue it surfaced was reachable in the deployed code path
+even though none was ever discovered in production. This chapter documents the
+result: the threat model that scopes what APEX defends against, the
+authentication stack, the layered authorization model, the input-handling
+posture, the sandbox boundary for untrusted code, a mapping of the whole system
+onto the OWASP Top~10, and the gaps that remain open on the roadmap.
+
+The guiding principle throughout is \emph{fail closed}: on any error,
+ambiguity, or missing precondition, the system denies the action rather than
+granting it. A missing header, a malformed token, an unknown role, a resource
+the caller does not own, or a critical environment variable left unset all
+resolve to a refusal, never to a silent ``allow.'' This is the single most
+important adjective in the chapter, and it recurs at every layer.
+
+\section{Threat Model}
+\label{sec:threat-model}
+
+APEX is a self-hostable classroom portal whose actors---teachers and students
+of a single institution---are known to one another. This shapes the threat
+model: the realistic adversary is not a nation-state but an insider probing for
+data that is not theirs, hostile content flowing through user-authored fields,
+a forged or stolen bearer token, and untrusted program code submitted for
+grading. \Cref{fig:threat} names the four adversary classes APEX defends
+against and pairs each with the concrete control that mitigates it. Naming the
+four classes is also an act of scoping: physical server theft, denial-of-service
+at the network edge, and supply-chain compromise of third-party dependencies are
+explicitly \emph{out} of scope for a graduation project and are expected to be
+handled by the hosting environment.
+
+\input{figures/tikz/fig14-threat}
+
+The four classes read as follows. The \textbf{unauthenticated network
+attacker} holds no token and can only probe the public surface---the login,
+signup, password-reset, and Google sign-in endpoints, plus the unauthenticated
+\texttt{GET /healthz} liveness probe. The \textbf{authenticated student
+attempting privilege escalation} holds a valid token but tries to act with
+teacher intent, for example by calling a teacher-only route such as
+\texttt{POST /exams}. The \textbf{curious student} holds a valid token and the
+correct role but probes \emph{other} users' resources by guessing object
+identifiers---the classic Insecure Direct Object Reference (IDOR,
+CWE-639~\cite{cwe-639}), which is the thematically central risk for a portal
+whose whole value is keeping one student's work private from another. Finally,
+\textbf{malicious submitted code} treats the grading pipeline as an execution
+primitive: a student's program is, by definition, hostile input, and running it
+carelessly is remote code execution by design.
+
+A fifth concern cuts across the model: the \textbf{operator who misconfigures a
+deploy}. A self-hosting instructor cannot be relied on to set every environment
+variable correctly, so the system must fail closed when a critical variable is
+missing or weak. The trust boundary is drawn at the process edge---the browser
+is untrusted, the server is trusted, and per-resource ownership re-checks happen
+\emph{inside} handlers rather than at the middleware boundary, for reasons
+developed in \cref{sec:authz}.
+
+\section{Authentication}
+\label{sec:authn}
+
+Authentication answers ``who are you?''. APEX proves identity with a signed JSON
+Web Token issued after a successful credential check, and it protects the
+long-lived secrets---passwords and reset tokens---with the appropriate
+one-way primitives.
+
+\subsection{The fail-closed JWT secret}
+\label{sec:jwt-secret}
+
+The signing secret is the linchpin of the entire scheme: anyone who knows it can
+forge a token for any user. APEX therefore refuses to boot without a strong one.
+The configuration loader validates \texttt{JWT\_SECRET} at startup and calls
+\texttt{log.Fatal} (which exits with a non-zero status) if it is absent, is the
+historical placeholder, or is shorter than 32 characters.
+
+\begin{lstlisting}[language=Go,caption={Fail-closed validation of the signing secret at startup (\texttt{internal/config/config.go}).},label={lst:jwtsecret}]
+jwtSecret := os.Getenv("JWT_SECRET")
+if jwtSecret == "" ||
+    jwtSecret == "dev-secret-change-in-prod" ||
+    len(jwtSecret) < 32 {
+    log.Fatal("JWT_SECRET must be set to a strong random value (>=32 chars)")
+}
+\end{lstlisting}
+
+Three foot-guns are rejected: an unset variable, the exact placeholder string
+\texttt{dev-secret-change-in-prod} that once served as a silent default, and any
+value under 32 characters---a deliberately conservative bar for HMAC-SHA-256.
+Because \texttt{log.Fatal} exits non-zero, no process supervisor such as systemd
+or Docker can mask the failure; a deploy with a weak secret stops dead rather
+than limping on insecurely. This is the mitigation for the misconfiguring
+operator, and it embodies the twelve-factor discipline of drawing configuration
+from the environment rather than from source~\cite{twelvefactor}. Secrets never
+enter version control: the repository ships \texttt{.env.example}, never
+\texttt{.env}.
+
+\subsection{Token issuance and verification}
+\label{sec:jwt}
+
+Tokens are HS256 (HMAC with SHA-256), a symmetric scheme in which the same
+secret both signs and verifies---appropriate here because a single server issues
+and validates its own tokens, with no third party needing a public verification
+key~\cite{rfc7519}. On successful signup, login, or Google sign-in the server
+issues a token whose claims are \texttt{\{user\_id, email, role, name, exp\}},
+with \texttt{exp} set 24 hours from issue.
+
+\begin{lstlisting}[language=Go,caption={Token issuance in \texttt{internal/auth/handler.go}.},label={lst:gentoken}]
+func generateToken(user models.User) (string, error) {
+    claims := jwt.MapClaims{
+        "user_id": user.ID,
+        "email":   user.Email,
+        "role":    user.Role,
+        "name":    user.Name,
+        "exp":     time.Now().Add(24 * time.Hour).Unix(),
+    }
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString([]byte(cfg.JWTSecret))
+}
+\end{lstlisting}
+
+The 24-hour \texttt{exp} claim is the only automatic kill-switch for a leaked
+token, since there is no server-side revocation list (a limitation
+revisited in \cref{sec:gaps}). The payload is signed but not encrypted, so no
+secret is placed in it; the claims merely mirror what the verification
+middleware reads back.
+
+Verification runs on every protected request in \texttt{middleware.Auth}. It
+enforces five fail-closed checks in sequence, the most security-critical of
+which is \emph{algorithm pinning}.
+
+\begin{lstlisting}[language=Go,caption={JWT verification middleware with algorithm pinning and safe claim extraction (\texttt{internal/middleware/auth.go}).},label={lst:authmw}]
+tokenStr := strings.TrimPrefix(header, "Bearer ")
+token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+    if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+        return nil, jwt.ErrSignatureInvalid
+    }
+    return []byte(secret), nil
+})
+if err != nil || !token.Valid {
+    c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+    return
+}
+
+claims, ok := token.Claims.(jwt.MapClaims)
+if !ok { /* 401 */ }
+
+userIDFloat, ok := claims["user_id"].(float64)
+if !ok { /* 401: invalid user_id in token */ }
+\end{lstlisting}
+
+The checks are: (1) the \texttt{Authorization} header must be present and begin
+with \texttt{Bearer\ }; (2) the token's declared signing method must be an
+\texttt{*jwt.SigningMethodHMAC}---if it is not, the key callback returns
+\texttt{jwt.ErrSignatureInvalid} and the token is rejected, which closes the
+well-known \texttt{alg=none} forgery and the RS256$\rightarrow$HS256 confusion
+attack~\cite{owasp-jwt}; (3) \texttt{jwt.Parse} verifies the signature against
+the secret and validates \texttt{exp} (expiry checking is built into the v5
+parser); (4) the claims must decode to a \texttt{jwt.MapClaims}; and (5) each
+claim is extracted with a comma-ok type assertion, so a malformed claim yields a
+clean 401 rather than a panic in the request goroutine. Because JSON numbers
+decode to \texttt{float64} in Go, \texttt{user\_id} is read as a
+\texttt{float64} and converted to \texttt{uint}. Only after all five pass is the
+verified identity stashed on the Gin context with \texttt{c.Set}. A request that
+fails this check never reaches a handler; this is Gate~1 of the authorization
+model.
+
+\subsection{Password storage with bcrypt}
+\label{sec:bcrypt}
+
+Passwords are never stored in plaintext and never returned to clients---the
+\texttt{User.PasswordHash} field carries the struct tag \texttt{json:"-"}, so it
+is never serialized into any response. Hashing uses bcrypt at
+\texttt{bcrypt.DefaultCost}, which is cost~10, meaning $2^{10}=1024$ internal
+iterations per hash~\cite{provos1999bcrypt}. bcrypt is deliberately slow and
+incorporates a per-hash salt automatically, so two users who chose the same
+password receive different stored hashes, defeating precomputed rainbow-table
+attacks. The same call hashes on signup and on password reset, and login
+verifies with \texttt{bcrypt.CompareHashAndPassword}, which is constant-time
+within the bcrypt scheme and therefore does not leak how many characters matched
+through timing.
+
+A subtle but deliberate defense is \emph{account-enumeration resistance}: the
+login handler returns the identical message---\texttt{"invalid email or
+password"}---whether the email is unknown, the stored hash is empty (a
+Google-only account with no password set), or the password is simply wrong. An
+attacker cannot distinguish ``no such account'' from ``wrong password,'' so the
+error text cannot be used to harvest valid email addresses.
+
+\subsection{Google sign-in}
+\label{sec:google}
+
+APEX supports federated sign-in through Google Identity Services~\cite{gids},
+which layers OpenID Connect~\cite{oidc-core} over OAuth~2.0~\cite{rfc6749}. The
+frontend obtains an ID token from Google and POSTs it to \texttt{/auth/google}
+as \texttt{\{id\_token, role?\}}. The backend verifies the token server-side
+with \texttt{google.golang.org/api/idtoken} against \texttt{GOOGLE\_CLIENT\_ID}
+(returning 503 if the client ID is unconfigured, so the feature fails closed
+when disabled) and requires both \texttt{email\_verified} to be true and a
+non-empty subject before trusting any claim. Account resolution then proceeds in
+three steps: match by \texttt{google\_id}; otherwise match by email and
+\emph{link} the existing local account by stamping its \texttt{google\_id};
+otherwise create a new account. When the role is omitted for a brand-new
+account, the server returns \texttt{\{needs\_role: true, \dots\}} and the client
+re-submits with the chosen role, so a role is never silently defaulted. A
+Google-provisioned account has an empty \texttt{PasswordHash}, which is exactly
+why password login on such an account returns the same generic failure rather
+than an internal error.
+
+\subsection{Password reset}
+\label{sec:reset}
+
+The password-reset flow is a self-contained story in fail-closed design, with
+six properties worth naming explicitly. First, the raw token is 32 bytes read
+from \texttt{crypto/rand}---a cryptographically secure source---and hex-encoded
+to 64 characters, making it unguessable. Second, the database never sees the raw
+token: only its SHA-256 hash is stored in the \texttt{token\_hash} column (itself
+marked \texttt{json:"-"}). Plain SHA-256 is sufficient here, unlike for
+passwords, precisely because the token is already 256 bits of uniform
+randomness---there is nothing to dictionary-attack---whereas a human-chosen
+password needs bcrypt's deliberate slowness. Third, the token expires one hour
+after issue. Fourth, requesting a new link invalidates all prior unused tokens
+for that user, so only the newest link works. Fifth, a token is single-use: its
+\texttt{used\_at} timestamp is stamped on success and checked on every attempt,
+so it cannot be replayed even inside its one-hour window. Sixth, the
+\texttt{ForgotPassword} endpoint always returns the same 200 response---``If an
+account exists for that email, a reset link has been sent''---regardless of
+whether the email exists, extending the enumeration resistance of the login path
+to the reset path. If \texttt{SMTP\_HOST} is unset, the reset link is logged to
+stdout instead of emailed, which keeps local development functional without a
+mail server.
+
+\section{Authorization: The Three-Gate Model}
+\label{sec:authz}
+
+Authorization answers ``are you allowed to do \emph{this}?''. APEX enforces it
+with three independent gates, each of which fails closed, illustrated in
+\cref{fig:authz}. A request must clear all three before a handler mutates any
+state.
+
+\input{figures/tikz/fig05-authz}
+
+\textbf{Gate~1---Authentication.} \texttt{middleware.Auth}
+(\cref{lst:authmw}) validates the HS256 token and sets \texttt{user\_id},
+\texttt{email}, and \texttt{role} on the context. A missing or invalid token is
+a 401, and the request never reaches a handler. This gate establishes
+\emph{identity} only.
+
+\textbf{Gate~2---Role.} \texttt{middleware.RequireRole(roles\ldots)} reads the
+role from context and admits the request only if it matches one of the allowed
+roles; a missing role is a 401 and a wrong role is a 403 ``insufficient
+permissions.'' Feature subgroups apply it as an allow-list---\texttt{/exams} is
+teacher-only, \texttt{/student/*} is student-only, and
+\texttt{PUT /submissions/:id/grade} is teacher-only. APEX has exactly two
+roles, \texttt{teacher} and \texttt{student}; there is no admin role. A student
+calling a teacher-only route is stopped here at Gate~2.
+
+\textbf{Gate~3---Resource ownership.} Gates 1 and 2 know \emph{that} the caller
+is a real teacher, but neither knows \emph{which} exam this is or \emph{who owns
+it}. Only the handler---which has just loaded the row---knows. Gate~3 is
+therefore an in-handler check that the authenticated user owns or may access the
+specific resource, and it is the gate that cannot be removed. It is also the
+direct mitigation for the curious-student adversary and the fix for the
+IDOR finding (CWE-639~\cite{cwe-639}) described in \cref{sec:findings}.
+
+\begin{lstlisting}[language=Go,caption={Gate~3 ownership check on the run-solution endpoint: teachers must own the problem; students must be enrolled in an assigned class (\texttt{internal/submission/handler.go}).},label={lst:gate3}]
+var problem models.Problem
+if err := database.DB.Select("id", "exam_id", "teacher_id").
+    First(&problem, req.ProblemID).Error; err != nil {
+    c.JSON(http.StatusNotFound, gin.H{"error": "problem not found"})
+    return
+}
+userID := c.GetUint("user_id")
+role, _ := c.Get("role")
+if role == "teacher" {
+    if problem.TeacherID != userID {
+        c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+        return
+    }
+} else {
+    if problem.ExamID == nil { /* 403 */ }
+    var assigned int64
+    database.DB.Model(&models.ExamClass{}).
+        Joins("JOIN class_members ON class_members.class_id = exam_classes.class_id").
+        Where("exam_classes.exam_id = ? AND class_members.user_id = ?",
+            *problem.ExamID, userID).
+        Count(&assigned)
+    if assigned == 0 {
+        c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+        return
+    }
+}
+\end{lstlisting}
+
+The problem is loaded by the request-supplied identifier, then the caller's own
+identity---not any request field---drives the decision. A teacher may only run
+solutions against problems whose \texttt{teacher\_id} equals their own; a student
+may only reach a problem that belongs to an exam assigned to a class in which
+they are enrolled, verified by a join across \texttt{exam\_classes} and
+\texttt{class\_members}. Zero matches is a 403. The same shape recurs across the
+codebase: \texttt{GradeSubmission} checks the parent exam's \texttt{teacher\_id};
+\texttt{GetSubmission} lets a teacher read only submissions on exams they own and
+a student read only their own submission; \texttt{AssignExam} validates that
+every supplied \texttt{class\_id} belongs to the calling teacher; and
+\texttt{DeleteAccount} scopes every cascade delete by \texttt{user\_id} or
+\texttt{teacher\_id} inside a single transaction that rolls back on any failure.
+
+\subsection{Why ownership checks are not centralized}
+
+A natural instinct is to factor every ownership check into one generic
+\texttt{RequireOwnership} middleware. APEX deliberately does \emph{not}, because
+the rule genuinely differs per endpoint: an exam handler checks against
+\texttt{exam.teacher\_id}, a submission handler against the parent exam's
+\texttt{teacher\_id}, and an announcement handler against
+\texttt{class.teacher\_id} or class membership. Hiding these behind a generic
+helper makes the security-relevant rule less visible at the call site, which is
+the opposite of what such a check wants. The chosen trade-off is readable
+repetition over an abstraction that would be harder to audit---repetition one
+can read beats abstraction one cannot verify.
+
+\section{Input Handling}
+\label{sec:input}
+
+\subsection{SQL injection}
+
+Every database access goes through GORM's parameterized helpers~\cite{gorm},
+which bind values as query parameters rather than interpolating them into SQL
+text---structurally closing SQL injection (CWE-89~\cite{cwe-89}). The clause
+\texttt{Where("email = ?", req.Email)} sends \texttt{req.Email} as a bound
+parameter, so a payload such as \texttt{'~OR~1=1--} is treated as a literal
+string, never as SQL. The only raw \texttt{db.Exec} calls in the codebase live
+in \texttt{internal/database/migrations.go}, where the SQL is static and
+developer-authored, with no user input reaching it.
+
+\subsection{Cross-site scripting}
+
+The API returns JSON only---responses are produced by \texttt{c.JSON}, and there
+is no path that assembles an HTML document server-side, so reflected XSS through
+the API has no vector. On the client, React escapes text by default, and APEX
+never applies \texttt{dangerouslySetInnerHTML} to user-authored content such as
+announcement bodies, problem descriptions, MCQ option text, or exam titles. The
+one place raw markup could once execute was the Markdown renderer: the
+\texttt{rehype-raw} plugin re-parsed inline HTML inside a Markdown source,
+turning a problem description into a stored-XSS vector (CWE-79~\cite{cwe-79}).
+That plugin was removed; Markdown still renders through \texttt{react-markdown}
+with \texttt{remark-gfm} for tables and task lists, but raw HTML is now stripped
+at parse time. The trade-off---teachers can no longer hand-write raw HTML in a
+description---is acceptable, as Markdown is expressive enough for the intended
+content.
+
+\subsection{CSRF and the localStorage trade-off}
+
+Cross-Site Request Forgery (CWE-352~\cite{cwe-352}) exploits the browser's
+automatic attachment of ambient credentials---chiefly cookies---to
+cross-origin requests. APEX carries no such ambient credential: the JWT is stored
+in \texttt{localStorage} under the key \texttt{kernel-token} and is attached
+\emph{explicitly} by application code as an \texttt{Authorization:\ Bearer}
+header on each request. A cross-site form or image cannot read
+\texttt{localStorage} or set an \texttt{Authorization} header, so there is no
+classic CSRF surface, and CORS (with \texttt{AllowCredentials:\ false}) further
+signals that no credentialed cross-origin access is expected.
+
+This choice is a deliberate trade-off rather than a free win. Storing the token in
+\texttt{localStorage} trades CSRF resistance for XSS exposure: a successful XSS
+would let injected script read \texttt{localStorage} and exfiltrate the token,
+whereas an \texttt{httpOnly} cookie would be unreadable to script but would
+reintroduce CSRF concerns and demand anti-CSRF tokens plus same-site controls.
+The design was chosen for a simpler self-hosted deployment---a bearer header is
+trivial to reason about behind a same-origin proxy---and the residual XSS risk is
+narrowed by the \texttt{rehype-raw} removal above, by the absence of
+\texttt{dangerouslySetInnerHTML}, and by the 24-hour token expiry that bounds the
+blast radius of any stolen token. Hardening the design with \texttt{httpOnly},
+same-site cookies and a refresh-token model is named explicitly in
+\cref{sec:gaps}.
+
+\section{Sandbox Isolation for Untrusted Code}
+\label{sec:sandbox}
+
+Student submissions are arbitrary programs in one of six languages---Python,
+JavaScript, TypeScript, Java, C, and C++---and are, by definition, hostile
+input. Executing them in the APEX process would be remote code execution by
+design: a submission could delete files, read other students' data, open network
+connections, spin an infinite loop, or exhaust memory. APEX avoids this entirely
+by never executing student code itself. The \texttt{internal/judge0} package is
+purely an HTTP client: it marshals \texttt{\{language\_id, source\_code, stdin\}}
+to JSON, POSTs it to Judge0~\cite{judge0}, and reads a JSON verdict back, with a
+30-second client timeout. There is no \texttt{os/exec}, no \texttt{eval}, and no
+shell anywhere in the package; an unsupported language short-circuits to a
+sentinel status and never reaches Judge0 at all.
+
+Judge0 in turn runs each submission inside \texttt{isolate}~\cite{isolate}, a
+sandbox built on Linux namespaces and cgroups---the same technology used to grade
+the International Olympiad in Informatics. Each run receives a throwaway
+filesystem that cannot read the host, no network access, a hard CPU-time limit,
+and a memory cap. APEX passes the per-problem \texttt{time\_limit\_ms} (default
+2000\,ms) and \texttt{memory\_limit\_kb} (default 262144\,KB, i.e.\ 256\,MB) as
+those bounds, so an infinite loop becomes a ``time limit exceeded'' verdict
+rather than a hung server, and a memory bomb is killed rather than allowed to
+crash the host. The most security-sensitive component in the system is thus one
+that APEX delegates entirely rather than builds---the safest code to run is code
+one does not run. The operational cost of this delegation is a production
+dependency on a self-hosted Judge0, since the default public CE instance at
+\texttt{https://ce.judge0.com} is rate-limited and unsuitable for real use.
+
+\section{Findings and OWASP Mapping}
+\label{sec:findings}
+
+The scheduled pre-ship review found four issues, all reachable in the deployed
+code path and all fixed in a single commit before the system left development.
+\Cref{tab:findings} summarizes them. The unifying observation is that impact is
+not proportional to line count: each fix is a few lines, and each closes a real,
+reachable exploit path.
+
+\begin{table}[htbp]
+\centering
+\caption{Security findings from the pre-ship review, with severity, weakness
+class, and fix.}
+\label{tab:findings}
+\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\toprule
+\textbf{ID} & \textbf{Severity} & \textbf{Class} & \textbf{Finding and fix} \\
+\midrule
+F1 & HIGH & IDOR (CWE-639) & \texttt{POST /submissions/run} trusted the
+request-supplied \texttt{problem\_id} and leaked any problem's sample tests.
+Fixed by the Gate~3 ownership check (\cref{lst:gate3}). \\
+\addlinespace
+F2 & HIGH & Stored XSS (CWE-79) & Markdown rendered with \texttt{rehype-raw}
+executed embedded raw HTML. Fixed by removing the plugin so raw HTML is stripped
+at parse time. \\
+\addlinespace
+F3 & MED & Weak secret & \texttt{config.Load} defaulted \texttt{JWT\_SECRET} to a
+publicly-known placeholder. Fixed by the fail-closed validator
+(\cref{lst:jwtsecret}). \\
+\addlinespace
+F4 & MED & HTML injection & Notification-email bodies interpolated unescaped
+user fields. Fixed by passing them through \texttt{html.EscapeString}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Mapped onto the OWASP Top~10~\cite{owasp-top10} and cross-checked against the
+Application Security Verification Standard~\cite{owasp-asvs}, the posture is
+summarized in \cref{tab:owasp}. The two categories that dominate a
+multi-tenant classroom portal---broken access control and injection---are the
+ones the design invests most heavily in.
+
+\begin{table}[htbp]
+\centering
+\caption{APEX posture against the OWASP Top~10 categories.}
+\label{tab:owasp}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Category} & \textbf{APEX posture} \\
+\midrule
+A01 Broken Access Control & Three-gate model; Gate~3 per-resource ownership
+checks in every handler (fixed F1/IDOR). \\
+\addlinespace
+A02 Cryptographic Failures & bcrypt cost~10 for passwords; SHA-256-hashed,
+single-use reset tokens; HS256 tokens signed with a validated $\geq$32-char
+secret. \\
+\addlinespace
+A03 Injection & GORM parameterized queries (SQLi); JSON-only API and raw-HTML
+stripping (XSS, fixed F2). \\
+\addlinespace
+A05 Security Misconfiguration & Fail-closed \texttt{JWT\_SECRET} validation
+(fixed F3); secrets kept out of source control. \\
+\addlinespace
+A07 Identification \& Auth Failures & Algorithm-pinned JWT verification (closes
+\texttt{alg=none}); enumeration-resistant login and reset. \\
+\addlinespace
+A08 Software \& Data Integrity & \texttt{html.EscapeString} on email bodies
+(fixed F4); transactional, idempotent destructive operations. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Categories such as A04 (Insecure Design) and A09 (Logging Failures) map onto the
+open gaps of the next section rather than to closed controls.
+
+\section{Known Limitations}
+\label{sec:gaps}
+
+An honest report names what it has not closed. Four gaps are on the roadmap, each
+stated as risk, current mitigation, and intended fix.
+
+\textbf{No rate limiting on the auth endpoints.} Login, signup,
+password-reset requests, and Google sign-in are not rate-limited, so a
+determined adversary could attempt credential stuffing with bcrypt's cost~10 as
+the only brake on each guess. The enumeration-resistant identical responses make
+targeting harder, but the correct fix is a per-IP and per-account rate limit at
+the auth endpoints---the most cost-effective next mitigation---or fronting the
+API with a WAF in production.
+
+\textbf{Six-character password minimum.} The only complexity rule is
+\texttt{len(password)\ >=\ 6}, enforced at both signup and reset, with no
+character-class or breached-password check. This falls short of contemporary
+guidance, which favors longer minimums and screening against known-breached
+secrets rather than composition rules~\cite{nist80063b}, and it compounds the
+rate-limiting gap. The minimum should be raised before the instance is exposed to
+the public internet.
+
+\textbf{JWT in \texttt{localStorage} with no revocation.} As discussed in
+\cref{sec:input}, a leaked token remains valid until its \texttt{exp} claim
+because there is no server-side revocation list, and \texttt{localStorage}
+storage means a successful XSS could lift the token. The 24-hour expiry bounds
+the blast radius today; the roadmap fix is a refresh-token model with a
+server-side revocation table and a move to \texttt{httpOnly}, same-site cookies.
+
+\textbf{Fire-and-forget grading.} Each submission is graded in a bare
+goroutine---\texttt{go judge0.Grade(\dots)}---with no worker queue and no retry.
+If the process crashes mid-grade, the submission is left stuck in \texttt{running}
+forever, and because attempt finalization blocks while any sibling submission is
+pending or running, the whole attempt never finalizes. This is an
+availability and data-integrity gap rather than a confidentiality breach. The
+aggregator is idempotent, so the fix is a durable work queue with a bounded
+worker pool and a recovery sweep that re-grades anything left in \texttt{running}.
+
+Beyond these, APEX keeps no audit log of logins and resets (fix: an append-only
+audit table), performs no plagiarism detection, and emits no proctoring signals.
+Each is a bounded, prioritized roadmap item with a known remedy---a documented
+gap is preferable to a hidden one.

@@ -1,0 +1,35 @@
+\begin{figure}[htbp]\centering
+\resizebox{\textwidth}{!}{%
+\begin{ganttchart}[
+  hgrid,
+  vgrid,
+  x unit=1.35cm,
+  y unit title=0.55cm,
+  y unit chart=0.52cm,
+  bar height=0.6,
+  title height=1,
+  canvas/.append style={fill=apexlight, draw=apexgrey, line width=0.4pt},
+  bar/.append style={fill=apexblue, draw=apexblue!60!black, line width=0.4pt, rounded corners=1pt},
+  bar label font=\scriptsize,
+  title label font=\scriptsize\bfseries,
+  title/.append style={fill=apexblue!12, draw=apexgrey},
+  bar incomplete/.append style={fill=apexcyan},
+  group label font=\scriptsize\bfseries,
+  group/.append style={fill=apexgrey, draw=apexgrey}
+]{1}{8}
+  \gantttitle{2025}{4}
+  \gantttitle{2026}{4} \\
+  \gantttitlelist{9,10,11,12,1,2,3,4}{1} \\
+  \ganttbar[bar/.append style={fill=apexcyan,draw=apexcyan!60!black}]{Requirements \& research}{1}{2} \\
+  \ganttbar[bar/.append style={fill=apexcyan,draw=apexcyan!60!black}]{System \& data design}{2}{3} \\
+  \ganttbar{Backend core (auth, models, routes)}{3}{5} \\
+  \ganttbar{Grading engine (Judge0/isolate)}{4}{6} \\
+  \ganttbar{Frontend (SPA, Monaco, exam flows)}{4}{7} \\
+  \ganttbar[bar/.append style={fill=apexamber,draw=apexamber!60!black}]{Security review \& hardening}{6}{7} \\
+  \ganttbar[bar/.append style={fill=apexgreen,draw=apexgreen!60!black}]{Testing \& CI}{6}{7} \\
+  \ganttbar[bar/.append style={fill=apexgreen,draw=apexgreen!60!black}]{Deployment (Docker/compose)}{7}{7} \\
+  \ganttbar[bar/.append style={fill=apexgrey,draw=apexgrey!60!black}]{Thesis writing}{5}{8}
+\end{ganttchart}%
+}
+\caption{Graduation-project timeline (Gantt).}\label{fig:gantt}
+\end{figure}

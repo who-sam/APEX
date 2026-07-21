@@ -1,0 +1,188 @@
+\chapter{API Reference}\label{ch:ap-a}
+
+This appendix enumerates every HTTP route registered by the APEX backend. The tables are transcribed directly from the thirteen \texttt{RegisterRoutes} functions wired up in \texttt{main.go} (packages \texttt{auth}, \texttt{class}, \texttt{student}, \texttt{exam}, \texttt{problem}, \texttt{testcase}, \texttt{submission}, \texttt{execute}, \texttt{notification}, \texttt{profile}, \texttt{teacher}, \texttt{announcement}, \texttt{folder}); the \texttt{student} module additionally mounts three handlers from the \texttt{exam} package. Endpoints are grouped by the access level enforced through the layered middleware described in \cref{fig:authz}.
+
+\section{Access model}
+
+Every route except the liveness probe is mounted under one of two Gin groups declared in \texttt{main.go}:
+
+\begin{itemize}[nosep]
+  \item \texttt{public := r.Group("/api")} --- no authentication; open to anonymous callers.
+  \item \texttt{protected := r.Group("/api")} with \texttt{middleware.Auth(cfg.JWTSecret)} --- requires a valid \texttt{Authorization: Bearer <jwt>} header (HS256, 24-hour expiry). A failed or missing token yields \textbf{401}.
+\end{itemize}
+
+Within the protected group, feature subgroups add \texttt{middleware.RequireRole("teacher")} or \texttt{("student")} as a second gate (\textbf{403} on mismatch). A third gate --- resource ownership --- is enforced inside the handlers themselves and is not visible in the route table. The base URL in development is \texttt{http://localhost:8080/api}.
+
+Four protected modules (\texttt{notification}, \texttt{profile}, \texttt{announcement}, \texttt{folder}) register their routes without an explicit \texttt{RequireRole} call. For \texttt{notification} and \texttt{profile} this is deliberate --- both roles own notifications and a profile. For \texttt{announcement} and \texttt{folder} the operations are teacher-facing and rely on handler-level ownership checks (\texttt{teacher\_id} scoping) rather than a role gate; they are listed under the teacher section below for clarity, with that caveat noted.
+
+\section{Liveness}
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.6cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  GET & \texttt{/healthz} & Liveness probe; returns \texttt{\{"status":"ok"\}}. Registered outside the \texttt{/api} groups, so it takes no authentication. The container \texttt{HEALTHCHECK} self-probes this route via the \texttt{-{}-healthcheck} flag. \\
+  \bottomrule
+\end{xltabular}
+
+\section{Public}
+
+No authentication. All paths live under the \texttt{public.Group("/auth")} subgroup registered by the \texttt{auth} module.
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.6cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  POST & \texttt{/api/auth/signup}          & Create a user (email, password $\geq$6 chars, name, role); returns a JWT. \\
+  POST & \texttt{/api/auth/login}           & Email + password login; returns a JWT or the generic ``invalid email or password''. \\
+  POST & \texttt{/api/auth/forgot-password} & Request a password reset. Always \textbf{200} (no email enumeration); logs/sends a single-use token with a 1-hour expiry. \\
+  POST & \texttt{/api/auth/reset-password}  & Consume the reset token and set a new password. \\
+  POST & \texttt{/api/auth/google}          & Exchange a Google Identity Services credential (\texttt{id\_token}, optional \texttt{role}) for a JWT; \textbf{503} if \texttt{GOOGLE\_CLIENT\_ID} is unset. \\
+  \bottomrule
+\end{xltabular}
+
+\section{Protected: shared}
+
+Any authenticated user (either role). Auth required; no role gate.
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.6cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  DELETE & \texttt{/api/auth/account}               & Permanently delete the calling user's account via a role-aware cascade in one DB transaction. \\
+  GET    & \texttt{/api/profile}                    & Read the calling user's profile. \\
+  PUT    & \texttt{/api/profile}                    & Update profile fields (bio, avatar, notification toggles, teacher defaults). \\
+  PUT    & \texttt{/api/profile/password}           & Change the calling user's password. \\
+  GET    & \texttt{/api/notifications}              & List the caller's notifications. \\
+  PUT    & \texttt{/api/notifications/:id/read}     & Mark one notification read. \\
+  PUT    & \texttt{/api/notifications/read-all}     & Mark all of the caller's notifications read. \\
+  GET    & \texttt{/api/notifications/unread-count} & Unread count for the notification bell. \\
+  POST   & \texttt{/api/submissions/run}            & Run a candidate solution against the problem's sample test cases; no \texttt{Submission} is persisted. \\
+  GET    & \texttt{/api/submissions/:id}            & Read a submission; ownership re-checked (student owner or exam-owning teacher). \\
+  POST   & \texttt{/api/execute}                    & Standalone code execution (playground); no persistence. \\
+  \bottomrule
+\end{xltabular}
+
+The two run/execute endpoints and the submission read are the shared surface between the coding UI paths for both roles.
+
+\section{Protected: teacher}
+
+Auth + \texttt{RequireRole("teacher")}, unless noted. Handlers additionally enforce ownership (e.g. a teacher may only touch their own classes, exams, and problems).
+
+\subsection{Classes}
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.7cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  POST   & \texttt{/api/classes}                        & Create a class; generates an 8-character invite code. \\
+  GET    & \texttt{/api/classes}                        & List the teacher's classes. \\
+  GET    & \texttt{/api/classes/:id}                    & Read one class with members. \\
+  PUT    & \texttt{/api/classes/:id}                    & Update class fields (name, section, cover, thresholds). \\
+  DELETE & \texttt{/api/classes/:id}                    & Delete a class (cascades enrollment). \\
+  GET    & \texttt{/api/classes/:id/stats}              & Aggregate class statistics. \\
+  DELETE & \texttt{/api/classes/:id/members/:userId}    & Remove a student from the class. \\
+  \bottomrule
+\end{xltabular}
+
+\subsection{Exams}
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.7cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  POST   & \texttt{/api/exams}              & Create an exam (defaults to draft). \\
+  GET    & \texttt{/api/exams}              & List the teacher's exams. \\
+  GET    & \texttt{/api/exams/:id}          & Read one exam with problems and class assignments. \\
+  PUT    & \texttt{/api/exams/:id}          & Update an exam; destructive edits may trigger the \texttt{reset\_at} wipe. \\
+  DELETE & \texttt{/api/exams/:id}          & Delete an exam (cascades problems and attempts). \\
+  POST   & \texttt{/api/exams/:id/assign}   & Assign the exam to one or more classes; validates every \texttt{class\_id} belongs to the caller. \\
+  POST   & \texttt{/api/exams/:id/close}    & Close the exam window immediately. \\
+  POST   & \texttt{/api/exams/:id/reopen}   & Reopen a closed exam. \\
+  GET    & \texttt{/api/exams/:id/results}  & Per-student results for the exam. \\
+  \bottomrule
+\end{xltabular}
+
+\subsection{Problems and question bank}
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.7cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  POST   & \texttt{/api/exams/:id/problems} & Add a problem to an exam. \\
+  GET    & \texttt{/api/problems}           & List all of the teacher's problems (exam-bound and bank). \\
+  POST   & \texttt{/api/problems/bank}      & Create a standalone question-bank problem (no exam). \\
+  GET    & \texttt{/api/problems/:id}       & Read one problem. \\
+  PUT    & \texttt{/api/problems/:id}       & Update a problem. \\
+  DELETE & \texttt{/api/problems/:id}       & Delete a problem. \\
+  \bottomrule
+\end{xltabular}
+
+\subsection{Test cases}
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.7cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  POST   & \texttt{/api/problems/:id/test-cases} & Add a test case to a coding problem. \\
+  PUT    & \texttt{/api/test-cases/:id}          & Update a test case (input, expected output, sample flag, points). \\
+  DELETE & \texttt{/api/test-cases/:id}          & Delete a test case. \\
+  \bottomrule
+\end{xltabular}
+
+\subsection{Grading and dashboard}
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.7cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  GET & \texttt{/api/teacher/dashboard}        & Teacher dashboard summary. \\
+  GET & \texttt{/api/teacher/grading/pending}  & Pending manual-grading queue (written answers, unconfigured MCQs). \\
+  PUT & \texttt{/api/submissions/:id/grade}    & Manually grade a submission (\texttt{score}, \texttt{status}, \texttt{teacher\_feedback}); gated to the exam owner and re-runs attempt finalization. \\
+  \bottomrule
+\end{xltabular}
+
+The grade route is registered by the \texttt{submission} module with an inline \texttt{RequireRole("teacher")} on that single verb, while its sibling \texttt{run}/\texttt{:id} routes stay shared.
+
+\subsection{Announcements and folders}
+
+Registered under \texttt{protected} without an explicit role gate; teacher ownership is enforced in the handlers via \texttt{teacher\_id} scoping.
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.7cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  GET    & \texttt{/api/classes/:id/announcements} & List announcements for a class. \\
+  POST   & \texttt{/api/classes/:id/announcements} & Create an announcement; fans out notifications to enrolled students. \\
+  PUT    & \texttt{/api/announcements/:id}         & Edit an announcement. \\
+  DELETE & \texttt{/api/announcements/:id}         & Delete an announcement. \\
+  GET    & \texttt{/api/folders}                   & List the teacher's bank-question folders. \\
+  POST   & \texttt{/api/folders}                   & Create a folder. \\
+  PUT    & \texttt{/api/folders/:id}               & Rename a folder. \\
+  DELETE & \texttt{/api/folders/:id}               & Delete a folder (problem references set to \texttt{NULL}). \\
+  \bottomrule
+\end{xltabular}
+
+\section{Protected: student}
+
+Auth + \texttt{RequireRole("student")}. Registered by the \texttt{student} module; the three exam-attempt verbs mount handlers from the \texttt{exam} package.
+
+\begin{xltabular}{\linewidth}{l >{\ttfamily\small\raggedright\arraybackslash}p{5.9cm} X}
+  \toprule
+  Method & Path & Description \\
+  \midrule
+  POST   & \texttt{/api/student/classes/join}      & Join a class by invite code (unique per student via \texttt{idx\_class\_user}). \\
+  DELETE & \texttt{/api/student/classes/:id}        & Leave a class. \\
+  GET    & \texttt{/api/student/classes}           & List the student's enrolled classes. \\
+  GET    & \texttt{/api/student/classes/:id}        & Read one enrolled class. \\
+  GET    & \texttt{/api/student/exams}             & List published exams visible to the student. \\
+  GET    & \texttt{/api/student/exams/:id}          & Read one exam for taking. \\
+  GET    & \texttt{/api/student/submissions}        & List the student's submissions. \\
+  GET    & \texttt{/api/student/stats}              & Student statistics summary. \\
+  GET    & \texttt{/api/student/performance}        & Performance history/metrics. \\
+  POST   & \texttt{/api/student/exams/:id/start}    & Start an attempt (one row per student+exam via \texttt{idx\_user\_exam\_attempt}). \\
+  PUT    & \texttt{/api/student/exams/:id/autosave} & Autosave the opaque draft-answers payload mid-exam. \\
+  POST   & \texttt{/api/student/exams/:id/submit}   & Submit the attempt; creates submissions and triggers auto-grading. \\
+  GET    & \texttt{/api/attempts/mine}              & Fetch the caller's attempts (reused on results pages). \\
+  \bottomrule
+\end{xltabular}

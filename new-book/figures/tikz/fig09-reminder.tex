@@ -1,0 +1,53 @@
+\begin{figure}[htbp]\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    font=\small,
+    milestone/.style={circle, draw=apexblue, fill=apexlight, thick, minimum size=7pt, inner sep=1.5pt},
+    ev/.style={apexbox, align=center, font=\scriptsize, minimum height=9mm, text width=30mm},
+    guard/.style={apexstore, align=center, font=\scriptsize, text width=38mm, minimum height=7mm},
+    tick/.style={apexgrey, font=\scriptsize},
+]
+
+% ---- the number line ----
+\draw[apexarrowblue, line width=1.1pt] (-7.6,0) -- (7.6,0);
+\node[tick, right] at (7.7,0) {time};
+\foreach \x in {-6,0} { \draw[apexblue, thick] (\x,0.14) -- (\x,-0.14); }
+\node[tick, below=3pt] at (-6,0) {$T-60\,$min};
+\node[tick, below=3pt] at (0,0)  {$T=0$ (exam start)};
+\node[milestone] (mA) at (-6,0) {};
+\node[milestone] (mB) at (0,0) {};
+
+% ---- events ABOVE the line (kept clear of one another) ----
+\node[ev] (inapp) at (-6.6,2.4)
+  {\textbf{In-app reminder}\\ \emph{exam\_reminder} fan-out\\ to enrolled students};
+\node[guard, above=3mm of inapp] (gA1)
+  {guard \texttt{reminder\_sent\_at}\\ null in $(\text{now},\text{now}{+}60\text{m}]$};
+\draw[apexarrow] (mA) -- (inapp.south);
+
+\node[ev] (email1h) at (-2.3,2.4)
+  {\textbf{1-hour email}\\ subject: \emph{starts in}\\ \emph{about 1 hour}};
+\node[guard, above=3mm of email1h] (gA2)
+  {guard \texttt{email\_reminder1h\_sent\_at}\\ null in $[\text{now}{+}58\text{m},\text{now}{+}62\text{m}]$};
+\draw[apexarrow] (mA) -- (email1h.south);
+
+\node[ev] (start) at (2.2,2.4)
+  {\textbf{Start email}\\ subject: \emph{is}\\ \emph{starting now}};
+\node[guard, above=3mm of start] (gB)
+  {guard \texttt{email\_reminder\_start\_sent\_at}\\ null in $[\text{now}{-}2\text{m},\text{now}{+}2\text{m}]$};
+\draw[apexarrow] (mB) -- (start.south);
+
+% ---- the driving ticker BELOW the line (nothing else below to cross) ----
+\node[apexext, align=center, font=\scriptsize, text width=62mm] (ticker) at (-1.4,-2.5)
+  {\textbf{Scheduler} (\texttt{reminder.Start})\\ 15\,s warm-up, then a 1-minute \texttt{time.Ticker};\\
+   each tick runs three column-gated sweeps over\\ published exams (\texttt{is\_draft=false}, \texttt{start\_time} set)};
+\draw[apexarrowblue, dashed] (ticker.north west) .. controls (-5.8,-1.7) and (-6.3,-0.9) .. (mA.south);
+\draw[apexarrowblue, dashed] (ticker.north east) .. controls (0.9,-1.6) and (0.3,-0.8) .. (mB.south);
+
+% ---- idempotency note (clear right-bottom area) ----
+\node[apexlabel, align=center, font=\scriptsize, text width=44mm] at (5.0,-2.5)
+  {each timestamp, once non-null, makes its\\ reminder fire \textbf{at most once} --- idempotent\\ across process restarts};
+
+\end{tikzpicture}%
+}
+\caption{Idempotent exam-reminder schedule relative to start time $T$.}\label{fig:reminder}
+\end{figure}

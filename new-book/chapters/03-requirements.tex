@@ -1,0 +1,540 @@
+\chapter{Requirements Engineering}\label{ch:ch03}
+
+Requirements engineering is the discipline of discovering, analysing, documenting,
+and validating the services a system must provide and the constraints under which it
+must operate~\cite{sommerville-se}. For APEX the exercise was neither a formal
+customer-elicitation programme nor a speculative wish-list: the system was built to
+serve a single, well-understood workflow --- running mixed-format examinations in a
+university classroom --- and the requirements below were distilled from that workflow,
+from the real feature set that the implementation ultimately shipped, and from the
+honest constraints of a five-person graduation project. This chapter records those
+requirements as they were actually realised, so that every functional requirement can
+be traced to running code and every non-functional requirement to a measurable
+property of the deployed system. Pressman's distinction between what a product must
+\emph{do} (functional) and the qualities it must \emph{exhibit} (non-functional)
+frames the presentation~\cite{pressman-se}.
+
+The chapter is deliberately grounded rather than aspirational. Where a capability was
+scoped out, or shipped with a known limitation, it is stated plainly; padding the
+requirement set with features the code does not implement would defeat the purpose of a
+traceability record.
+
+\section{Stakeholders and Actors}
+\label{sec:req-stakeholders}
+
+A \emph{stakeholder} is any party with a legitimate interest in the system; an
+\emph{actor} is a role that interacts directly with it across the system
+boundary~\cite{sommerville-se}. APEX has few of the former and only two of the latter,
+and that scarcity is itself a design decision worth stating.
+
+\subsection{Stakeholders}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Teachers} own the pedagogical content --- classes, exams, question
+        banks --- and are the primary paying beneficiaries of automation: the system
+        exists to remove the manual labour of grading code.
+  \item \textbf{Students} are the subjects of assessment. Their overriding interest is
+        that the timed sitting be fair, resilient to network and device failures, and
+        transparent in how a score was reached.
+  \item \textbf{The instructor / institution} (the project's academic supervisor and
+        the Faculty of Engineering at Menoufia University) is a governance stakeholder:
+        the system must be defensible as an engineering artefact and self-hostable so
+        that no student data leaves institutional control.
+  \item \textbf{The operator} --- whoever deploys and runs the instance --- has a stake
+        in low operational cost, reproducible builds, and safe schema evolution. In a
+        classroom deployment the operator and the teacher may well be the same person,
+        which reinforces the requirement that operation be simple.
+\end{itemize}
+
+\subsection{Actors: two roles, no administrator}
+\label{sec:req-actors}
+
+APEX recognises exactly two interacting roles, encoded in the \texttt{role} column of
+the \texttt{User} table as the string literals \texttt{teacher} and \texttt{student}.
+\Cref{tab:actors} summarises them. There is deliberately \textbf{no administrator
+role}. This is a genuine architectural boundary, not an omission: the authorization
+middleware, \texttt{middleware.RequireRole(roles...)}, is generic and accepts any set
+of role strings, but the shipped build only ever instantiates it with
+\texttt{"teacher"} and \texttt{"student"}. The consequence is that every privileged
+action must be justified by \emph{ownership of a specific resource} (a teacher may edit
+only exams whose \texttt{teacher\_id} matches their own identity) rather than by a
+blanket super-user grant. Removing the administrator removes an entire class of
+privilege-escalation target and keeps the authorization story to two coarse roles plus
+a per-row ownership check.
+
+\begin{table}[htbp]
+\centering
+\caption{Primary actors of the APEX system.}
+\label{tab:actors}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.4cm} L{3.2cm} X@{}}
+\toprule
+\textbf{Actor} & \textbf{Role literal} & \textbf{Goals and system interactions} \\
+\midrule
+Teacher & \texttt{teacher} &
+Create and manage classes; author coding, MCQ, and written questions; maintain a
+reusable question bank in folders; build, publish, and assign exams to classes;
+auto- and manually grade submissions; post announcements; monitor results and class
+statistics. \\
+\addlinespace
+Student & \texttt{student} &
+Join classes by invite code; take timed exams in a browser code editor with autosave
+and resume; run code against sample tests before submitting; review per-test results
+and teacher feedback; receive notifications and reminders. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A handful of \emph{external} systems participate in the requirements without being
+human actors: Judge0 (the code-execution sandbox reached over HTTP), an SMTP relay for
+password-reset and reminder mail, and Google Identity Services for federated sign-in.
+Each is optional-or-degradable --- absent an SMTP host, mail is logged to standard
+output; absent a Google client ID, the federated endpoint returns HTTP~503 --- which is
+itself a portability requirement captured in \Cref{sec:req-nfr}.
+
+\section{User Stories}
+\label{sec:req-stories}
+
+Following the agile convention, requirements were first captured as user stories of the
+form \emph{``As a \textless role\textgreater, I want \textless capability\textgreater\
+so that \textless benefit\textgreater''}~\cite{pressman-se}. The stories below are the
+ones that survived into shipped functionality; each maps to one or more functional
+requirements in \Cref{sec:req-fr} and, through them, to concrete endpoints and handlers.
+
+\subsection*{Teacher stories}
+
+\begin{enumerate}[label=\textbf{ST-T\arabic*},leftmargin=3.2em]
+  \item As a teacher, I want to create a class and share an invite code, so that
+        students can enrol themselves without my manually maintaining a roster.
+  \item As a teacher, I want to author coding, multiple-choice, and written questions
+        with points, difficulty, hints, and time/memory limits, so that one exam can
+        assess several kinds of skill in a single sitting.
+  \item As a teacher, I want to keep reusable questions in a folder-organised bank, so
+        that I can compose new exams from proven material instead of re-authoring it.
+  \item As a teacher, I want exams to start as drafts and only become visible when I
+        explicitly publish them (which requires setting a start time), so that a
+        half-finished exam never leaks to students.
+  \item As a teacher, I want to assign one exam to several classes at once, so that
+        parallel sections sit the same paper.
+  \item As a teacher, I want code answers graded automatically against my test cases,
+        and written answers queued for me to grade with feedback and a score override,
+        so that I spend my time only on the answers that genuinely need human judgement.
+  \item As a teacher, I want to post class announcements that notify enrolled students,
+        so that I can communicate without a separate channel.
+  \item As a teacher, I want to preview an exam exactly as a student will see it and to
+        withhold results until grading is complete, so that I control what is released
+        and when.
+\end{enumerate}
+
+\subsection*{Student stories}
+
+\begin{enumerate}[label=\textbf{ST-S\arabic*},leftmargin=3.2em]
+  \item As a student, I want to join a class by typing an 8-character code, so that
+        enrolment is instant and needs no teacher intervention.
+  \item As a student, I want my in-progress answers saved on the server as I work, so
+        that a dropped connection, a dead battery, or a switched device does not cost me
+        my work.
+  \item As a student, I want to resume the same attempt after an interruption rather
+        than starting over, so that a crash mid-exam is recoverable.
+  \item As a student, I want to run my code against sample tests and see the output
+        before I submit, so that I get fast feedback while I still have time to fix it.
+  \item As a student, I want to review, after grading, exactly which tests passed and
+        any feedback my teacher left, so that the mark is transparent and I can learn
+        from it.
+\end{enumerate}
+
+\subsection*{Platform stories}
+
+\begin{enumerate}[label=\textbf{ST-P\arabic*},leftmargin=3.2em]
+  \item As an operator, I want to stand up the whole system with one binary, a
+        PostgreSQL database, and an external Judge0, so that a classroom instance is
+        cheap and self-hostable.
+  \item As an operator, I want the service to refuse to start with a weak signing
+        secret and to evolve its schema safely, so that a misconfiguration cannot become
+        a silent data-loss incident.
+  \item As a user of either role, I want to be reminded of upcoming exams and notified
+        when my work is graded, without duplicate messages if the server restarts.
+\end{enumerate}
+
+\section{Use-Case Model}
+\label{sec:req-usecase}
+
+The user stories condense into the use-case model of \cref{fig:usecase}, which shows the
+principal interactions of each actor across the system boundary. The Teacher's use cases
+cluster around \emph{authoring and administration} --- managing classes, building exams,
+curating the question bank, assigning, grading, announcing, and inspecting results ---
+while the Student's cluster around \emph{participation} --- joining, sitting the timed
+exam, running and submitting code, reviewing results, and receiving notifications. The
+asymmetry is expected: APEX automates the teacher's labour and constrains the student's
+environment.
+
+\input{figures/tikz/fig11-usecase}
+
+Two properties of \cref{fig:usecase} deserve comment. First, no use case crosses from
+one actor to the other; the ownership model in \Cref{sec:req-actors} enforces that a
+teacher never ``takes'' an exam and a student never ``grades'' one. Second, several
+teacher use cases (\textsl{Grade Written Answers}, \textsl{View Results / Stats}) and
+the student's \textsl{Review Results} are two ends of the same underlying data ---
+the attempt aggregate --- so although they are separate use cases they are bound by a
+shared invariant: a student sees a result only after, and exactly as, the teacher's
+grading produced it.
+
+\section{Functional Requirements}
+\label{sec:req-fr}
+
+Functional requirements state what the system must do. They are grouped below by the
+party they primarily serve --- Teacher, Student, and Platform --- and each is given a
+stable identifier (\texttt{FR-T\emph{n}}, \texttt{FR-S\emph{n}}, \texttt{FR-P\emph{n}})
+so that \Cref{sec:req-trace} can trace it to an implementing component. Every
+requirement listed corresponds to functionality that is present in the shipped system;
+the wording is drawn from the real capabilities enumerated in the project's feature
+inventory.
+
+\subsection{Teacher requirements}
+\label{sec:req-fr-teacher}
+
+\begin{table}[htbp]
+\centering
+\caption{Functional requirements serving the Teacher actor.}
+\label{tab:fr-teacher}
+\small
+\begin{tabularx}{\textwidth}{@{}L{1.6cm} X@{}}
+\toprule
+\textbf{ID} & \textbf{Requirement} \\
+\midrule
+FR-T1 & The system shall let a teacher create, edit, and delete classes, each with a
+name, section, optional cover image, and an automatically generated unique 8-character
+invite code, and shall list the class roster and permit removal of members. \\
+FR-T2 & The system shall provide an exam builder for authoring questions of type
+\texttt{coding}, \texttt{mcq}, and \texttt{written}, each with points, difficulty,
+optional hints, image attachments, and tags; coding questions shall additionally carry
+a per-question time limit (default \texttt{2000}\,ms) and memory limit (default
+\texttt{262144}\,KB) and a set of test cases. \\
+FR-T3 & The system shall maintain a per-teacher question bank of reusable questions
+(\texttt{is\_bank = true}), organisable into folders, so that questions can be composed
+into exams independently of any single exam. \\
+FR-T4 & The system shall distinguish draft from published exams and shall refuse to
+publish (clear \texttt{is\_draft}) an exam whose \texttt{start\_time} is unset, so that
+only complete, scheduled exams become visible to students. \\
+FR-T5 & The system shall let a teacher assign one exam to one or many classes, rejecting
+any assignment that references a class the teacher does not own. \\
+FR-T6 & The system shall configure per-exam options: shuffle question order, show
+results after submission, and a passing score. \\
+FR-T7 & The system shall automatically grade coding submissions against their test cases
+and MCQ submissions by set-equality of the selected against the correct options, and
+shall queue written submissions for manual grading. \\
+FR-T8 & The system shall provide a pending-grading queue from which a teacher grades
+written (and any unconfigured MCQ) answers, supplying a score, a status, and optional
+free-text feedback, after which the affected attempt's aggregate score is recomputed. \\
+FR-T9 & The system shall let a teacher post per-class announcements with attachments,
+fanning out an in-app notification to every enrolled student. \\
+FR-T10 & The system shall present a teacher dashboard, a results explorer with per-exam
+outcomes, and per-class statistics. \\
+FR-T11 & The system shall let a teacher preview an exam exactly as a student will see it,
+and shall optionally block grade announcement for a class until all manual grading for it
+is complete. \\
+FR-T12 & The system shall, when a teacher destructively edits a published exam, wipe the
+affected attempts, submissions, and test results in a single transaction, stamp
+\texttt{reset\_at}, un-announce the class grades, and notify affected students. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Student requirements}
+\label{sec:req-fr-student}
+
+\begin{table}[htbp]
+\centering
+\caption{Functional requirements serving the Student actor.}
+\label{tab:fr-student}
+\small
+\begin{tabularx}{\textwidth}{@{}L{1.6cm} X@{}}
+\toprule
+\textbf{ID} & \textbf{Requirement} \\
+\midrule
+FR-S1 & The system shall let a student join a class by entering its 8-character invite
+code, leave a class, and list the classes and assigned exams available to them. \\
+FR-S2 & The system shall let a student start a timed attempt at a published, in-window
+exam, creating at most one attempt per \texttt{(student, exam)} pair; a repeated start
+shall resume the existing attempt rather than create a second one. \\
+FR-S3 & The system shall autosave a student's in-progress answers to the server (\texttt{PUT
+/student/exams/:id/autosave}) and rehydrate them on resume, so that a crash or device
+change does not lose work. \\
+FR-S4 & The system shall optionally present an exam's questions in shuffled order,
+consistently within a single attempt. \\
+FR-S5 & The system shall provide a browser code editor supporting six languages (Python,
+JavaScript, TypeScript, Java, C, C++) with a run-against-sample-tests action that returns
+output, time, and memory without persisting a graded submission. \\
+FR-S6 & The system shall let a student submit an exam, after which no further submission
+for that attempt is accepted, and shall grade the submission server-side. \\
+FR-S7 & The system shall let a student review each attempt's result --- the aggregate
+score, the per-test breakdown for coding questions, and any teacher feedback --- subject
+to the teacher's results-release settings. \\
+FR-S8 & The system shall present the student's notifications, unread count, and a help
+page, and shall let the student manage a profile and notification preferences. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Platform requirements}
+\label{sec:req-fr-platform}
+
+\begin{table}[htbp]
+\centering
+\caption{Platform-wide functional requirements (cross-cutting both roles).}
+\label{tab:fr-platform}
+\small
+\begin{tabularx}{\textwidth}{@{}L{1.6cm} X@{}}
+\toprule
+\textbf{ID} & \textbf{Requirement} \\
+\midrule
+FR-P1 & The system shall authenticate users by email and password (bcrypt-hashed) and
+issue a signed session token valid for 24 hours, and shall support federated sign-in via
+Google Identity Services when configured. \\
+FR-P2 & The system shall support password reset by email using a single-use, SHA-256-hashed
+token with a one-hour expiry, and shall not reveal whether an email address is registered. \\
+FR-P3 & The system shall let a user permanently delete their own account, cascading the
+deletion across their dependent records in a single transaction. \\
+FR-P4 & The system shall send in-app and email reminders for upcoming exams --- in-app at
+roughly one hour before, email at one hour and again at start --- deduplicated by
+per-exam timestamp columns so that a process restart cannot re-send a reminder. \\
+FR-P5 & The system shall notify a student exactly once when their exam has been graded,
+deduplicated by a per-attempt flag so that repeated finalisation does not repeat the
+notification. \\
+FR-P6 & The system shall expose an unauthenticated liveness endpoint (\texttt{GET
+/healthz}) and a self-probe (\texttt{--healthcheck}) so that a shell-less container image
+can be health-checked. \\
+FR-P7 & The system shall evolve its database schema through idempotent, ordered
+migrations, and in production shall make a versioned migration track the sole schema
+authority (with GORM auto-migration disabled). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A note on grading semantics belongs with the functional requirements because it governs
+observable behaviour. The aggregate score of an attempt (FR-S7, FR-T8) is not an
+incrementally mutated counter but a value recomputed from scratch over the exam's
+\emph{full} problem list, so a skipped question counts zero in the denominator, while a
+\texttt{pending\_review} written answer is excluded from both numerator and denominator
+until a human grades it, so an in-flight manual grade never transiently depresses the
+visible total. This behaviour is the functional contract the traceability table binds to
+the \texttt{maybeFinalizeAttempt} aggregator.
+
+\section{Non-Functional Requirements}
+\label{sec:req-nfr}
+
+Non-functional requirements constrain \emph{how well} the system performs its functions.
+To be useful they must be measurable~\cite{sommerville-se}; each requirement below is
+therefore stated with a concrete, checkable criterion drawn from the actual
+configuration and design of the system, and each is given an identifier
+\texttt{NFR-\emph{n}}.
+
+\subsection{Security}
+\label{sec:req-nfr-security}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{NFR-1 (authentication strength).} Passwords shall be stored only as
+        bcrypt hashes at \texttt{bcrypt.DefaultCost} (cost 10) and never returned in any
+        API response; session tokens shall be HS256-signed JWTs with a 24-hour expiry.
+  \item \textbf{NFR-2 (fail-fast secret).} The service shall refuse to start (via
+        \texttt{log.Fatal}) if \texttt{JWT\_SECRET} is empty, shorter than 32 characters,
+        or the placeholder literal \texttt{dev-secret-change-in-prod}. This is a boolean,
+        boot-time-checkable criterion.
+  \item \textbf{NFR-3 (defence in depth).} Every protected request shall pass three
+        independent authorization gates that each fail closed: JWT verification (401 on
+        any doubt), role check (403 on mismatch), and per-row ownership check in the
+        handler; a failure in any one gate shall not open the others.
+  \item \textbf{NFR-4 (input and injection safety).} The system shall parameterise all
+        database access through the ORM (mitigating \texttt{CWE-89}~\cite{cwe-89}),
+        restrict cross-origin access to a configured allow-list, and never execute
+        student code in the application process --- all execution shall be delegated to
+        the Judge0 \texttt{isolate} sandbox~\cite{judge0,isolate}.
+  \item \textbf{NFR-5 (honest limits).} The requirement set explicitly records the known
+        gaps as accepted risk for the thesis snapshot: authentication endpoints are not
+        rate-limited, the password minimum is six characters, and the session token lives
+        in browser \texttt{localStorage}. Each is a documented decision, to be hardened
+        before public exposure, not a hidden defect.
+\end{itemize}
+
+The security requirements are aligned with the OWASP Top 10 categories for broken access
+control and identification failures~\cite{owasp-top10}; \Cref{ch:ch03} states them,
+\cref{fig:threat} and the security chapter analyse them.
+
+\subsection{Performance and scalability}
+\label{sec:req-nfr-perf}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{NFR-6 (responsiveness of submit).} Exam submission shall return to the
+        student without waiting for grading: grading is dispatched to background workers
+        so the HTTP response carries only the attempt and submission identifiers. The
+        measurable criterion is that the submit response latency is independent of the
+        number or runtime of test cases.
+  \item \textbf{NFR-7 (bounded execution).} Each code execution shall run under the
+        per-problem time limit (default \texttt{2000}\,ms) and memory limit (default
+        \texttt{262144}\,KB) enforced by the sandbox, and the grading HTTP client shall
+        apply a 30-second ceiling per Judge0 call, so a pathological submission cannot
+        occupy resources unbounded.
+  \item \textbf{NFR-8 (connection pooling).} The database layer shall bound its
+        connection pool --- 25 max-open, 10 max-idle connections, with 5-minute idle and
+        30-minute maximum connection lifetimes --- so that concurrent load degrades
+        gracefully rather than exhausting the database.
+  \item \textbf{NFR-9 (indexed hot paths).} Correctness- and performance-critical queries
+        shall be backed by indexes: unique composite indexes on
+        \texttt{ClassMember(class\_id, user\_id)}, \texttt{ExamAttempt(user\_id, exam\_id)},
+        and \texttt{ExamClass(exam\_id, class\_id)} enforce their one-row invariants, and
+        \texttt{exams.reset\_at} is indexed to support the take-screen cache-bust query.
+\end{itemize}
+
+The target scale is a classroom, not a MOOC: tens of concurrent students per exam, not
+tens of thousands. The pooling and single-binary choices are sized for that target and
+are stated as such rather than claimed to be web-scale.
+
+\subsection{Usability}
+\label{sec:req-nfr-usability}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{NFR-10 (heuristic conformance).} The user interface shall conform to
+        Nielsen's usability heuristics~\cite{nielsen-heuristics}, in particular
+        \emph{visibility of system status} (a submission's state --- \texttt{pending},
+        \texttt{running}, graded --- is always shown; live sample-test feedback reports
+        pass/fail before submit) and \emph{error prevention} (a draft exam cannot be
+        published without a start time; a submitted attempt cannot be resubmitted).
+  \item \textbf{NFR-11 (recoverability).} The interface shall protect against user and
+        environment error by never silently discarding work: in-progress answers are
+        autosaved server-side and an interrupted attempt resumes where it left off,
+        satisfying the ``user control and freedom'' heuristic.
+  \item \textbf{NFR-12 (measured satisfaction).} Perceived usability shall be evaluable
+        with the System Usability Scale~\cite{brooke1996sus}, a ten-item instrument
+        yielding a 0--100 score; adopting a standard instrument makes the usability claim
+        falsifiable rather than anecdotal. The evaluation is reported in the results
+        chapter.
+\end{itemize}
+
+\subsection{Portability and self-hostability}
+\label{sec:req-nfr-portability}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{NFR-13 (single-artefact deploy).} The backend shall compile to a single
+        statically linked binary with no runtime dependencies beyond PostgreSQL and a
+        reachable Judge0, and shall ship in a distroless container image running as a
+        non-root user.
+  \item \textbf{NFR-14 (twelve-factor configuration).} All configuration shall be read
+        from environment variables with sensible defaults; no configuration shall be
+        compiled in, so the same image runs in development and production unchanged.
+  \item \textbf{NFR-15 (graceful degradation of externals).} Optional external services
+        shall degrade rather than fail: with \texttt{SMTP\_HOST} unset, mail is logged to
+        standard output; with \texttt{GOOGLE\_CLIENT\_ID} unset, the federated sign-in
+        endpoint returns HTTP~503 while password sign-in continues to work; the default
+        Judge0 URL points at a public instance so first-run needs no local sandbox.
+  \item \textbf{NFR-16 (managed-database compatibility).} The system shall accept a full
+        \texttt{DATABASE\_URL} (taking precedence over discrete \texttt{DB\_*} variables),
+        making it deployable against managed PostgreSQL providers without code change.
+\end{itemize}
+
+\subsection{Maintainability and reliability}
+\label{sec:req-nfr-maint}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{NFR-17 (layered structure).} The backend shall be organised into four
+        request-processing layers (transport, handlers, domain services, persistence)
+        with feature-scoped packages, so that a change is localised to one package.
+  \item \textbf{NFR-18 (safe schema evolution).} Schema changes shall follow the
+        add-nullable $\rightarrow$ backfill $\rightarrow$ constrain discipline and shall
+        never rely on an ORM DDL default to backfill a populated table; production shall
+        run a versioned migration track as the sole schema authority. This requirement
+        was forced by a real incident (an ORM default silently hid every exam from
+        students) and is now enforced by project rule.
+  \item \textbf{NFR-19 (continuous integration).} Every change shall pass an automated
+        pipeline --- backend vet, test, and lint; frontend lint, build, and test; and a
+        Docker smoke build --- before merge, so that the mainline remains buildable.
+  \item \textbf{NFR-20 (idempotent background work).} Reminder dispatch and grade
+        notification shall be idempotent across process restarts, using database columns
+        rather than in-memory state for deduplication, so that reliability does not depend
+        on process uptime.
+\end{itemize}
+
+APEX's configuration and deployment posture follow the twelve-factor
+guidance~\cite{twelvefactor} and the distroless-image practice~\cite{distroless}; the
+maintainability requirements reflect that lineage.
+
+\section{Requirements Traceability}
+\label{sec:req-trace}
+
+Traceability links each requirement to the artefact that satisfies it, so that a reader
+--- or an examiner --- can verify the claim against the source rather than take it on
+trust~\cite{sommerville-se}. \Cref{tab:trace} maps every functional requirement to the
+principal component and endpoint that realise it. The non-functional requirements trace
+to cross-cutting mechanisms already named in \Cref{sec:req-nfr}: NFR-1--5 to the
+authentication and authorization middleware and the Judge0 sandbox, NFR-6--9 to the
+grading dispatch and the database pool and indexes, NFR-10--12 to the SPA and its
+autosave/resume flow, NFR-13--16 to the Docker and configuration layer, and NFR-17--20 to
+the package structure, migration pipeline, CI workflow, and reminder scheduler.
+
+\begin{table}[htbp]
+\centering
+\caption{Functional-requirement traceability to implementing components.}
+\label{tab:trace}
+\small
+\begin{tabularx}{\textwidth}{@{}L{1.4cm} L{4.2cm} X@{}}
+\toprule
+\textbf{Req.} & \textbf{Component / package} & \textbf{Principal endpoint(s)} \\
+\midrule
+FR-T1  & \texttt{internal/class}        & \texttt{POST/GET/PUT/DELETE /classes}, \texttt{DELETE /classes/:id/members/:userId} \\
+FR-T2  & \texttt{internal/problem}, \texttt{internal/testcase} & \texttt{POST /exams/:id/problems}, \texttt{POST /problems/:id/test-cases} \\
+FR-T3  & \texttt{internal/problem}, \texttt{internal/folder}   & \texttt{POST /problems/bank}, \texttt{GET/POST/PUT/DELETE /folders} \\
+FR-T4  & \texttt{internal/exam}         & \texttt{PUT /exams/:id} (publish requires \texttt{start\_time}) \\
+FR-T5  & \texttt{internal/exam}         & \texttt{POST /exams/:id/assign} \\
+FR-T6  & \texttt{internal/exam}         & \texttt{POST/PUT /exams} \\
+FR-T7  & \texttt{internal/judge0}       & driven by \texttt{POST /student/exams/:id/submit} \\
+FR-T8  & \texttt{internal/teacher}, \texttt{internal/submission} & \texttt{GET /teacher/grading/pending}, \texttt{PUT /submissions/:id/grade} \\
+FR-T9  & \texttt{internal/announcement}, \texttt{internal/notification} & \texttt{POST /classes/:id/announcements} \\
+FR-T10 & \texttt{internal/teacher}, \texttt{internal/class}    & \texttt{GET /teacher/dashboard}, \texttt{GET /exams/:id/results}, \texttt{GET /classes/:id/stats} \\
+FR-T11 & \texttt{internal/exam}, \texttt{internal/class}       & exam preview (SPA route), \texttt{grades\_announced} gating \\
+FR-T12 & \texttt{internal/exam} (\texttt{reset.go}) & destructive edit triggers \texttt{reset\_at} \\
+\addlinespace
+FR-S1  & \texttt{internal/student}      & \texttt{POST /student/classes/join}, \texttt{DELETE /student/classes/:id} \\
+FR-S2  & \texttt{internal/exam}         & \texttt{POST /student/exams/:id/start} (idempotent) \\
+FR-S3  & \texttt{internal/exam}         & \texttt{PUT /student/exams/:id/autosave} \\
+FR-S4  & \texttt{internal/exam}         & \texttt{shuffle\_questions} on the exam \\
+FR-S5  & \texttt{internal/execute}, \texttt{internal/submission} & \texttt{POST /execute}, \texttt{POST /submissions/run} \\
+FR-S6  & \texttt{internal/exam}, \texttt{internal/judge0}      & \texttt{POST /student/exams/:id/submit} \\
+FR-S7  & \texttt{internal/submission}, \texttt{internal/student} & \texttt{GET /submissions/:id}, \texttt{GET /attempts/mine} \\
+FR-S8  & \texttt{internal/notification}, \texttt{internal/profile} & \texttt{GET /notifications}, \texttt{GET/PUT /profile} \\
+\addlinespace
+FR-P1  & \texttt{internal/auth}, \texttt{internal/middleware} & \texttt{POST /auth/login}, \texttt{/auth/signup}, \texttt{/auth/google} \\
+FR-P2  & \texttt{internal/auth}, \texttt{internal/email}      & \texttt{POST /auth/forgot-password}, \texttt{/auth/reset-password} \\
+FR-P3  & \texttt{internal/auth}         & \texttt{DELETE /auth/account} \\
+FR-P4  & \texttt{internal/reminder}, \texttt{internal/email}  & background scheduler (1-min tick) \\
+FR-P5  & \texttt{internal/judge0}       & \texttt{maybeFinalizeAttempt} + \texttt{graded\_notified} \\
+FR-P6  & \texttt{main.go}               & \texttt{GET /healthz}, \texttt{--healthcheck} \\
+FR-P7  & \texttt{internal/database}, \texttt{cmd/migrate}     & migration passes / versioned SQL track \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Constraints and Assumptions}
+\label{sec:req-constraints}
+
+Finally, the requirements are bounded by explicit constraints and assumptions that shape
+what the system may assume of its environment:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Technology constraints.} The backend is Go with the Gin framework over
+        PostgreSQL~16; code execution is delegated to Judge0~CE. These are fixed choices,
+        not requirements to be re-derived, and are justified in the design and background
+        chapters.
+  \item \textbf{Deployment assumption.} A reachable Judge0 instance exists; the default
+        points at the rate-limited public \texttt{ce.judge0.com}, and a real classroom
+        deployment is assumed to run a self-hosted instance.
+  \item \textbf{Scale assumption.} The concurrency target is classroom-sized; the system
+        does not attempt horizontal scale-out, distributed grading queues, or multi-region
+        deployment.
+  \item \textbf{Trust assumption.} Students take exams on their own machines; APEX does
+        not perform proctoring or lockdown, and treats the browser as untrusted --- which
+        is precisely why all grading and all answer state live on the server.
+\end{itemize}
+
+These constraints are not deficiencies to apologise for; stating them is what makes the
+functional and non-functional requirements above honest and achievable within the scope
+of a graduation project. The chapters that follow show how each requirement was designed
+(\Cref{ch:ch03} onward), implemented, secured, and evaluated.

@@ -1,0 +1,416 @@
+\chapter{Selected Source Listings}\label{ch:ap-d}
+
+This appendix reproduces the handful of Go functions that carry the most conceptual weight in the APEX backend. Each is quoted faithfully from the real source tree under \texttt{internal/}; the only edits are the occasional trimming of a long sibling function so the reader's attention stays on the mechanism under discussion. The listings are the concrete counterparts of the pipelines drawn abstractly in \cref{fig:grading-seq}, \cref{fig:authz}, and \cref{fig:reminder}. Reading them together should make it clear how little exotic machinery the system relies on: the correctness of APEX rests on a small number of carefully ordered database writes and a few honest normalisation and aggregation rules, not on a framework doing the thinking for us.
+
+\section{The Grading Engine}\label{sec:ap-d-grader}
+
+The grading engine in \texttt{internal/judge0/grader.go} is the heart of the project. It is deliberately plain Go: it loads rows, calls out to Judge0 over HTTP, compares strings, and writes results back. Three parts are worth reading closely --- the output-normalisation helper, the per-test-case grading loop, and the attempt-level aggregator.
+
+\subsection{Output Normalisation}\label{sec:ap-d-normalize}
+
+Comparing program output to a teacher's expected answer is where naive auto-graders quietly fail thousands of students. Judge0 returns whatever the sandboxed process wrote to \texttt{stdout}, which on many toolchains carries \texttt{\textbackslash r\textbackslash n} line endings and a trailing newline, while the expected output was typed into a web form and may carry stray trailing spaces. \texttt{normalizeOutput} in \cref{lst:normalize-app} applies exactly four transformations --- CRLF to LF, bare CR to LF, right-trim of spaces and tabs on every line, then a whole-string trim --- and is applied \emph{symmetrically} to both sides before the equality check. What to notice is the restraint: it does not collapse interior whitespace or lowercase anything, so a genuinely wrong answer still fails. It only forgives the differences that are artefacts of transport and data entry, never differences of substance.
+
+\begin{lstlisting}[language=Go,caption={Symmetric output normalisation applied to both actual and expected output before comparison.},label={lst:normalize-app}]
+// normalizeOutput strips CR, trailing whitespace on each line, and trims edges
+// so Judge0 output (often \r\n with trailing newline) compares cleanly to
+// teacher-entered expected output.
+func normalizeOutput(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		lines[i] = strings.TrimRight(ln, " \t")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+\end{lstlisting}
+
+\subsection{The Coding Grading Loop}\label{sec:ap-d-grade}
+
+\cref{lst:grade} is the core coding path, \texttt{Grade}. Several design decisions are visible in it. First, the empty-test-case guard: a coding problem with no configured test cases is scored \texttt{100.0} and marked \texttt{accepted} rather than crashing or scoring zero --- a defensive choice that avoids penalising students for a teacher's incomplete setup. Second, the status mapping treats Judge0 status \texttt{3} (Accepted) and \texttt{4} (Wrong Answer) identically as ``the program ran, now compare the strings''; only a genuine execution failure (\texttt{6} compilation error, \texttt{5} time-limit, \texttt{11} runtime error) short-circuits the comparison. Third, one \texttt{TestResult} row is persisted per test case with its own timing and memory figures, while the maximum time and memory across all tests are rolled up onto the \texttt{Submission}. Finally, the score is the simple fraction \texttt{passed / total * 100}, and control passes to \texttt{maybeFinalizeAttempt} to decide whether the whole exam attempt can now be finalised. The notification is only fired for standalone submissions (\texttt{ExamAttemptID == nil}); exam submissions defer their single notification to the aggregator.
+
+\begin{lstlisting}[language=Go,caption={The coding grading loop: run each test case through Judge0, compare normalised output, persist per-test results, and roll up the score.},label={lst:grade}]
+func Grade(submissionID uint) {
+	var submission models.Submission
+	if err := database.DB.First(&submission, submissionID).Error; err != nil {
+		log.Printf("grading: submission %d not found: %v", submissionID, err)
+		return
+	}
+
+	database.DB.Model(&submission).Update("status", "running")
+
+	var testCases []models.TestCase
+	database.DB.Where("problem_id = ?", submission.ProblemID).Order("order_index asc").Find(&testCases)
+
+	if len(testCases) == 0 {
+		database.DB.Model(&submission).Updates(map[string]any{
+			"status": "accepted",
+			"score":  100.0,
+		})
+		return
+	}
+
+	passed := 0
+	total := len(testCases)
+	var maxTimeMs int
+	var maxMemoryKb int
+
+	for _, tc := range testCases {
+		result := RunCode(submission.Code, submission.Language, tc.Input)
+
+		actualOutput := normalizeOutput(result.Stdout)
+		expectedOutput := normalizeOutput(tc.ExpectedOutput)
+		// StatusID 3 = Accepted; treat StatusID 4 (Wrong Answer) as valid-run-but-compare.
+		ran := result.StatusID == 3 || result.StatusID == 4
+		isPassed := ran && actualOutput == expectedOutput
+
+		if isPassed {
+			passed++
+		}
+
+		status := "accepted"
+		if !isPassed {
+			switch result.StatusID {
+			case 6:
+				status = "compilation_error"
+			case 5:
+				status = "time_limit_exceeded"
+			case 11:
+				status = "runtime_error"
+			default:
+				status = "wrong_answer"
+			}
+		}
+
+		tr := models.TestResult{
+			SubmissionID:    submission.ID,
+			TestCaseID:      tc.ID,
+			Passed:          isPassed,
+			ActualOutput:    actualOutput,
+			ExecutionTimeMs: result.TimeMs,
+			MemoryKb:        result.MemoryKb,
+			Status:          status,
+		}
+		database.DB.Create(&tr)
+
+		if result.TimeMs > maxTimeMs {
+			maxTimeMs = result.TimeMs
+		}
+		if result.MemoryKb > maxMemoryKb {
+			maxMemoryKb = result.MemoryKb
+		}
+	}
+
+	score := float64(passed) / float64(total) * 100.0
+	finalStatus := "wrong_answer"
+	if passed == total {
+		finalStatus = "accepted"
+	}
+
+	database.DB.Model(&submission).Updates(map[string]any{
+		"status":            finalStatus,
+		"passed_count":      passed,
+		"total_count":       total,
+		"score":             score,
+		"execution_time_ms": maxTimeMs,
+		"memory_kb":         maxMemoryKb,
+	})
+
+	if submission.ExamAttemptID == nil {
+		notification.Create(submission.UserID, "result",
+			"Submission Graded",
+			fmt.Sprintf("Your coding submission scored %.0f%% (%d/%d test cases passed)", score, passed, total),
+			"/dashboard/results",
+		)
+	}
+	maybeFinalizeAttempt(submission.ExamAttemptID)
+}
+\end{lstlisting}
+
+\subsection{Attempt Aggregation}\label{sec:ap-d-finalize}
+
+A single exam attempt spans many submissions of mixed type (coding, MCQ, written), each graded independently in its own goroutine. \texttt{maybeFinalizeAttempt} in \cref{lst:finalize} is the join point that turns those scattered results into one attempt score, and it is written to be safe to call after \emph{every} submission finishes. Three subtleties deserve attention. First, it returns early if any sibling submission is still \texttt{pending} or \texttt{running}, so the last grader to finish is the one that actually aggregates. Second, it iterates the exam's \emph{full problem list} rather than the submissions, so a question the student skipped correctly contributes its points to the denominator at a score of zero. Third, submissions in \texttt{pending\_review} --- written answers awaiting manual grading --- are excluded from both numerator and denominator, so an ungraded essay does not artificially depress the visible total before the teacher gets to it. The ``Exam Graded'' notification is fired exactly once, guarded by the \texttt{graded\_notified} column, and only after no \texttt{pending\_review} submissions remain.
+
+\begin{lstlisting}[language=Go,caption={Attempt-level aggregation: re-score over the exam's problem list once no submission is still in flight, excluding pending manual grades.},label={lst:finalize}]
+// maybeFinalizeAttempt aggregates score across all submissions once none
+// remain in pending/running state. Safe to call multiple times.
+func maybeFinalizeAttempt(attemptID *uint) {
+	if attemptID == nil {
+		return
+	}
+	var pending int64
+	database.DB.Model(&models.Submission{}).
+		Where("exam_attempt_id = ? AND status IN ?", *attemptID, []string{"pending", "running"}).
+		Count(&pending)
+	if pending > 0 {
+		return
+	}
+
+	var attempt models.ExamAttempt
+	if err := database.DB.First(&attempt, *attemptID).Error; err != nil {
+		return
+	}
+
+	var problems []models.Problem
+	database.DB.Where("exam_id = ?", attempt.ExamID).Find(&problems)
+	if len(problems) == 0 {
+		return
+	}
+
+	var subs []models.Submission
+	database.DB.Where("exam_attempt_id = ?", *attemptID).Find(&subs)
+	subByProblem := make(map[uint]models.Submission, len(subs))
+	for _, s := range subs {
+		subByProblem[s.ProblemID] = s
+	}
+
+	// Iterate the exam's problem list so skipped questions (no submission)
+	// stay in the denominator at score=0. Pending-review submissions
+	// (written answers awaiting manual grading) are still excluded from
+	// both numerator and denominator until a teacher grades them.
+	var earnedPoints float64
+	var totalPoints float64
+	for _, p := range problems {
+		s, hasSub := subByProblem[p.ID]
+		if hasSub && s.Status == "pending_review" {
+			continue
+		}
+		pts := float64(p.Points)
+		if pts <= 0 {
+			pts = 10
+		}
+		totalPoints += pts
+		if hasSub {
+			earnedPoints += s.Score / 100.0 * pts
+		}
+	}
+	pct := 0.0
+	if totalPoints > 0 {
+		pct = earnedPoints / totalPoints * 100.0
+	}
+
+	database.DB.Model(&models.ExamAttempt{}).
+		Where("id = ?", *attemptID).
+		Update("score", pct)
+
+	// Fire a single "Exam Graded" notification once all submissions are
+	// fully graded (no pending_review remaining). Idempotent via
+	// exam_attempts.graded_notified.
+	var anyPendingReview int64
+	database.DB.Model(&models.Submission{}).
+		Where("exam_attempt_id = ? AND status = ?", *attemptID, "pending_review").
+		Count(&anyPendingReview)
+	if anyPendingReview > 0 {
+		return
+	}
+
+	if err := database.DB.Preload("Exam").First(&attempt, *attemptID).Error; err != nil {
+		return
+	}
+	if attempt.Status != "submitted" || attempt.GradedNotified {
+		return
+	}
+	database.DB.Model(&attempt).Update("graded_notified", true)
+	notification.Create(attempt.UserID, "result",
+		"Exam Graded",
+		fmt.Sprintf("Your submission for \"%s\" has been graded. Score: %.0f%%", attempt.Exam.Title, pct),
+		fmt.Sprintf("/dashboard/exam/%d/review", attempt.ExamID),
+	)
+}
+\end{lstlisting}
+
+\section{Authentication and Authorisation Middleware}\label{sec:ap-d-auth}
+
+The first two of APEX's three authorisation gates (\cref{fig:authz}) live in \texttt{internal/middleware/auth.go}, shown in \cref{lst:auth}. \texttt{Auth} validates the bearer token and is defensive at every step that involves untrusted input. The key-lookup callback rejects any token whose signing method is not \texttt{*jwt.SigningMethodHMAC}, closing the classic ``\texttt{alg:none}'' and algorithm-confusion attacks in which an attacker asks the server to verify an HS256 token using an RS256 public key as the HMAC secret \cite{owasp-jwt}. Every claim is then read with a comma-ok type assertion --- \texttt{user\_id} as \texttt{float64} (JSON's only number type, cast back to \texttt{uint}), \texttt{email} and \texttt{role} as \texttt{string} --- so a malformed or partial token produces a clean 401 rather than a panic. Only after all checks pass are the three values written onto the Gin context for downstream handlers to trust. \texttt{RequireRole} is the second gate: it reads the \texttt{role} the first gate deposited, returns 401 if it is absent (an unauthenticated request), and 403 ``insufficient permissions'' if it is present but not among the allowed roles \cite{rfc7519,rfc6749}.
+
+\begin{lstlisting}[language=Go,caption={JWT authentication middleware and role gate: signing-method enforcement, safe claim extraction, and the 401-vs-403 distinction.},label={lst:auth}]
+func Auth(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" || !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid token"})
+			return
+		}
+
+		tokenStr := strings.TrimPrefix(header, "Bearer ")
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return []byte(secret), nil
+		})
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
+			return
+		}
+
+		// Safe type assertions with comma-ok pattern.
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id in token"})
+			return
+		}
+		email, ok := claims["email"].(string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid email in token"})
+			return
+		}
+		role, ok := claims["role"].(string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid role in token"})
+			return
+		}
+
+		c.Set("user_id", uint(userIDFloat))
+		c.Set("email", email)
+		c.Set("role", role)
+		c.Next()
+	}
+}
+
+func RequireRole(roles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		roleStr, ok := role.(string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid role"})
+			return
+		}
+		for _, r := range roles {
+			if roleStr == r {
+				c.Next()
+				return
+			}
+		}
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+	}
+}
+\end{lstlisting}
+
+The third gate --- resource ownership --- deliberately does not live in middleware, because whether a user ``owns'' a resource depends entirely on the resource. It is enforced inside each handler against the \texttt{user\_id} the middleware deposited, as \cref{fig:authz} illustrates.
+
+\section{The Reminder Scheduler}\label{sec:ap-d-reminder}
+
+APEX runs its exam reminders in-process rather than depending on an external cron system, keeping the deployment to a single Go binary. \cref{lst:scheduler} shows the driver in \texttt{internal/reminder/scheduler.go}. \texttt{Start} spawns one goroutine that waits fifteen seconds for the database connection pool to settle, then ticks once a minute forever. The \texttt{runOnce} tick is wrapped in a deferred \texttt{recover} so that a panic in one sweep --- a malformed row, a transient query error --- logs and is swallowed rather than killing the scheduler goroutine and silently stopping all future reminders. Each tick performs the in-app T-60 sweep inline and then delegates the two email sweeps. The critical property, visible in the \texttt{WHERE} clauses of \cref{fig:reminder}, is that every sweep filters on a dedicated ``sent-at'' timestamp column being \texttt{NULL} and stamps it after sending. Because the dedup state lives in the database rather than in memory, a process restart cannot cause a reminder to be re-sent: the scheduler is idempotent across restarts.
+
+\begin{lstlisting}[language=Go,caption={The reminder scheduler tick loop: a fifteen-second warm-up, a one-minute ticker, and a panic-guarded sweep over published exams.},label={lst:scheduler}]
+// Start launches a goroutine that periodically scans for upcoming exams and
+// notifies enrolled students who opted in to exam reminders. Reminder fires
+// once per exam (deduped via exams.reminder_sent_at).
+func Start() {
+	go func() {
+		// Initial short delay to let DB settle.
+		time.Sleep(15 * time.Second)
+		tick := time.NewTicker(1 * time.Minute)
+		defer tick.Stop()
+		runOnce()
+		for range tick.C {
+			runOnce()
+		}
+	}()
+}
+
+func runOnce() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[reminder] panic: %v", r)
+		}
+	}()
+
+	now := time.Now()
+	cutoff := now.Add(60 * time.Minute)
+
+	var exams []models.Exam
+	if err := database.DB.
+		Where("is_draft = ? AND reminder_sent_at IS NULL AND start_time IS NOT NULL AND start_time > ? AND start_time <= ?", false, now, cutoff).
+		Find(&exams).Error; err != nil {
+		log.Printf("[reminder] query failed: %v", err)
+		return
+	}
+
+	for _, exam := range exams {
+		notifyExam(exam)
+	}
+
+	emailSweep1Hour(now)
+	emailSweepStart(now)
+}
+\end{lstlisting}
+
+The fan-out itself, in \texttt{notifyExam}, resolves an exam to its assigned classes, those classes to their enrolled members, and those members to the subset whose profile has \texttt{notify\_exam\_reminders = true}. One nuance worth noting is that an exam with no assigned classes or no enrolled members is still stamped \texttt{reminder\_sent\_at} so that it is not rescanned on every subsequent tick for the rest of its life --- a small guard that keeps the sweep's working set bounded to genuinely pending exams.
+
+\section{Destructive-Edit Reset}\label{sec:ap-d-reset}
+
+When a teacher makes a destructive edit to a live exam --- changing a test case, editing an MCQ's correct answers, or deleting a problem --- every attempt already scored against the old configuration is invalid. \texttt{ResetExamAttempts} in \texttt{internal/exam/reset.go}, shown in \cref{lst:reset}, cleans this up atomically. The whole operation runs inside a single \texttt{database.DB.Transaction}, so either all of the student progress is wiped and the exam re-stamped, or nothing changes. The deletion order respects foreign-key dependencies: \texttt{TestResult} rows are removed first (looked up via their parent submission IDs), then \texttt{Submission} rows, then the \texttt{ExamAttempt} rows themselves. The transaction then stamps \texttt{exams.reset\_at}, un-announces grades at the class level so stale scores stop showing, and --- only if there were real attempts to reset --- notifies enrolled students that they may re-enter. That last guard is what keeps the ``replace-all problems'' save path from fanning out one spurious notification per deleted problem.
+
+\begin{lstlisting}[language=Go,caption={Transactional reset of student progress after a destructive teacher edit, with FK-ordered deletes and a guarded notification.},label={lst:reset}]
+func ResetExamAttempts(examID uint) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var exam models.Exam
+		if err := tx.First(&exam, examID).Error; err != nil {
+			return err
+		}
+
+		var attemptCount int64
+		tx.Model(&models.ExamAttempt{}).Where("exam_id = ?", examID).Count(&attemptCount)
+		hadAttempts := attemptCount > 0
+
+		var subIDs []uint
+		tx.Model(&models.Submission{}).Where("exam_id = ?", examID).Pluck("id", &subIDs)
+		if len(subIDs) > 0 {
+			if err := tx.Where("submission_id IN ?", subIDs).Delete(&models.TestResult{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("exam_id = ?", examID).Delete(&models.Submission{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("exam_id = ?", examID).Delete(&models.ExamAttempt{}).Error; err != nil {
+			return err
+		}
+
+		now := time.Now()
+		if err := tx.Model(&models.Exam{}).Where("id = ?", examID).Update("reset_at", now).Error; err != nil {
+			return err
+		}
+		exam.ResetAt = &now
+
+		// Un-announce grades for the classes this exam belongs to — old
+		// announced scores are now invalid.
+		var classIDs []uint
+		tx.Model(&models.ExamClass{}).Where("exam_id = ?", examID).Pluck("class_id", &classIDs)
+		if len(classIDs) > 0 {
+			if err := tx.Model(&models.Class{}).Where("id IN ?", classIDs).Update("grades_announced", false).Error; err != nil {
+				return err
+			}
+		}
+
+		// Only notify if there were actual attempts to reset.
+		if !hadAttempts {
+			return nil
+		}
+		if len(classIDs) > 0 {
+			var userIDs []uint
+			tx.Model(&models.ClassMember{}).Where("class_id IN ?", classIDs).Pluck("user_id", &userIDs)
+			link := fmt.Sprintf("/dashboard/exam/%d", examID)
+			desc := fmt.Sprintf("Exam '%s' was updated by your teacher. Your attempt has been reset — you can re-enter.", exam.Title)
+			for _, uid := range userIDs {
+				notification.Create(uid, "exam_reset", "Exam updated", desc, link)
+			}
+		}
+		return nil
+	})
+}
+\end{lstlisting}
+
+Taken together, these five listings capture the engineering personality of APEX: correctness enforced by explicit, ordered database writes; safety enforced by early returns and comma-ok assertions rather than exceptions; and idempotence enforced by persisted state columns rather than in-memory flags. There is no hidden magic --- which is precisely what makes the system auditable.

@@ -1,0 +1,383 @@
+\chapter{Database Schema (DDL)}\label{ch:ap-b}
+
+This appendix records the durable relational schema behind APEX. The canonical
+source is the set of GORM model structs under \texttt{internal/models/}; the
+data-definition language (DDL) reproduced here is the schema those structs
+project onto PostgreSQL~16, transcribed field-for-field from the \texttt{gorm}
+struct tags (column types, sizes, \texttt{NOT NULL} constraints, defaults, and
+indexes). All fifteen models are registered, in dependency order, in
+\texttt{database.AutoMigrate(...)}. Where a tag such as
+\texttt{gorm:"default:X"} appears, it is reproduced as a column \texttt{DEFAULT};
+the honest caveat --- that DDL defaults must never be introduced on a populated
+table --- is the subject of the \texttt{is\_draft} incident recounted in the
+migration chapter, and is why production disables AutoMigrate in favour of the
+versioned \texttt{golang-migrate} track.
+
+A few conventions apply throughout. Every model embeds an \texttt{ID uint} with
+\texttt{gorm:"primaryKey"}, which GORM maps to \texttt{BIGSERIAL PRIMARY KEY}
+(an auto-incrementing \texttt{bigint}). Go \texttt{uint} foreign-key fields
+become \texttt{BIGINT}; a pointer field such as \texttt{*uint} or
+\texttt{*time.Time} is nullable, whereas a value field is \texttt{NOT NULL} only
+where the tag says so. \texttt{time.Time} maps to \texttt{TIMESTAMPTZ};
+\texttt{autoCreateTime} supplies a creation timestamp. Fields tagged
+\texttt{type:jsonb} are stored as PostgreSQL \texttt{JSONB}. The reference DDL
+below omits the foreign-key relationship structs (e.g.\ the embedded
+\texttt{User Teacher}), which carry no columns of their own.
+
+\section{Identity and Accounts}
+
+The \texttt{users} table is the root of every ownership chain; both
+\texttt{teacher} and \texttt{student} rows live here, distinguished only by the
+\texttt{role} column (there is no separate admin table). The password hash and
+the Google subject are hidden from JSON responses (\texttt{json:"-"}) but are
+ordinary columns at rest. \texttt{user\_profiles} is a one-to-one satellite
+keyed by a unique \texttt{user\_id}, holding notification toggles and the
+per-teacher authoring defaults.
+
+\begin{lstlisting}[language=SQL,caption={users and user\_profiles},label={lst:ddl-users},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE users (
+    id            BIGSERIAL PRIMARY KEY,
+    email         VARCHAR(255) NOT NULL,
+    password_hash TEXT         NOT NULL,   -- bcrypt, JSON-hidden
+    role          VARCHAR(20)  NOT NULL,   -- 'teacher' | 'student'
+    name          VARCHAR(255) NOT NULL,
+    google_id     VARCHAR(64),             -- JSON-hidden
+    created_at    TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX idx_users_email     ON users (email);
+CREATE INDEX        idx_users_google_id ON users (google_id);
+
+CREATE TABLE user_profiles (
+    id                          BIGSERIAL PRIMARY KEY,
+    user_id                     BIGINT,
+    bio                         TEXT,
+    avatar_url                  TEXT,      -- base64 dataURL or remote URL
+    notify_email                BOOLEAN DEFAULT true,
+    notify_push                 BOOLEAN DEFAULT true,
+    notify_exam_reminders       BOOLEAN DEFAULT true,
+    notify_results              BOOLEAN DEFAULT false,
+    notify_exam_email           BOOLEAN DEFAULT true,
+    block_announce_with_pending BOOLEAN DEFAULT true,
+    default_exam_draft          BOOLEAN DEFAULT true,
+    default_passing_threshold   INTEGER DEFAULT 60
+);
+CREATE UNIQUE INDEX idx_user_profiles_user_id ON user_profiles (user_id);
+\end{lstlisting}
+
+The \texttt{password\_reset\_tokens} table stores only the SHA-256 hash of a
+reset token (the plaintext is never persisted), with a single-use marker
+(\texttt{used\_at}) and a short expiry.
+
+\begin{lstlisting}[language=SQL,caption={password\_reset\_tokens},label={lst:ddl-reset},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE password_reset_tokens (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    BIGINT      NOT NULL,
+    token_hash VARCHAR(64) NOT NULL,   -- SHA-256 hex, JSON-hidden
+    expires_at TIMESTAMPTZ,            -- 1 hour after issue
+    used_at    TIMESTAMPTZ,            -- NULL until redeemed
+    created_at TIMESTAMPTZ
+);
+CREATE INDEX        idx_password_reset_tokens_user_id    ON password_reset_tokens (user_id);
+CREATE UNIQUE INDEX idx_password_reset_tokens_token_hash ON password_reset_tokens (token_hash);
+\end{lstlisting}
+
+\section{Classes and Enrolment}
+
+A \texttt{class} belongs to one teacher and carries an eight-character unique
+\texttt{invite\_code} that students redeem to enrol. \texttt{class\_members} is
+the enrolment join table; its composite unique index
+\texttt{idx\_class\_user (class\_id, user\_id)} guarantees a student joins any
+class at most once.
+
+\begin{lstlisting}[language=SQL,caption={classes and class\_members},label={lst:ddl-classes},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE classes (
+    id                          BIGSERIAL PRIMARY KEY,
+    teacher_id                  BIGINT       NOT NULL,
+    name                        VARCHAR(255) NOT NULL,
+    section                     VARCHAR(100),
+    invite_code                 VARCHAR(8)   NOT NULL,
+    cover_image                 TEXT,
+    grades_announced            BOOLEAN      NOT NULL DEFAULT false,
+    passing_threshold           INTEGER      NOT NULL DEFAULT 60,
+    block_announce_with_pending BOOLEAN      NOT NULL DEFAULT true,
+    created_at                  TIMESTAMPTZ
+);
+CREATE INDEX        idx_classes_teacher_id  ON classes (teacher_id);
+CREATE UNIQUE INDEX idx_classes_invite_code ON classes (invite_code);
+
+CREATE TABLE class_members (
+    id        BIGSERIAL PRIMARY KEY,
+    class_id  BIGINT NOT NULL,
+    user_id   BIGINT NOT NULL,
+    joined_at TIMESTAMPTZ           -- autoCreateTime
+);
+CREATE INDEX        idx_class_members_class_id ON class_members (class_id);
+CREATE INDEX        idx_class_members_user_id  ON class_members (user_id);
+CREATE UNIQUE INDEX idx_class_user             ON class_members (class_id, user_id);
+\end{lstlisting}
+
+\section{Exams and Assignment}
+
+An \texttt{exam} is owned by a teacher and assigned to zero or more classes
+through the \texttt{exam\_classes} join table, whose composite unique index
+\texttt{idx\_exam\_class (exam\_id, class\_id)} makes each assignment idempotent.
+The three timestamp columns \texttt{reminder\_sent\_at},
+\texttt{email\_reminder1h\_sent\_at}, and \texttt{email\_reminder\_start\_sent\_at}
+are the column-based deduplication stamps consumed by the reminder scheduler, so
+that a process restart cannot re-send. \texttt{reset\_at} is indexed because the
+take screen filters on it to invalidate stale attempts. Note the safe default on
+\texttt{is\_draft}: \texttt{false} (published) is the zero value, the corrective
+outcome of the \texttt{is\_draft} incident.
+
+\begin{lstlisting}[language=SQL,caption={exams and exam\_classes},label={lst:ddl-exams},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE exams (
+    id                           BIGSERIAL PRIMARY KEY,
+    teacher_id                   BIGINT       NOT NULL,
+    title                        VARCHAR(255) NOT NULL,
+    description                  TEXT,
+    duration_minutes             INTEGER      NOT NULL DEFAULT 60,
+    start_time                   TIMESTAMPTZ,          -- nullable (*time.Time)
+    end_time                     TIMESTAMPTZ,          -- nullable
+    reset_at                     TIMESTAMPTZ,          -- nullable, indexed
+    reminder_sent_at             TIMESTAMPTZ,          -- in-app T-60 dedup
+    email_reminder1h_sent_at     TIMESTAMPTZ,          -- email T-60 dedup
+    email_reminder_start_sent_at TIMESTAMPTZ,          -- email T-0 dedup
+    created_at                   TIMESTAMPTZ,
+    shuffle_questions            BOOLEAN DEFAULT false,
+    show_results_after           BOOLEAN DEFAULT true,
+    passing_score                INTEGER DEFAULT 50,
+    is_practice                  BOOLEAN DEFAULT false,
+    is_draft                     BOOLEAN DEFAULT false  -- zero value = published
+);
+CREATE INDEX idx_exams_teacher_id ON exams (teacher_id);
+CREATE INDEX idx_exams_reset_at   ON exams (reset_at);
+
+CREATE TABLE exam_classes (
+    id       BIGSERIAL PRIMARY KEY,
+    exam_id  BIGINT NOT NULL,
+    class_id BIGINT NOT NULL
+);
+CREATE INDEX        idx_exam_classes_exam_id  ON exam_classes (exam_id);
+CREATE INDEX        idx_exam_classes_class_id ON exam_classes (class_id);
+CREATE UNIQUE INDEX idx_exam_class            ON exam_classes (exam_id, class_id);
+\end{lstlisting}
+
+\section{Problems and Test Cases}
+
+The \texttt{problems} table is deliberately wide: a single row can model a
+\texttt{coding}, \texttt{mcq}, or \texttt{written} question, with format-specific
+columns left null when unused. A problem may belong to an exam
+(\texttt{exam\_id}, nullable) or live in the reusable question bank
+(\texttt{is\_bank = true}, in which case it may be grouped under a
+\texttt{folder}). The \texttt{folder\_id} foreign key uses
+\texttt{ON DELETE SET NULL} so deleting a folder orphans rather than destroys its
+questions. Defaults encode the execution budget: \texttt{time\_limit\_ms} of
+\texttt{2000}~ms and \texttt{memory\_limit\_kb} of \texttt{262144}~KiB (256~MB)
+per test case.
+
+\begin{lstlisting}[language=SQL,caption={problems},label={lst:ddl-problems},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE problems (
+    id                     BIGSERIAL PRIMARY KEY,
+    exam_id                BIGINT,                        -- nullable: bank Qs have none
+    is_bank                BOOLEAN      NOT NULL DEFAULT false,
+    teacher_id             BIGINT,
+    class_id               BIGINT,                        -- nullable
+    folder_id              BIGINT REFERENCES folders(id) ON DELETE SET NULL,
+    title                  VARCHAR(255) NOT NULL,
+    description            TEXT         NOT NULL,
+    type                   VARCHAR(20)  NOT NULL DEFAULT 'coding',
+    points                 INTEGER      NOT NULL DEFAULT 10,
+    difficulty             VARCHAR(20)  NOT NULL DEFAULT 'medium',
+    starter_code           TEXT,
+    hints                  TEXT,
+    time_limit_ms          INTEGER      NOT NULL DEFAULT 2000,
+    memory_limit_kb        INTEGER      NOT NULL DEFAULT 262144,
+    order_index            INTEGER      NOT NULL DEFAULT 0,
+    created_at             TIMESTAMPTZ,
+    -- MCQ fields
+    options                JSONB,
+    correct_option_ids     JSONB,
+    multiple_correct       BOOLEAN DEFAULT false,
+    explanation            TEXT,
+    -- Written fields
+    max_word_count         INTEGER DEFAULT 500,
+    rubric                 TEXT,
+    require_manual_grading BOOLEAN DEFAULT false,
+    -- Media / organization
+    image_url              TEXT,
+    tags                   JSONB   DEFAULT '[]'
+);
+CREATE INDEX idx_problems_exam_id    ON problems (exam_id);
+CREATE INDEX idx_problems_is_bank    ON problems (is_bank);
+CREATE INDEX idx_problems_teacher_id ON problems (teacher_id);
+CREATE INDEX idx_problems_class_id   ON problems (class_id);
+CREATE INDEX idx_problems_folder_id  ON problems (folder_id);
+\end{lstlisting}
+
+Each coding problem owns a set of \texttt{test\_cases}. Both \texttt{input} and
+\texttt{expected\_output} are non-null text; \texttt{is\_sample} distinguishes the
+visible sample tests (which drive live feedback) from the hidden tests that run
+only during real grading.
+
+\begin{lstlisting}[language=SQL,caption={test\_cases},label={lst:ddl-testcases},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE test_cases (
+    id              BIGSERIAL PRIMARY KEY,
+    problem_id      BIGINT  NOT NULL,
+    input           TEXT    NOT NULL,
+    expected_output TEXT    NOT NULL,
+    is_sample       BOOLEAN NOT NULL DEFAULT false,
+    points          INTEGER NOT NULL DEFAULT 0,
+    order_index     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_test_cases_problem_id ON test_cases (problem_id);
+\end{lstlisting}
+
+\section{Attempts, Submissions, and Results}
+
+An \texttt{exam\_attempt} is the per-student sitting of an exam; the composite
+unique index \texttt{idx\_user\_exam\_attempt (user\_id, exam\_id)} enforces
+exactly one attempt row per student per exam. \texttt{draft\_answers} is an
+opaque JSON autosave payload (nullable) that lets a student resume on a fresh
+device, cleared once the attempt is submitted. \texttt{score} is a
+\texttt{DOUBLE PRECISION} percentage produced by the aggregation pass.
+
+\begin{lstlisting}[language=SQL,caption={exam\_attempts},label={lst:ddl-attempts},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE exam_attempts (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT           NOT NULL,
+    exam_id         BIGINT           NOT NULL,
+    started_at      TIMESTAMPTZ,                      -- autoCreateTime
+    submitted_at    TIMESTAMPTZ,                      -- nullable
+    score           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    status          VARCHAR(30)      NOT NULL DEFAULT 'in_progress',
+    graded_notified BOOLEAN          NOT NULL DEFAULT false,
+    draft_answers   JSONB,                            -- nullable autosave blob
+    draft_saved_at  TIMESTAMPTZ                       -- nullable
+);
+CREATE INDEX        idx_exam_attempts_user_id ON exam_attempts (user_id);
+CREATE INDEX        idx_exam_attempts_exam_id ON exam_attempts (exam_id);
+CREATE UNIQUE INDEX idx_user_exam_attempt     ON exam_attempts (user_id, exam_id);
+\end{lstlisting}
+
+A \texttt{submission} records one answer to one problem. Its
+\texttt{exam\_attempt\_id} is nullable because playground and sample runs never
+persist an attempt link. The \texttt{status} column follows the lifecycle
+\texttt{pending} $\rightarrow$ \texttt{running} $\rightarrow$ a terminal value
+(\texttt{accepted}, \texttt{wrong\_answer}, \texttt{compilation\_error},
+\texttt{time\_limit\_exceeded}, \texttt{runtime\_error}, or \texttt{pending\_review}).
+
+\begin{lstlisting}[language=SQL,caption={submissions},label={lst:ddl-submissions},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE submissions (
+    id                BIGSERIAL PRIMARY KEY,
+    user_id           BIGINT           NOT NULL,
+    problem_id        BIGINT           NOT NULL,
+    exam_id           BIGINT           NOT NULL,
+    exam_attempt_id   BIGINT,                          -- nullable: playground runs
+    type              VARCHAR(20)      NOT NULL DEFAULT 'coding',
+    language          VARCHAR(20),
+    code              TEXT,
+    selected_options  JSONB,                           -- MCQ choices
+    text_answer       TEXT,                            -- written answer
+    status            VARCHAR(30)      NOT NULL DEFAULT 'pending',
+    teacher_feedback  TEXT,
+    passed_count      INTEGER          NOT NULL DEFAULT 0,
+    total_count       INTEGER          NOT NULL DEFAULT 0,
+    score             DOUBLE PRECISION NOT NULL DEFAULT 0,
+    execution_time_ms INTEGER          DEFAULT 0,
+    memory_kb         INTEGER          DEFAULT 0,
+    submitted_at      TIMESTAMPTZ                       -- autoCreateTime
+);
+CREATE INDEX idx_submissions_user_id         ON submissions (user_id);
+CREATE INDEX idx_submissions_problem_id      ON submissions (problem_id);
+CREATE INDEX idx_submissions_exam_id         ON submissions (exam_id);
+CREATE INDEX idx_submissions_exam_attempt_id ON submissions (exam_attempt_id);
+\end{lstlisting}
+
+Each coding submission fans out to one \texttt{test\_result} per test case
+executed, capturing the pass/fail outcome, the captured \texttt{actual\_output},
+resource usage, and the raw Judge0 status label.
+
+\begin{lstlisting}[language=SQL,caption={test\_results},label={lst:ddl-testresults},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE test_results (
+    id                BIGSERIAL PRIMARY KEY,
+    submission_id     BIGINT      NOT NULL,
+    test_case_id      BIGINT      NOT NULL,
+    passed            BOOLEAN     NOT NULL DEFAULT false,
+    actual_output     TEXT,
+    execution_time_ms INTEGER     DEFAULT 0,
+    memory_kb         INTEGER     DEFAULT 0,
+    status            VARCHAR(30)
+);
+CREATE INDEX idx_test_results_submission_id ON test_results (submission_id);
+CREATE INDEX idx_test_results_test_case_id  ON test_results (test_case_id);
+\end{lstlisting}
+
+\section{Communication and Organisation}
+
+The remaining tables carry classroom communication and teacher-side
+organisation. An \texttt{announcement} is posted by a teacher to a class and fans
+out \texttt{notification} rows to enrolled students; \texttt{attachments} is a
+\texttt{JSONB} array. A \texttt{notification} is the per-user inbox item.
+\texttt{folders} provide per-teacher grouping for bank questions (referenced by
+\texttt{problems.folder\_id}).
+
+\begin{lstlisting}[language=SQL,caption={announcements, notifications, folders},label={lst:ddl-comms},basicstyle=\ttfamily\footnotesize,breaklines=true]
+CREATE TABLE announcements (
+    id          BIGSERIAL PRIMARY KEY,
+    class_id    BIGINT       NOT NULL,
+    teacher_id  BIGINT       NOT NULL,
+    title       VARCHAR(255) NOT NULL,
+    body        TEXT,
+    attachments JSONB,
+    created_at  TIMESTAMPTZ                       -- autoCreateTime
+);
+CREATE INDEX idx_announcements_class_id   ON announcements (class_id);
+CREATE INDEX idx_announcements_teacher_id ON announcements (teacher_id);
+
+CREATE TABLE notifications (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT       NOT NULL,
+    type        VARCHAR(20)  NOT NULL,       -- e.g. 'exam_reminder'
+    title       VARCHAR(255) NOT NULL,
+    description TEXT,
+    link_to     VARCHAR(255),
+    read        BOOLEAN DEFAULT false,
+    created_at  TIMESTAMPTZ
+);
+CREATE INDEX idx_notifications_user_id ON notifications (user_id);
+
+CREATE TABLE folders (
+    id         BIGSERIAL PRIMARY KEY,
+    teacher_id BIGINT       NOT NULL,
+    name       VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ
+);
+CREATE INDEX idx_folders_teacher_id ON folders (teacher_id);
+\end{lstlisting}
+
+\section{Constraint Summary}
+
+Three composite unique indexes carry the schema's most important integrity
+invariants, and each maps directly to a domain rule enforced without additional
+application code:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{idx\_class\_user} on \texttt{class\_members (class\_id, user\_id)}
+        --- a student may join a given class at most once.
+  \item \texttt{idx\_user\_exam\_attempt} on \texttt{exam\_attempts (user\_id, exam\_id)}
+        --- exactly one attempt row per (student, exam) pair.
+  \item \texttt{idx\_exam\_class} on \texttt{exam\_classes (exam\_id, class\_id)}
+        --- an exam is linked to a class at most once, making re-assignment
+        idempotent.
+\end{itemize}
+
+Beyond these, single-column unique indexes protect \texttt{users.email},
+\texttt{classes.invite\_code}, \texttt{password\_reset\_tokens.token\_hash}, and
+\texttt{user\_profiles.user\_id}. The lone declared foreign key with an explicit
+referential action is \texttt{problems.folder\_id}
+(\texttt{ON DELETE SET NULL}); the remaining ownership relationships are modelled
+as indexed \texttt{BIGINT} columns and enforced at the resource-ownership gate in
+the handlers rather than by database-level \texttt{FOREIGN KEY} constraints. The
+entity--relationship view of these tables is given in \cref{fig:er}, and the
+evolution of the schema through the migration pipeline is traced in
+\cref{fig:migration}.

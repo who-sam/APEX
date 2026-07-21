@@ -1,0 +1,229 @@
+\chapter{Deployment and DevOps}\label{ch:ch10}
+
+This chapter documents how APEX runs: how a developer brings the system up on a laptop, how the same source is packaged into container images for a production-shaped deployment, how those images are wired together into a four-service Docker Compose stack, how the system is configured entirely through the environment, and how new code reaches an image safely through continuous integration. The guiding principle throughout is deliberate boredom. APEX is a graduation project that a single instructor should be able to self-host, so the deployment target is one Go binary plus a managed PostgreSQL --- not a Kubernetes cluster, not a service mesh, not a message broker. Every operational decision in this chapter is made in service of that constraint, and where a shortcut has been taken the trade-off is named rather than hidden.
+
+\section{One Codebase, Three Binaries, Two Run-Modes}
+
+The backend is a single Go module (\texttt{module apex}, Go \texttt{1.25.3}). From that one module the build produces three small, statically linked binaries, each serving a distinct operational role:
+
+\begin{itemize}
+  \item \texttt{apex} --- the long-running HTTP API server, which also hosts the in-process reminder scheduler. This is the \texttt{backend} service.
+  \item \texttt{migrate} --- a one-shot schema tool that applies the versioned SQL migration track and exits. This is the \texttt{migrate} service.
+  \item \texttt{seed} --- an on-demand demo-data loader, run manually and not wired into the Compose stack at all.
+\end{itemize}
+
+That same source runs two ways. In \emph{local development} it runs from source under \texttt{go run} for fast iteration, alongside the Vite dev server and a containerized PostgreSQL. In a \emph{production-shaped deployment} it runs as the compiled distroless image, behind an nginx image serving the built single-page application (SPA), with the one-shot \texttt{migrate} container guaranteeing the schema is current before the server ever accepts a request. Keeping a single codebase behind both modes is what makes the local experience representative: the same configuration loader, the same migration SQL, and the same health endpoint are exercised in both.
+
+\section{Local Development}
+
+The repository ships a single bring-up script, \texttt{start.sh}, whose job is to make a clean checkout runnable with one command. Its responsibilities, in order, are: copy \texttt{.env.example} to \texttt{.env} on first boot; bring up the Compose PostgreSQL service and wait for it to become healthy; start the Go backend from source in the background; poll \texttt{http://localhost:8080/api/auth/login} up to thirty times (once per second) until the port answers; and finally start the frontend dev server, preferring Bun and falling back to npm. A single \texttt{trap} on \texttt{EXIT}, \texttt{INT}, and \texttt{TERM} tears the whole thing down --- the two background processes are killed and the Compose stack is brought down --- so one Ctrl+C cleans up after itself.
+
+Two details are worth calling out. First, the \texttt{.env} bootstrap copies the example file verbatim, and the example \texttt{JWT\_SECRET} (\texttt{replace-me-with-a-strong-random-secret-32+chars}) is deliberately long enough to clear the 32-character validator described in \cref{sec:ch10-config}, so a fresh checkout boots without hand-editing. Second, the backend is started with \texttt{go run main.go} rather than a prebuilt binary, so every restart picks up the latest edits --- the entire point of a development mode.
+
+The resulting development topology is three host processes plus one container: the Vite dev server on \texttt{:5173} proxies \texttt{/api} requests to the Go binary on \texttt{:8080}, which speaks to PostgreSQL on host port \texttt{:5433} (the container still listens on \texttt{:5432}; the host is remapped because \texttt{5432} is frequently already occupied by a locally installed PostgreSQL). Judge0 is the public hosted instance at \texttt{ce.judge0.com}, and SMTP is off, so emails are logged to stdout.
+
+The script is intentionally readable rather than idempotent. It is a way to bring the system up once, not a service supervisor: running it twice without stopping the first run clashes on the fixed ports. Developers who prefer split terminals can reproduce the same effect manually --- \texttt{docker compose up -d postgres}, \texttt{go run main.go} in one shell, and \texttt{bun run dev} (or \texttt{npm run dev}) in another --- and this is the recommended workflow when actively iterating on either half of the stack.
+
+\section{Container Images}
+
+Both halves of the system are packaged as multi-stage Docker images. The multi-stage pattern separates a heavy \emph{build} stage --- which carries the compiler and toolchain --- from a minimal \emph{runtime} stage that receives only the finished artifacts. The toolchain never ships, which is what keeps the final images small and their attack surface narrow.
+
+\subsection{Backend: Multi-Stage to Distroless}\label{sec:ch10-backend-image}
+
+The backend \texttt{Dockerfile} compiles all three binaries in a \texttt{golang:1.25-alpine} stage, then copies them into a \texttt{gcr.io/distroless/static-debian12:nonroot} runtime stage. \Cref{lst:ch10-dockerfile} reproduces it in full.
+
+\begin{lstlisting}[language=Go,caption={The backend multi-stage Dockerfile: three static binaries copied into a distroless runtime.},label={lst:ch10-dockerfile}]
+# syntax=docker/dockerfile:1.7
+
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+
+RUN apk add --no-cache git ca-certificates
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ENV CGO_ENABLED=0 GOOS=linux
+
+RUN go build -trimpath -ldflags="-s -w" -o /out/apex ./
+RUN go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+RUN go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
+
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+WORKDIR /app
+
+COPY --from=build /out/apex /app/apex
+COPY --from=build /out/migrate /app/migrate
+COPY --from=build /out/seed /app/seed
+COPY --from=build /src/internal/database/migrations /app/internal/database/migrations
+
+ENV PORT=8080
+EXPOSE 8080
+
+USER nonroot:nonroot
+ENTRYPOINT ["/app/apex"]
+\end{lstlisting}
+
+Several deliberate choices are packed into these thirty lines. Copying \texttt{go.mod} and \texttt{go.sum} and running \texttt{go mod download} \emph{before} \texttt{COPY . .} is a layer-caching optimization: the dependency download is a cached layer that only re-runs when the module manifests change, so ordinary source edits reuse it and rebuild quickly. The pair \texttt{CGO\_ENABLED=0 GOOS=linux} produces a fully static binary with no dependency on the system C library, which is precisely what makes a \texttt{distroless/static} base --- a base that ships no libc --- viable. The build flags \texttt{-trimpath} (strip absolute filesystem paths for reproducibility and to avoid leaking the builder's home directory) and \texttt{-ldflags="-s -w"} (strip the symbol table and DWARF debug information) shrink each binary at the acceptable cost of less informative crash traces.
+
+The runtime stage is the security-relevant half. A distroless image contains essentially only the application binary and the CA certificates needed to make outbound HTTPS calls; there is no shell, no package manager, and no \texttt{curl}. If an attacker were to achieve code execution inside the container, none of the usual pivoting tools would be present. The \texttt{:nonroot} tag together with \texttt{USER nonroot:nonroot} runs the process as an unprivileged user, so a container breakout is far less dangerous --- a straightforward application of least privilege~\cite{distroless,docker}. The four \texttt{COPY --from=build} lines carry out only the three binaries plus the \texttt{internal/database/migrations} directory, so the migrate binary can find its versioned SQL at \texttt{/app/internal/database/migrations/sql} at runtime. The default \texttt{ENTRYPOINT} runs \texttt{/app/apex}, the server; the Compose \texttt{migrate} service overrides it to \texttt{/app/migrate up}, reusing the exact same image for a different role.
+
+The shell-less runtime has one important consequence: the conventional container health check --- \texttt{curl http://localhost/healthz} run inside the container --- is impossible, because neither \texttt{curl} nor a shell exists. \Cref{sec:ch10-health} describes the self-probing mechanism that resolves this.
+
+\subsection{Frontend: Bun Build to Nginx}\label{sec:ch10-frontend-image}
+
+The frontend \texttt{Dockerfile} follows the same multi-stage shape. An \texttt{oven/bun:1-alpine} stage installs dependencies with \texttt{bun install --frozen-lockfile} --- which installs exactly what the committed \texttt{bun.lock} specifies and fails if resolution would change, guaranteeing reproducible installs --- and runs \texttt{bun run build} to produce the static \texttt{dist/} bundle. The runtime stage is a thin \texttt{nginx:1.27-alpine} that copies \texttt{dist/} into the web root and drops in the project's \texttt{nginx.conf}. No Node, no Bun, and no source travel into the final image; it is static files plus nginx.
+
+A subtlety here is that the four \texttt{VITE\_*} values are consumed as Docker build arguments and baked into the JavaScript bundle at build time via \texttt{ARG}/\texttt{ENV}, not read at runtime. Changing any of them --- for instance repointing \texttt{VITE\_API\_URL} or \texttt{VITE\_GOOGLE\_CLIENT\_ID} --- therefore requires rebuilding the frontend image. The default \texttt{VITE\_API\_URL} of \texttt{/api} is what allows a single built bundle to work both behind the dev proxy and behind the production single-origin reverse proxy, because in both cases the SPA simply issues same-origin requests to \texttt{/api}.
+
+The \texttt{nginx.conf} enforces three behaviours. Content-hashed assets under \texttt{/assets/} are served with a one-year \texttt{immutable} cache header, which is safe precisely because Vite gives each build unique filenames. Requests to \texttt{/api/} are reverse-proxied to \texttt{http://backend:8080} on the internal Compose network, with \texttt{X-Forwarded-*} headers preserving client information; this makes the deployed app single-origin, so the browser only ever talks to the frontend host. Finally, the catch-all \texttt{location /} falls back to \texttt{index.html} via \texttt{try\_files}, so a browser reload on a client-side route such as \texttt{/dashboard/exams} serves the SPA shell and lets React Router resolve the path rather than returning a 404.
+
+\section{The Four-Service Compose Stack}\label{sec:ch10-compose}
+
+\Cref{fig:deploy} draws the production-shaped Docker Compose topology. There are exactly four services --- \texttt{postgres}, \texttt{migrate}, \texttt{backend}, and \texttt{frontend} --- plus one named volume for database persistence. Judge0 is deliberately \emph{not} a Compose service: it is the most security-sensitive component of the system, so it is treated as an external HTTP dependency reached through the \texttt{JUDGE0\_URL} environment variable, whether that points at the public \texttt{ce.judge0.com} or a self-hosted instance. SMTP is likewise external.
+
+\input{figures/tikz/fig07-deploy}
+
+The single most important property of the stack, visible in \cref{fig:deploy}, is its startup ordering, expressed through Compose's \texttt{depends\_on} conditions:
+
+\begin{enumerate}
+  \item \texttt{postgres} (\texttt{postgres:16-alpine}) starts first. It carries a \texttt{pg\_isready} health check on a five-second interval with up to ten retries, and persists its data in the named \texttt{pgdata} volume so the database survives \texttt{docker compose down}. The host-to-container port mapping is \texttt{5433}$\rightarrow$\texttt{5432}; other services still reach it internally at \texttt{postgres:5432} regardless of the host remap.
+  \item \texttt{migrate} starts only once PostgreSQL reports \texttt{service\_healthy}. It is built from the same backend image but overrides the entrypoint to \texttt{["/app/migrate", "up"]}, applies the versioned SQL migrations, and exits. It is marked \texttt{restart: "no"} so Compose does not treat its clean exit as a crash to be restarted --- it is a genuine one-shot job.
+  \item \texttt{backend} starts only after \emph{both} \texttt{postgres} is \texttt{service\_healthy} \emph{and} \texttt{migrate} has reported \texttt{service\_completed\_successfully}. This is the ordering guarantee that matters: the schema is provably current before the application ever serves a request, eliminating any race against a half-migrated database. The backend publishes port \texttt{8080} and carries its own health check.
+  \item \texttt{frontend} (\texttt{nginx:1.27-alpine}) starts after the backend and publishes \texttt{8081}$\rightarrow$\texttt{80}. In the deployed stack the user-facing origin is therefore \texttt{http://localhost:8081}, and the API is at \texttt{http://localhost:8080}.
+\end{enumerate}
+
+\Cref{lst:ch10-compose} shows the two services that carry this ordering, abbreviated to the load-bearing keys.
+
+\begin{lstlisting}[language=Go,caption={The \texttt{migrate} and \texttt{backend} services, showing the one-shot migration gate and the shell-less health check.},label={lst:ch10-compose}]
+  migrate:
+    build:
+      context: .
+    entrypoint: ["/app/migrate", "up"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      JWT_SECRET: ${JWT_SECRET}
+      MIGRATIONS_DIR: file:///app/internal/database/migrations/sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      PORT: "8080"
+      JWT_SECRET: ${JWT_SECRET}
+      JUDGE0_URL: ${JUDGE0_URL:-https://ce.judge0.com}
+      APP_URL: ${APP_URL:-http://localhost:8081}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Distroless image has no shell/curl -- self-probe via the binary.
+      test: ["CMD", "/app/apex", "--healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+\end{lstlisting}
+
+Two points from \cref{lst:ch10-compose} reward attention. First, the \texttt{migrate} service is given a \texttt{JWT\_SECRET} even though it never signs a token. This is because \texttt{cmd/migrate} shares the same \texttt{config.Load()} loader as the server, and that loader fast-fails on a weak secret (\cref{sec:ch10-config}); the migration tool therefore inherits the same boot requirement. Second, \texttt{APP\_URL} defaults to \texttt{http://localhost:8081} here, whereas the application's own default is \texttt{http://localhost:5173}. This is intentional: in the deployed stack the user-facing origin is the nginx frontend on \texttt{:8081}, so both email links and the CORS allow-list must reflect it.
+
+A production-shaped local run is therefore a single command that also generates a strong secret on the spot: \texttt{JWT\_SECRET=\$(openssl rand -hex 32) docker compose up --build}. This yields a 64-hex-character secret and brings up the entire stack in the correct order.
+
+\section{Health Checks in a Shell-Less Image}\label{sec:ch10-health}
+
+The backend exposes \texttt{GET /healthz} outside the authenticated \texttt{/api} groups; it returns \texttt{\{"status":"ok"\}} with HTTP 200 and exercises the routing and CORS middleware without touching the database or Judge0. It is a \emph{liveness} probe --- is the process up and serving? --- rather than a deep \emph{readiness} probe that would report dependency reachability.
+
+The challenge is invoking that endpoint from inside a distroless container that has no shell and no \texttt{curl}. The solution is that the \texttt{apex} binary is dual-role. Before it starts the server, \texttt{main.go} inspects its first argument: when invoked as \texttt{/app/apex --healthcheck} it does \emph{not} start a server but instead acts as a tiny HTTP client, issuing \texttt{GET http://127.0.0.1:\$PORT/healthz} with a two-second timeout and exiting \texttt{0} on HTTP 200 or \texttt{1} otherwise. The only program guaranteed to exist in the image is the binary itself, so the binary probes itself. The Compose \texttt{backend.healthcheck} of \texttt{["CMD", "/app/apex", "--healthcheck"]} and any production \texttt{HEALTHCHECK} directive both drive this branch, with \texttt{start\_period: 10s} granting the server ten seconds to boot before failing probes count against it. This self-probe pattern is the smallest possible way to health-check a shell-less image without reintroducing the very tooling that distroless was chosen to remove.
+
+\section{Twelve-Factor Configuration}\label{sec:ch10-config}
+
+APEX follows the twelve-factor discipline of storing all configuration in the environment~\cite{twelvefactor}: nothing operator-specific is compiled into the binary, and the same image runs in development, staging, and production distinguished only by its environment. Configuration is read once at startup through \texttt{internal/config/config.go}, whose \texttt{init()} best-effort loads a \texttt{.env} file via \texttt{godotenv} (ignoring the "no file" case, which is normal in production where real environment variables are supplied by the orchestrator).
+
+The one hard invariant is the \texttt{JWT\_SECRET} validator, which is the only variable whose absence or weakness crashes the process on purpose:
+
+\begin{lstlisting}[language=Go,caption={The single fast-fail in the configuration loader.},label={lst:ch10-jwtcheck}]
+jwtSecret := os.Getenv("JWT_SECRET")
+if jwtSecret == "" || jwtSecret == "dev-secret-change-in-prod" || len(jwtSecret) < 32 {
+    log.Fatal("JWT_SECRET must be set to a strong random value (>=32 chars)")
+}
+\end{lstlisting}
+
+This rejects three cases --- empty, the literal placeholder \texttt{dev-secret-change-in-prod}, and anything shorter than 32 characters --- and makes "production booted with the development secret" structurally impossible. It is the most important operational invariant in the system, and because \texttt{cmd/migrate} shares the loader, it protects the migration path too.
+
+Every other variable degrades a feature gracefully rather than aborting. \Cref{tab:ch10-env} inventories the backend variables, their defaults, and their behaviour when unset.
+
+\begin{table}[H]
+  \centering
+  \caption{Environment variables read by the backend (\texttt{internal/config/config.go}) and their graceful-degradation behaviour.}
+  \label{tab:ch10-env}
+  \small
+  \begin{tabularx}{\linewidth}{>{\ttfamily}L{3.4cm} L{3.9cm} X}
+    \toprule
+    \normalfont Variable & Default / requirement & Behaviour \\
+    \midrule
+    DATABASE\_URL      & empty (prod-only)             & full Postgres URL; \emph{wins} over \texttt{DB\_*} for both app and \texttt{cmd/migrate} \\
+    DB\_HOST           & \texttt{localhost}            & Postgres host \\
+    DB\_PORT           & \texttt{5432}                 & Postgres port \\
+    DB\_USER           & \texttt{postgres}             & Postgres user \\
+    DB\_PASSWORD       & \texttt{postgres}             & Postgres password \\
+    DB\_NAME           & \texttt{apex}                 & Postgres database \\
+    DB\_SSLMODE        & \texttt{disable}              & set to \texttt{require} for managed providers \\
+    PORT               & \texttt{8080}                 & HTTP listen port; also probed by \texttt{--healthcheck} \\
+    SKIP\_AUTOMIGRATE  & empty                         & \texttt{true} disables GORM \texttt{AutoMigrate}; \texttt{cmd/migrate} becomes sole schema authority \\
+    MIGRATIONS\_DIR    & file URL to the SQL dir       & where \texttt{cmd/migrate} reads versioned SQL \\
+    JWT\_SECRET        & \normalfont\emph{required, $\geq$32 chars} & \normalfont\emph{fast-fails} on empty, weak, or the placeholder \\
+    JUDGE0\_URL        & \texttt{https://ce.judge0.com} & Judge0 base URL \\
+    APP\_URL           & \texttt{:5173} (compose: \texttt{:8081}) & password-reset links + first CORS origin \\
+    ALLOWED\_ORIGINS   & empty                         & comma-separated extra CORS origins \\
+    GOOGLE\_CLIENT\_ID & empty                         & unset $\rightarrow$ \texttt{/auth/google} returns HTTP 503 \\
+    SMTP\_HOST         & empty                         & unset $\rightarrow$ emails logged to stdout \\
+    SMTP\_PORT         & \texttt{587}                  & ignored when \texttt{SMTP\_HOST} empty \\
+    SMTP\_USER         & empty                         & SMTP username \\
+    SMTP\_PASS         & empty                         & SMTP password \\
+    SMTP\_FROM         & empty                         & envelope-from address \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+The degradation rule is worth stating in one sentence: only \texttt{JWT\_SECRET} fast-fails; an unset \texttt{SMTP\_HOST} logs password-reset and reminder emails to stdout while the in-app side keeps working, and an unset \texttt{GOOGLE\_CLIENT\_ID} makes the backend answer Google sign-in with HTTP 503 while the password flows continue unaffected. This keeps a partially configured deployment usable rather than dead.
+
+The CORS allow-list is assembled from \texttt{APP\_URL} (always the first entry) plus each comma-separated origin in \texttt{ALLOWED\_ORIGINS}, trimmed of whitespace. The connection string is resolved by two builders --- \texttt{DSN()} for the GORM/pgx application path and \texttt{MigrateURL()} for golang-migrate --- both of which prefer \texttt{DATABASE\_URL} when set and otherwise assemble a string from the discrete \texttt{DB\_*} parts. This is exactly why a managed PostgreSQL such as Neon or Railway "just works": the operator sets the single \texttt{DATABASE\_URL} string the provider hands them (typically including \texttt{sslmode=require}), leaves the \texttt{DB\_*} variables empty, and both the app and the migration tool pick it up.
+
+\section{Schema as Deployment Artifact}\label{sec:ch10-migrations}
+
+APEX carries two migration tracks, and which one owns the schema is decided by \texttt{SKIP\_AUTOMIGRATE}. In development (the flag unset), each boot runs an idempotent legacy-SQL pass, then GORM's \texttt{AutoMigrate} for new tables, then a post-migration pass --- convenient for fast local iteration. In production (\texttt{SKIP\_AUTOMIGRATE=true}) \texttt{AutoMigrate} is disabled entirely and the versioned \texttt{golang-migrate} track becomes the sole authority~\cite{golangmigrate}. That versioned track is exactly what the one-shot \texttt{migrate} container in \cref{sec:ch10-compose} applies: paired \texttt{NNNN\_name.up.sql}/\texttt{.down.sql} files under \texttt{internal/database/migrations/sql/}, applied as a pre-deploy step by the \texttt{cmd/migrate} binary bundled in the image.
+
+Treating the versioned binary as the schema authority in production is a direct response to a real incident. During development, a \texttt{gorm:"default:true"} tag was added to a boolean exam field; GORM's \texttt{AutoMigrate} applied that as a DDL default across every existing row, silently flipping published exams into a draft state and making them vanish from student queries with no error logged. The fix was threefold: the struct default was flipped to the safe zero value, an explicit idempotent SQL sequence (add nullable, backfill, constrain) took ownership of the change, and --- most relevant to deployment --- production was moved to \texttt{SKIP\_AUTOMIGRATE=true} with the versioned \texttt{migrate} binary as the single source of truth. The operational lesson is that in production, schema evolution must be an explicit, reviewed, version-controlled artifact applied by a dedicated step, never an implicit side effect of the ORM booting against a populated database. Re-running the migration binary on an up-to-date database is a no-op, and rolling back the production path is a single \texttt{migrate down}.
+
+\section{In-Process Background Jobs}\label{sec:ch10-scheduler}
+
+APEX has no separate cron daemon and no separate worker process. The exam-reminder scheduler runs \emph{inside} the same \texttt{apex} binary: \texttt{main.go} calls \texttt{reminder.Start()} before the server begins serving, which spawns a single goroutine that waits fifteen seconds for the database connection to settle, then ticks once per minute for the life of the process. Each tick runs three sweeps --- an in-app reminder at roughly sixty minutes before an exam, an email reminder one hour out, and an email reminder at exam start --- and the whole tick is wrapped in a \texttt{recover()} guard so a panic in one sweep is logged and the loop survives to the next minute.
+
+The property that makes this safe to co-locate with the request-serving process, and safe across restarts, is that all deduplication is column-based: each reminder stamps a timestamp column on the exam row (for example \texttt{reminder\_sent\_at}) and each sweep filters on that column being null. Because "already sent" lives in the database rather than in memory, a process restart --- a deploy, a crash, a scale event --- can never cause a double-send; the scheduler is idempotent across restarts. \Cref{fig:reminder} details the sweep windows.
+
+This co-location is an honest engineering trade-off. It keeps the deployment to a single binary with no broker or worker fleet to operate, which is exactly the "boring" target this chapter aims for. The cost is that reminders are bound to the lifecycle of the API process and do not scale horizontally: running two backend replicas would run two schedulers, and while the column-based dedup prevents double-sends, the design assumes a single backend instance. For a classroom-scale deployment that assumption holds comfortably; a larger deployment would extract the scheduler into its own process or gate it behind an advisory lock.
+
+\section{Continuous Integration}\label{sec:ch10-ci}
+
+Every pull request and every push to \texttt{main} runs through GitHub Actions~\cite{githubactions}, with \texttt{concurrency} configured to cancel superseded runs. Two workflows make up the gauntlet. \texttt{ci.yml} runs four jobs: a backend test job that spins up a \texttt{postgres:16-alpine} service container and runs \texttt{go mod download}, \texttt{go vet ./...}, then \texttt{go test ./... -race -count=1} under a CI-only \texttt{JWT\_SECRET}; a backend lint job running \texttt{golangci-lint} with a five-minute timeout; a frontend build job on Bun pinned to \texttt{1.1.38} running \texttt{bun install --frozen-lockfile}, \texttt{bun run lint}, and \texttt{bun run build}; and a frontend test job running the Vitest suite. The second workflow, \texttt{docker.yml}, smoke-builds both container images --- the backend distroless image and the frontend nginx image --- with \texttt{push: false} and GitHub Actions build caching, on every pull request and every push to \texttt{main}. Building the images in CI catches lockfile drift and Go-module changes that would break a deploy but would not necessarily fail a unit test.
+
+Two honesty notes belong here. First, backend test coverage is currently minimal --- there are no \texttt{*\_test.go} files, and the frontend ships a single sanity test --- so the CI test legs primarily exercise the build, vet, lint, and race-detector paths rather than deep behavioural assertions. Because CI already stands up a PostgreSQL service and runs the runners, adding real tests requires no pipeline change. Second, APEX has continuous \emph{integration} but not full continuous \emph{deployment}: the images are built and validated on every change, but the registry push and the remote restart that would make this a true push-to-deploy pipeline remain manual. This is a deliberate scope boundary for a graduation project, and naming it is preferable to over-claiming an automation that does not yet exist.
+
+\section{Operability and Summary}
+
+A few remaining operational facts round out the picture. The server logs to stdout in Gin's default format, so a production host redirects stdout to journald or a log file under rotation. The current model is a single-instance restart with a five-to-ten-second window; because the exam-taking SPA autosaves drafts and retries the autosave call when the backend returns, an in-flight exam survives a restart without draft loss. Backups are a nightly \texttt{pg\_dump}: the schema is fully captured by the versioned migrations in source control, so a restore is "create empty database, apply the SQL track, load the dump." Deeper readiness probes and Prometheus metrics --- per-tick scheduler duration first --- are identified as sensible next steps but are out of scope for this iteration.
+
+The deployment story is intentionally boring, and that is the design goal rather than a limitation. One Go binary carrying three roles, one PostgreSQL, one external Judge0, one optional SMTP relay, and an nginx reverse proxy compose into a four-service stack whose startup ordering guarantees a current schema before the first request. Configuration lives entirely in the environment with a single deliberate fast-fail; the distroless runtime keeps the image small and its attack surface narrow; and continuous integration gates every change through vet, lint, race-tested builds, and image smoke-builds. The rough edges --- minimal test coverage, a single-instance scheduler, and the still-manual final deploy hop --- are named rather than hidden, in keeping with the project's stance that an honestly documented limitation is worth more than a concealed one.

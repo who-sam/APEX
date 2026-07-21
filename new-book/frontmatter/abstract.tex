@@ -1,0 +1,37 @@
+% Abstract
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Classroom assessment tools force an unhappy choice: coding judges such as HackerRank grade
+programs but cannot host a written argument, while learning-management platforms such as
+Moodle host quizzes and essays but cannot run code. A teacher who wants to test a
+programming concept, a definition, and a short explanation in the same sitting must stitch
+together separate systems and reconcile the marks by hand. \textbf{APEX} closes that gap. It
+is a self-hostable classroom portal that runs \textbf{coding}, \textbf{multiple-choice}, and
+\textbf{written} questions inside \emph{one} timed exam, driven by \emph{one} grading
+pipeline behind all three question types. Teachers build mixed-format exams, assign them to
+classes, and let the system auto-grade code and MCQs while queueing written answers for
+manual review; students join a class by invite code, take the exam in an in-browser Monaco
+editor with live sample-test feedback, and review per-test results afterwards.
+
+The system is deployed as a single Go binary served by Gin, a PostgreSQL~16 store accessed
+through GORM, and a React and TypeScript single-page frontend, with student code executed
+out-of-process by \textbf{Judge0} inside the \texttt{isolate} sandbox under per-problem time
+and memory limits. Across roughly 6{,}100 lines of Go and 17{,}400 of TypeScript, three
+engineering decisions carry the design. First, a \emph{three-gate authorization} model
+layers JWT authentication, coarse role checks, and per-handler resource-ownership
+verification, so a valid token alone never grants access to another user's data. Second, an
+\emph{idempotent migration pipeline}---born from a real production incident in which a stray
+GORM column default silently hid every exam from students---separates development
+auto-migration from a versioned, restart-safe SQL track that is the sole schema authority in
+production. Third, a \emph{unified grading pipeline} normalizes program output symmetrically
+before comparison, aggregates per-question scores across an attempt, and finalizes results
+exactly once. The scope is deliberately honest: two roles only (teacher and student, no
+admin), fire-and-forget grading goroutines with no durable retry queue, no auth rate
+limiting, and minimal automated test coverage. These limitations are documented rather than
+hidden, each paired with the concrete remediation a production hardening pass would apply.
+
+\vspace{0.6em}
+\noindent\textbf{Keywords:} automated assessment, online judge, Judge0, \texttt{isolate}
+sandbox, mixed-format examinations, e-learning, Go, Gin, REST API, PostgreSQL, React, JWT
+authorization.

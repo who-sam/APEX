@@ -1,0 +1,52 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=16mm and 20mm,
+    every node/.style={font=\sffamily\small},
+    guard/.style={apexlabel},
+    trans/.style={font=\sffamily\scriptsize, midway, above, sloped},
+    transb/.style={font=\sffamily\scriptsize, midway, below, sloped},
+  ]
+
+  % ---- Exam lifecycle (top row) ----
+  \node[apexlabel, anchor=west] (lblexam) at (0,1.35) {Exam lifecycle};
+  \node[apexbox] (draft) {Draft\\\scriptsize\itshape is\_draft = true};
+  \node[apexstore, right=of draft] (published) {Published\\\scriptsize\itshape is\_draft = false};
+  \node[apexext, right=of published] (reset) {Reset\\\scriptsize\itshape reset\_at set};
+
+  \draw[apexarrowblue] (draft) -- node[trans] {publish}
+        node[transb] {\itshape [start\_time $\neq$ nil]} (published);
+  \draw[apexarrow] (published.north east) to[out=35,in=145]
+        node[trans] {teacher destructive edit} (reset.north west);
+  \draw[apexarrow, dashed] (reset.south west) to[out=-145,in=-35]
+        node[transb] {wipe attempts, re-open} (published.south east);
+
+  % ---- Attempt state machine (bottom row) ----
+  \node[apexlabel, anchor=west] (lblatt) at (0,-2.65) {Attempt state machine};
+  \node[apexbox, below=32mm of draft] (inprog) {in\_progress};
+  \node[apexbox, right=of inprog] (submitted) {submitted};
+  \node[apexstore, right=of submitted] (grading) {grading / running};
+  \node[apexstore, right=of grading] (graded) {graded};
+
+  % autosave self-loop
+  \draw[apexarrow] (inprog.north) to[out=120,in=60,looseness=6]
+        node[trans, above=1pt] {PUT autosave (draft\_answers)} (inprog.north);
+
+  \draw[apexarrowblue] (inprog) -- node[trans] {submit}
+        node[transb] {\itshape POST submit} (submitted);
+  \draw[apexarrowblue] (submitted) -- node[trans] {grade (async)} (grading);
+  \draw[apexarrowblue] (grading) -- node[trans] {finalize}
+        node[transb] {\itshape no pending\_review} (graded);
+  \draw[apexarrow] (grading.north) to[out=110,in=70,looseness=3]
+        node[trans, above=1pt] {per test case (Judge0)} (grading.north);
+
+  % link: publishing enables attempts
+  \draw[apexarrow, dashed, draw=apexgrey] (published.south) --
+        node[apexlabel, midway] {student opens exam} (inprog.north east);
+
+\end{tikzpicture}%
+}
+\caption{Exam lifecycle and attempt state machine.}
+\label{fig:exam-state}
+\end{figure}

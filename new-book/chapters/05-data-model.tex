@@ -1,0 +1,628 @@
+\chapter{Data Model and Persistence}\label{ch:ch05}
+
+Every exam that a teacher authors, every class a student joins, every line
+of code a student submits, and every verdict that Judge0 returns is, in the
+end, a row in a PostgreSQL~16 table~\cite{postgres}. This chapter is the map
+of that store. It presents the fifteen entities that make up the APEX schema,
+walks the columns and constraints that matter, explains the three composite
+unique indexes that carry the system's correctness invariants, and then
+turns to how the schema changes over time --- the migration pipeline and the
+one incident that taught the team why that pipeline exists at all.
+
+The persistence layer is deliberately small. APEX is a single Go binary
+talking to a single database through a single object-relational mapper
+(GORM~\cite{gorm}); there is no sharding, no read replica, no separate
+analytics store. The design goal was a schema that a single engineer can
+hold in their head, on the reasoning that a schema you cannot trace by hand
+is a schema you will eventually corrupt. The rest of this chapter argues that
+this smallness is a feature: it is what makes the grading pipeline's
+correctness auditable, and it is what let the team recover cleanly from a
+migration mistake that would have been catastrophic in a larger design.
+
+\section{The Entity Landscape}
+
+The canonical roster of entities is the argument list of GORM's
+\texttt{AutoMigrate} call in \texttt{internal/database/database.go}. Fifteen
+Go structs are registered there, and each maps to exactly one table:
+
+\begin{lstlisting}[language=Go,caption={The fifteen registered models, in migration order (internal/database/database.go).},label={lst:automigrate}]
+DB.AutoMigrate(
+    &models.User{},
+    &models.UserProfile{},
+    &models.Class{},
+    &models.ClassMember{},
+    &models.Exam{},
+    &models.ExamClass{},
+    &models.Problem{},
+    &models.TestCase{},
+    &models.ExamAttempt{},
+    &models.Submission{},
+    &models.TestResult{},
+    &models.Notification{},
+    &models.Announcement{},
+    &models.Folder{},
+    &models.PasswordResetToken{},
+)
+\end{lstlisting}
+
+These fifteen tables cluster into four \emph{aggregates} --- a
+domain-driven-design term for a group of entities treated as one consistency
+unit with a single root that owns the rest~\cite{fowler2002patterns,
+kleppmann2017ddia}. \Cref{tab:aggregates} lays out the grouping. The counts
+form a convenient mnemonic: identity has three tables, classes four,
+assessment seven, and one cross-cutting table stands alone, for a total of
+$3+4+7+1=15$.
+
+\begin{table}[htbp]
+\centering
+\caption{The four aggregates of the APEX data model.}
+\label{tab:aggregates}
+\begin{tabularx}{\linewidth}{@{}L{2.6cm} L{3.0cm} X@{}}
+\toprule
+\textbf{Aggregate} & \textbf{Root} & \textbf{Members} \\
+\midrule
+Identity (3)   & \texttt{User}        & \texttt{UserProfile} (1:1), \texttt{PasswordResetToken} (1:N) \\
+Classes (4)    & \texttt{Class}       & \texttt{ClassMember} (M:N with \texttt{User}), \texttt{Announcement} (1:N), \texttt{Folder} (teacher-owned) \\
+Assessment (7) & \texttt{Exam}        & \texttt{ExamClass} (M:N with \texttt{Class}), \texttt{Problem} (1:N) $\rightarrow$ \texttt{TestCase} (1:N); \texttt{ExamAttempt} (1:N) $\rightarrow$ \texttt{Submission} (1:N) $\rightarrow$ \texttt{TestResult} (1:N) \\
+System (1)     & ---                  & \texttt{Notification} (belongs to a \texttt{User}, cross-cutting) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The assessment cluster is large enough that it is often useful to split it
+further into an \emph{authoring} half (\texttt{Exam}, \texttt{ExamClass},
+\texttt{Problem}, \texttt{TestCase} --- the entities a teacher builds) and a
+\emph{taking} half (\texttt{ExamAttempt}, \texttt{Submission},
+\texttt{TestResult} --- the entities a student produces). The taking half is
+the one governed by the system's most important database constraint, and
+\cref{sec:attempt-aggregate} gives it its own treatment.
+\Cref{fig:er} shows the complete entity-relationship diagram: the four
+aggregates, the foreign-key edges between them, and the join tables that
+model the two many-to-many relationships.
+
+\input{figures/tikz/fig03-er}
+
+\section{Identity Tables}
+
+The identity aggregate stores who may log in and how. Its root is
+\texttt{User}:
+
+\begin{lstlisting}[language=Go,caption={The User model (internal/models/user.go).},label={lst:user}]
+type User struct {
+    ID           uint      `gorm:"primaryKey" json:"id"`
+    Email        string    `gorm:"size:255;uniqueIndex;not null" json:"email"`
+    PasswordHash string    `gorm:"type:text;not null" json:"-"`
+    Role         string    `gorm:"size:20;not null" json:"role"`
+    Name         string    `gorm:"size:255;not null" json:"name"`
+    GoogleID     string    `gorm:"size:64;index" json:"-"`
+    CreatedAt    time.Time `json:"created_at"`
+}
+\end{lstlisting}
+
+Several conventions visible here recur across every table. The primary key is
+always a field named \texttt{ID} of Go type \texttt{uint} carrying
+\texttt{gorm:"primaryKey"}, which PostgreSQL materializes as a
+\texttt{BIGSERIAL} auto-incrementing column. String columns declare an
+explicit \texttt{size:} so they become bounded \texttt{VARCHAR(n)} rather
+than unbounded \texttt{text}; free-form fields such as \texttt{PasswordHash}
+opt into \texttt{type:text} instead. The \texttt{json:"-"} tag on
+\texttt{PasswordHash} and \texttt{GoogleID} instructs the marshaller never to
+serialize those fields into an API response, so a password hash cannot leak
+through a handler that carelessly returns a whole \texttt{User}. The
+\texttt{Role} column holds one of exactly two values, \texttt{teacher} or
+\texttt{student}; APEX has no administrator role.
+
+\texttt{UserProfile} holds per-user preferences in a 1:1 relationship with
+\texttt{User}, enforced by \texttt{UserID gorm:"uniqueIndex"} --- because the
+foreign key is unique, a user has at most one profile row. It carries the
+notification toggles (\texttt{notify\_email}, \texttt{notify\_push},
+\texttt{notify\_exam\_reminders}, \texttt{notify\_results},
+\texttt{notify\_exam\_email}) that the reminder scheduler consults before
+fanning out, plus a small block of per-teacher creation defaults
+(\texttt{default\_exam\_draft}, \texttt{default\_passing\_threshold},
+\texttt{block\_announce\_with\_pending}). The distinction between these
+defaults and column defaults is central to the incident discussed in
+\cref{sec:incident}: \texttt{default\_exam\_draft} seeds a \emph{new} exam's
+draft state in application code at creation time, and is not the same thing
+as a DDL default backfilling existing rows.
+
+\texttt{PasswordResetToken} completes the aggregate. It never stores the raw
+reset token; only its SHA-256 hash lives in \texttt{token\_hash}
+(\texttt{size:64;uniqueIndex;not null}, hidden from JSON), so a database leak
+hands an attacker no usable reset links. The nullable \texttt{used\_at
+*time.Time} makes the token single-use: a non-null value means ``already
+spent,'' and together with \texttt{expires\_at} it forms a one-shot,
+time-limited credential.
+
+\section{Class Tables}
+
+The class aggregate models enrolment and classroom communication. A
+\texttt{Class} belongs to one teacher (\texttt{TeacherID}, with a
+\texttt{Teacher User} belongs-to association loaded on demand via
+\texttt{Preload}) and is joined through an eight-character
+\texttt{invite\_code} (\texttt{size:8;uniqueIndex;not null}). The
+\texttt{grades\_announced} boolean is the gate that releases results to
+students: until a teacher flips it on, graded scores stay hidden.
+
+Enrolment is a many-to-many relationship between \texttt{User} and
+\texttt{Class}, and APEX models it with an explicit join \emph{entity},
+\texttt{ClassMember}, rather than GORM's implicit \texttt{many2many} tag:
+
+\begin{lstlisting}[language=Go,caption={The ClassMember join entity (internal/models/class.go).},label={lst:classmember}]
+type ClassMember struct {
+    ID       uint      `gorm:"primaryKey" json:"id"`
+    ClassID  uint      `gorm:"not null;index;uniqueIndex:idx_class_user" json:"class_id"`
+    Class    Class     `gorm:"foreignKey:ClassID" json:"-"`
+    UserID   uint      `gorm:"not null;index;uniqueIndex:idx_class_user" json:"user_id"`
+    User     User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
+    JoinedAt time.Time `gorm:"autoCreateTime" json:"joined_at"`
+}
+\end{lstlisting}
+
+The explicit join entity is chosen so the relationship can carry its own
+data --- here a \texttt{joined\_at} timestamp stamped automatically by
+\texttt{autoCreateTime} --- and its own named constraint. That constraint is
+the first of the three composite unique indexes: \texttt{idx\_class\_user}
+appears on \emph{both} \texttt{ClassID} and \texttt{UserID} under the same
+index name, which GORM compiles into a single unique index over the pair
+\texttt{(class\_id, user\_id)}. Its effect is that a student physically
+cannot join the same class twice --- the database rejects a duplicate pair,
+independent of any application-level check.
+
+The aggregate is completed by \texttt{Announcement}, which belongs to a class
+and a teacher and stores an \texttt{attachments} list as a JSONB column (see
+\cref{sec:jsonb}); posting one fans out \texttt{Notification} rows to every
+enrolled student. \texttt{Folder} is a teacher-owned grouping for bank
+questions, referenced by \texttt{Problem.folder\_id} with
+\texttt{ON DELETE SET NULL} semantics so that deleting a folder unfiles its
+questions rather than destroying them.
+
+\section{Assessment Tables and the Polymorphic Problem}
+
+The authoring half of the assessment aggregate begins with \texttt{Exam},
+which owns many \texttt{Problem} rows and is assigned to classes through the
+\texttt{ExamClass} join entity. \texttt{ExamClass} carries the second
+composite unique index, \texttt{idx\_exam\_class} over \texttt{(exam\_id,
+class\_id)}, forbidding the same exam from being assigned to the same class
+twice. Its scheduling columns (\texttt{start\_time}, \texttt{end\_time},
+\texttt{reset\_at}, and three reminder-dedup timestamps) are all
+\texttt{*time.Time} pointers, so they map to nullable \texttt{TIMESTAMPTZ}
+columns; a null \texttt{start\_time} means ``not scheduled yet,'' and an exam
+cannot be published without one. The \texttt{reset\_at} column is indexed
+because the take screen queries it on every load to invalidate stale cached
+sessions when a teacher destructively edits an exam.
+
+The single most interesting table in the schema is \texttt{Problem}, which is
+both \emph{polymorphic} and \emph{dual-purpose}. It is polymorphic because
+one table holds all three question types --- coding, MCQ, and written ---
+discriminated by a \texttt{type} column (\texttt{size:20;not
+null;default:coding}). Rather than three normalized tables joined at query
+time, every variant-specific column lives on one wide row and is simply left
+null for the types that do not use it:
+
+\begin{itemize}[nosep]
+  \item \textbf{Coding} problems use \texttt{starter\_code},
+        \texttt{time\_limit\_ms} (default 2000), and
+        \texttt{memory\_limit\_kb} (default 262144, i.e.\ 256\,MB), plus
+        child \texttt{TestCase} rows.
+  \item \textbf{MCQ} problems use \texttt{options} and
+        \texttt{correct\_option\_ids} (both JSONB), \texttt{multiple\_correct},
+        and \texttt{explanation}.
+  \item \textbf{Written} problems use \texttt{max\_word\_count} (default 500),
+        \texttt{rubric}, and \texttt{require\_manual\_grading}.
+\end{itemize}
+
+The trade-off is explicit and, at this scale, defensible: a wider table with
+more nullable columns is exchanged for a much simpler grading dispatch. The
+backend performs a single \texttt{switch Problem.Type} rather than joining
+three type-specific tables, and the exam's ``problem list'' is one
+homogeneous query~\cite{fowler2002patterns}. It is dual-purpose because
+\texttt{ExamID} is a nullable \texttt{*uint} and \texttt{IsBank} is a
+boolean: an ordinary problem has \texttt{ExamID} set and
+\texttt{is\_bank=false}, while a reusable bank template has
+\texttt{ExamID = NULL} and \texttt{is\_bank=true}, unbound to any exam and
+optionally filed under a \texttt{Folder}.
+
+Each coding \texttt{Problem} owns many \texttt{TestCase} rows. The crucial
+column there is \texttt{is\_sample}: sample cases are the ones surfaced to
+students through the live ``Run Samples'' feature, while hidden cases are used
+only by the real auto-grader and are never serialized to the client. This
+split is the data side of a defense-in-depth boundary --- hidden expected
+outputs never leave the server.
+
+\subsection{JSONB Columns}\label{sec:jsonb}
+
+APEX uses PostgreSQL's binary-JSON type, JSONB, in four places:
+\texttt{problems.options} and \texttt{problems.correct\_option\_ids} (MCQ
+option sets), \texttt{problems.tags} (default \texttt{'[]'}),
+\texttt{announcements.attachments}, and \texttt{exam\_attempts.draft\_answers}
+(discussed in \cref{sec:attempt-aggregate}). The common thread is that each
+holds a small, variable-length, client-shaped blob that the application reads
+and writes \emph{whole} and never needs to query \emph{inside} at the SQL
+level. Kleppmann observes that document-style storage is a good fit exactly
+when data has a natural tree shape that is loaded in its entirety and rarely
+joined against~\cite{kleppmann2017ddia}; that is precisely the case here. The
+\texttt{draft\_answers} payload in particular must round-trip the client's
+exact structure, so storing a separate normalized table would add joins for
+no query benefit. The cost --- that these fields are opaque to SQL
+predicates --- is one APEX never pays, because it never filters on their
+interior.
+
+\section{The Attempt Aggregate}\label{sec:attempt-aggregate}
+
+The taking half of the assessment cluster is the correctness core of the
+whole system. Its shape is a two-level ownership chain:
+\texttt{ExamAttempt} $\rightarrow$ (1:N) $\rightarrow$ \texttt{Submission}
+$\rightarrow$ (1:N) $\rightarrow$ \texttt{TestResult}. One sitting
+(\texttt{ExamAttempt}) collects one \texttt{Submission} per answered problem;
+each coding submission collects one \texttt{TestResult} per test case Judge0
+ran against it.
+
+\begin{lstlisting}[language=Go,caption={The ExamAttempt root and its unique index (internal/models/exam\_attempt.go).},label={lst:attempt}]
+type ExamAttempt struct {
+    ID          uint       `gorm:"primaryKey" json:"id"`
+    UserID      uint       `gorm:"not null;index;uniqueIndex:idx_user_exam_attempt" json:"user_id"`
+    ExamID      uint       `gorm:"not null;index;uniqueIndex:idx_user_exam_attempt" json:"exam_id"`
+    StartedAt   time.Time  `gorm:"autoCreateTime" json:"started_at"`
+    SubmittedAt *time.Time `json:"submitted_at,omitempty"`
+    Score       float64    `gorm:"not null;default:0" json:"score"`
+    Status      string     `gorm:"size:30;not null;default:in_progress" json:"status"`
+    GradedNotified bool    `gorm:"not null;default:false" json:"graded_notified"`
+    DraftAnswers   *string    `gorm:"type:jsonb" json:"draft_answers,omitempty"`
+    DraftSavedAt   *time.Time `json:"draft_saved_at,omitempty"`
+    Submissions []Submission `gorm:"foreignKey:ExamAttemptID" json:"submissions,omitempty"`
+}
+\end{lstlisting}
+
+The load-bearing line is the third composite unique index,
+\texttt{idx\_user\_exam\_attempt}, declared on both \texttt{UserID} and
+\texttt{ExamID}. It enforces \textbf{one attempt row per (student, exam)
+pair}, and that single constraint is what makes two otherwise-hard features
+tractable.
+
+\paragraph{Resume-after-crash.} Because the pair is unique, the database
+physically cannot hold two attempt rows for the same student and exam. The
+\texttt{StartAttempt} handler is therefore idempotent: it looks up the
+attempt by \texttt{(user\_id, exam\_id)}, returns the existing row if one is
+found, and creates a row only when none exists. A student who refreshes the
+page, whose laptop dies, or who reopens the exam on a second device resolves
+every time to the \emph{same} attempt. In-progress answers survive because
+the autosave endpoint writes the raw answer body into the
+\texttt{draft\_answers} JSONB column of that same attempt, stamping
+\texttt{draft\_saved\_at}; on reconnect the take screen rehydrates the draft
+and recomputes remaining time from \texttt{started\_at}. There is exactly one
+place the draft can live, which is what ties autosave to resume.
+
+\paragraph{Safe re-scoring.} The attempt's \texttt{score} is stored on the
+row but \emph{derived by recomputation}, never incrementally mutated. The
+finalisation routine iterates the exam's \emph{full} problem list ---
+so a skipped question stays in the denominator at zero and a student who
+answered only the easy questions cannot appear at 100\,\% --- sums earned
+points over total points, and writes back a percentage. Written answers in
+\texttt{pending\_review} are excluded from both numerator and denominator
+until a teacher grades them, so an in-flight manual grade does not depress
+the visible total. Because there is exactly one attempt, and the score is a
+pure re-sum over a fixed set of children, the routine is safe to call any
+number of times: after each test result, after a manual grade, after a retry,
+the same inputs always yield the same number. If duplicate attempts were
+possible, this re-sum could group the wrong submissions or double-count; the
+unique index removes that entire failure class.
+
+\paragraph{Idempotent state transitions.} The attempt's \texttt{status}
+moves \texttt{in\_progress} $\rightarrow$ \texttt{submitted}. The
+\texttt{graded\_notified} boolean is an idempotency guard so the ``Exam
+Graded'' notification fires exactly once even though finalisation may run
+many times; the finaliser sets it under the ``all graded, nothing in
+\texttt{pending\_review}'' condition. This is the same philosophy as the
+reminder-dedup timestamp columns on \texttt{Exam} --- idempotency expressed
+as a database column rather than in-memory state, so a process restart can
+never double-fire.
+
+Below the attempt, \texttt{Submission} carries the student's code, selected
+options (JSONB), or text answer, along with its own grading verdict
+(\texttt{status}, \texttt{passed\_count}, \texttt{total\_count},
+\texttt{score}, and the maximum execution time and memory observed across its
+tests). Its \texttt{exam\_attempt\_id} is a nullable \texttt{*uint}: standalone
+playground and sample runs create no attempt, so the pointer tolerates that
+context while every real exam submission is grouped under its attempt.
+\texttt{TestResult}, the leaf, records one row per test case: whether it
+passed, the actual output, timing, memory, and the raw Judge0 status.
+
+\Cref{lst:examattempts-ddl} shows the \texttt{exam\_attempts} table as
+\texttt{pg\_dump} emits it, with the unique constraint spelled out in SQL.
+
+\begin{lstlisting}[language=SQL,caption={The exam\_attempts table, from the schema dump (Appendix~B).},label={lst:examattempts-ddl}]
+CREATE TABLE exam_attempts (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    exam_id         BIGINT NOT NULL,
+    started_at      TIMESTAMPTZ DEFAULT now(),
+    submitted_at    TIMESTAMPTZ,
+    score           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    status          VARCHAR(30) NOT NULL DEFAULT 'in_progress',
+    graded_notified BOOLEAN NOT NULL DEFAULT false,
+    draft_answers   JSONB,
+    draft_saved_at  TIMESTAMPTZ,
+    UNIQUE (user_id, exam_id)
+);
+\end{lstlisting}
+
+\section{Indexes and Soft Constraints}\label{sec:indexes}
+
+APEX leans on the database for the invariants it cannot afford to get wrong.
+Three composite unique indexes, summarized in \cref{tab:indexes}, each enforce
+a ``no duplicate pair'' rule at the storage layer, so the guarantee holds even
+under a race between two concurrent requests --- the second insert simply
+fails with a unique-violation, and at most one row can ever exist.
+
+\begin{table}[htbp]
+\centering
+\caption{The three composite unique indexes and their invariants.}
+\label{tab:indexes}
+\begin{tabularx}{\linewidth}{@{}L{3.6cm} L{3.4cm} X@{}}
+\toprule
+\textbf{Index} & \textbf{Columns} & \textbf{Invariant enforced} \\
+\midrule
+\texttt{idx\_class\_user}        & \texttt{class\_members\-(class\_id, user\_id)}   & A student joins a given class at most once. \\
+\texttt{idx\_user\_exam\_attempt} & \texttt{exam\_attempts\-(user\_id, exam\_id)}    & Exactly one attempt row per (student, exam) --- the linchpin of resume and re-scoring. \\
+\texttt{idx\_exam\_class}        & \texttt{exam\_classes\-(exam\_id, class\_id)}    & An exam is assigned to a given class at most once. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The reason \texttt{idx\_user\_exam\_attempt} matters more than the other two
+is that it is not merely a hygiene constraint against duplicate rows; it is
+the foundation of a behavioural guarantee. Enforcing ``one attempt per
+student per exam'' in the database rather than in application code means the
+resume and re-scoring logic never has to reason about ``which attempt is the
+real one.'' There is provably only one. Had the team allowed multiple
+attempts and picked ``the latest'' in code, that correctness rule would have
+had to be threaded through every query touching attempts, and a refresh storm
+could have created two rows the finaliser would then aggregate incorrectly.
+Putting the rule in the schema collapses a whole category of race conditions
+into a single \texttt{UNIQUE} clause. The honest cost is that APEX supports
+exactly one attempt per exam with no native retake; adding retakes later
+would mean evolving the constraint to \texttt{(user\_id, exam\_id,
+attempt\_number)} --- a deliberate schema change, not an accident.
+
+A fourth index deserves mention because it shows the limit of what a GORM
+struct tag can express. The \texttt{google\_id} column is declared as a plain
+\texttt{index} in the struct, but true uniqueness is enforced by a
+\emph{partial} unique index built in hand-written SQL:
+
+\begin{lstlisting}[language=SQL,caption={The partial unique index on google\_id (internal/database/migrations.go).},label={lst:google-idx}]
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id
+    ON users(google_id)
+    WHERE google_id IS NOT NULL AND google_id <> '';
+\end{lstlisting}
+
+Most users are password-only and have an empty \texttt{google\_id}; a plain
+unique index would treat all those empty strings as colliding duplicates. The
+partial index applies uniqueness \emph{only} to present, non-empty Google
+subjects, so password users never collide while Google-linked accounts stay
+uniquely bound. GORM's tag vocabulary cannot express a conditional index,
+which is one concrete reason the project keeps a hand-written SQL layer at
+all.
+
+Beyond the unique indexes, every hot-path foreign key
+(\texttt{user\_id}, \texttt{exam\_id}, \texttt{exam\_attempt\_id},
+\texttt{submission\_id}, \texttt{problem\_id}, \texttt{reset\_at}) carries a
+plain \texttt{index} tag so lookups stay logarithmic. What APEX largely does
+\emph{not} do is declare database-level referential foreign-key
+\emph{constraints} between most tables. Relationships are expressed as GORM
+associations and enforced by application logic --- ``soft'' constraints ---
+rather than \texttt{REFERENCES} clauses with \texttt{ON DELETE CASCADE}. The
+sole hard foreign key added deliberately is \texttt{fk\_problems\_folder}
+with \texttt{ON DELETE SET NULL}, because folder deletion has a specific
+non-cascading semantics (unfile, do not destroy). The trade-off is honest:
+soft constraints keep AutoMigrate simple and account deletion tractable (the
+cascade is coded explicitly in a transaction rather than left to the
+database), at the price of relying on the application to keep references
+consistent. Account deletion is precisely where this shows --- it is a
+single hand-written transactional cascade that clears profile,
+notifications, reset tokens, and role-scoped children in order before
+deleting the user.
+
+\section{The Migration Pipeline}\label{sec:migrations}
+
+A schema is never finished; columns get added, defaults change, data gets
+backfilled. APEX runs two parallel migration tracks, and which one mutates the
+schema is decided by a single environment flag, \texttt{SKIP\_AUTOMIGRATE},
+read in \texttt{internal/database/database.go}. \Cref{fig:migration} shows the
+decision and the three-stage development path.
+
+\input{figures/tikz/fig10-migration}
+
+\subsection{The Development Path: Three Stages, One Direction}
+
+When \texttt{SKIP\_AUTOMIGRATE} is unset or false (the developer laptop),
+\texttt{Connect()} opens the pool --- 25 max-open connections, 10 idle, a
+five-minute idle lifetime and a thirty-minute maximum lifetime --- and then
+runs three passes in a fixed order.
+
+\textbf{Stage 1 --- \texttt{RunMigrations(DB)}}, hand-written idempotent SQL,
+runs \emph{before} AutoMigrate. This is where all the work that AutoMigrate
+cannot do safely lives: data backfills, nullability changes, default changes,
+the partial Google index, dropping legacy tables, and the historical score
+re-aggregation. Every block is gated on the target table already existing, via
+a helper:
+
+\begin{lstlisting}[language=Go,caption={The table-existence gate (internal/database/migrations.go).},label={lst:tableexists}]
+func tableExists(db *gorm.DB, name string) bool {
+    var n int64
+    db.Raw("SELECT 1 FROM information_schema.tables "+
+        "WHERE table_schema = current_schema() AND table_name = ?", name).Scan(&n)
+    return n > 0
+}
+\end{lstlisting}
+
+On a first boot against an empty database, every gate is false, so every
+block is skipped and Stage~2 creates the tables for real. On the second boot
+the gates are true and the SQL replays harmlessly, because every statement is
+written with \texttt{IF NOT EXISTS} / \texttt{IF EXISTS} guards. Idempotency
+here is deliberate: an operator restarting a misbehaving process at three in
+the morning should never have to reason about migration ordering. As the
+team's own lesson puts it, idempotency is cheaper than coordination.
+
+\textbf{Stage 2 --- \texttt{AutoMigrate(...)}}, GORM's automatic schema sync,
+creates only brand-new tables, columns, and indexes for the fifteen
+registered models. It does the easy, safe part; the dangerous part already
+happened in Stage~1.
+
+\textbf{Stage 3 --- \texttt{RunPostMigrations(DB)}} runs \emph{after}
+AutoMigrate because it needs a table that AutoMigrate just created. It sweeps
+orphaned \texttt{folder\_id} references to null, then adds the
+\texttt{fk\_problems\_folder} foreign key referencing \texttt{folders}. The
+ordering is forced by dependency: you cannot add a foreign key to a table that
+does not yet exist, and you cannot enforce the constraint while dangling rows
+violate it, so the orphan sweep precedes the \texttt{ADD CONSTRAINT}. The
+whole pipeline moves in one direction --- forward only.
+
+\subsection{The Production Path: A Versioned Binary Owns the Schema}
+
+When \texttt{SKIP\_AUTOMIGRATE=true}, \texttt{Connect()} takes an entirely
+different branch: it calls \texttt{RunSQLMigrations(cfg)} and returns,
+\emph{never} touching \texttt{RunMigrations}, \texttt{AutoMigrate}, or
+\texttt{RunPostMigrations}. \texttt{RunSQLMigrations} drives the
+\texttt{golang-migrate} library~\cite{golangmigrate} over the numbered,
+paired \texttt{NNNN\_name.up.sql} / \texttt{.down.sql} files in
+\texttt{internal/database/migrations/sql/} (directory overridable via
+\texttt{MIGRATIONS\_DIR}). It handles \texttt{ErrNoChange} and
+\texttt{ErrNilVersion} gracefully and logs the current version and dirty flag.
+The same logic is exposed as a standalone \texttt{cmd/migrate} CLI supporting
+\texttt{up}, \texttt{down}, \texttt{version}, and \texttt{force~<n>}, which the
+production Docker stack runs as a one-shot \texttt{migrate} service before the
+backend starts.
+
+Today the versioned track contains exactly one pair, the baseline
+\texttt{0001\_init}, which is an intentional no-op (\texttt{SELECT 1;}) whose
+sole purpose is to mark the AutoMigrated schema as version~1 so that future
+\texttt{0002+} files can layer explicit, reviewed changes on top. The reason
+production skips AutoMigrate entirely is a matter of principle earned through
+experience: AutoMigrate's schema \emph{inference} is a convenience on a
+laptop, but a production database wants deterministic, version-controlled,
+reversible DDL that a human has reviewed --- not an ORM silently reshaping a
+populated table~\cite{twelvefactor}. That silent reshaping is exactly what
+caused the incident described next.
+
+\section{Case Study: The \texttt{is\_draft} Incident}\label{sec:incident}
+
+The clearest justification for the entire migration discipline is a single
+bug the team shipped, caught, and turned into a written rule. It is worth
+telling in full because it is a textbook example of how an ORM can do
+\emph{more} than the programmer intended.
+
+\paragraph{The mechanism.} Someone added the tag \texttt{gorm:"default:true"}
+to the \texttt{IsDraft} field on the \texttt{Exam} struct, intending it to
+mean ``new exams start as drafts.'' On the next boot, GORM AutoMigrate
+translated that tag into a DDL default and applied it to the
+\emph{already-populated} \texttt{exams} table, flipping every existing exam
+row to \texttt{is\_draft = true}. The trouble is that student-facing list
+queries filter \texttt{WHERE is\_draft = false} --- students should see only
+published exams. With every row now marked draft, that filter matched
+nothing. \textbf{Every exam silently vanished from every student's view.}
+Nothing crashed, nothing was logged; the data simply became invisible. This
+is the definition of silent corruption, and it is the failure mode that makes
+AutoMigrate dangerous on populated tables: GORM adds the column and applies
+the default, but it has no way to know that the ``correct'' value for
+existing rows is the opposite of the new default~\cite{gorm}.
+
+\paragraph{The multi-part fix.} The repair had three independent parts, each
+addressing a different layer.
+
+First, the struct default was flipped to the safe zero-value:
+
+\begin{lstlisting}[language=Go,caption={The corrected field: the safe zero-value is ``published.''},label={lst:isdraft-fix}]
+IsDraft bool `gorm:"default:false" json:"is_draft"`
+\end{lstlisting}
+
+Now the default that AutoMigrate might apply is \texttt{false} ---
+``published'' --- so even a stray application is harmless. Keeping the tag is
+legitimate: it governs the INSERT-time default when the Go field is
+zero-valued, which is a safe, application-level use.
+
+Second, and more importantly, the real correctness was moved into explicit,
+idempotent SQL in \texttt{RunMigrations}, following the canonical add-nullable
+$\rightarrow$ backfill $\rightarrow$ constrain pattern, plus a repair line for
+rows the bad migration had already corrupted:
+
+\begin{lstlisting}[language=SQL,caption={The idempotent fix that owns the is\_draft column (internal/database/migrations.go).},label={lst:isdraft-sql}]
+-- Step 1: add the column WITHOUT forcing a default onto existing rows
+ALTER TABLE exams ADD COLUMN IF NOT EXISTS is_draft BOOLEAN;
+-- Step 2: backfill existing rows with the CORRECT value
+UPDATE exams SET is_draft = false WHERE is_draft IS NULL;
+-- Step 3: only now is it safe to constrain
+ALTER TABLE exams ALTER COLUMN is_draft SET NOT NULL;
+ALTER TABLE exams ALTER COLUMN is_draft SET DEFAULT false;
+-- Repair: rows the bad migration flipped, but which clearly WERE published
+UPDATE exams SET is_draft = false
+    WHERE is_draft = true AND start_time IS NOT NULL;
+\end{lstlisting}
+
+The repair line uses \texttt{start\_time IS NOT NULL} as a reliable signal
+that an exam was genuinely published, because a draft cannot be published
+without a start time. Adding the column nullable first is the whole point: no
+default is forced onto existing rows, so the backfill in Step~2 can set the
+\emph{correct} value before the \texttt{NOT NULL} and \texttt{DEFAULT}
+constraints in Step~3.
+
+Third, production was configured to run with \texttt{SKIP\_AUTOMIGRATE=true},
+making the versioned \texttt{migrate} binary the sole authority over the
+production schema. GORM can never again reshape a populated production table,
+because in production GORM never runs DDL at all.
+
+\paragraph{The resulting rule.} The incident produced \texttt{ORM\_RULES.md},
+a short file of hard rules at the repository root. Its first and central rule
+is: \emph{never use \texttt{gorm:"default:X"} on existing tables}. GORM
+AutoMigrate only \emph{adds} columns; it does not manage defaults safely on
+populated tables, so existing rows may receive the default unexpectedly. The
+\texttt{gorm:"default"} tag is reserved for application-level INSERT defaults
+only, never for DDL backfill. The supporting rules follow directly: audit
+every query when adding a filter column (the \texttt{WHERE is\_draft = false}
+clause was the amplifier that turned a bad default into an outage); define the
+zero-value meaning of every new boolean explicitly (what does \texttt{false}
+mean, what should existing rows be); write existing-table changes as explicit
+idempotent SQL run \emph{before} AutoMigrate; and verify row counts after any
+migration before touching application code. The fix is, in the end, exactly
+the shape of those rules --- and the three-stage pipeline of
+\cref{sec:migrations} is their operational form.
+
+\section{Design Trade-offs and Honest Gaps}
+
+The data layer's choices were made in favour of smallness and provable
+correctness over normalization purity and speculative flexibility, and it is
+worth naming the costs honestly.
+
+\begin{itemize}[nosep]
+  \item \textbf{The polymorphic \texttt{problems} table is wide}, with columns
+        that are always null for two of the three question types. This is the
+        price of a one-line grading dispatch; a table-per-type design would be
+        cleaner on paper but would trade a homogeneous problem-list query for
+        three-way joins.
+  \item \textbf{One attempt per exam, no retakes.} The unique index that makes
+        resume and re-scoring tractable also fixes the model at a single
+        attempt. Retakes are out of scope for this version, and the constraint
+        makes adding them a deliberate schema evolution rather than an
+        accident.
+  \item \textbf{Two migration tracks coexist.} The legacy Go-SQL
+        \texttt{RunMigrations} still owns the baseline locally, while the
+        versioned \texttt{golang-migrate} track is the production future
+        bridged by the no-op \texttt{0001\_init}. This is transitional and
+        documented, but it does mean two places to look when adding a change.
+  \item \textbf{Soft constraints over hard foreign keys.} Most relationships
+        are enforced by application logic, not database \texttt{REFERENCES}.
+        This keeps AutoMigrate and account-deletion cascades simple at the
+        cost of relying on the application to keep references consistent.
+  \item \textbf{Single-instance assumptions.} The idempotent dedup columns
+        make restarts safe, but they are not a substitute for a durable work
+        queue; the fire-and-forget grading path and the reminder scheduler
+        both assume a single backend process.
+\end{itemize}
+
+The through-line of this chapter is that APEX treats the database not as a
+passive bucket but as the place where the hardest invariants are enforced.
+The unique \texttt{(user\_id, exam\_id)} index is the single fact the entire
+grading-correctness story rests on; the migration pipeline exists so that the
+schema can evolve without ever again silently violating an invariant like it
+did the day every exam vanished. Small, auditable, and disciplined about
+change --- that is the whole design.

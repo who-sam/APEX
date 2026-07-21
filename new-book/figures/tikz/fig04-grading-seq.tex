@@ -1,0 +1,114 @@
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\scriptsize,
+  head/.style={draw=apexblue, fill=apexlight, rounded corners=2pt,
+    align=center, font=\sffamily\scriptsize\bfseries, minimum height=8mm,
+    inner sep=3pt, text width=20mm},
+  headext/.style={head, draw=apexamber, fill=apexamber!12},
+  headstore/.style={head, draw=apexgreen!70!black, fill=apexgreen!8},
+  life/.style={apexgrey, dashed, thick},
+  call/.style={-{Latex[length=2mm]}, draw=apexblue, thick},
+  callg/.style={-{Latex[length=2mm]}, draw=apexgrey, thick},
+  ret/.style={-{Latex[length=2mm]}, draw=apexgrey, densely dashed},
+  msg/.style={apexlabel, font=\sffamily\scriptsize},
+]
+
+% --- lifeline x-coordinates (evenly spaced) --------------------------
+\def\xA{0}    % Student SPA
+\def\xB{3.6}  % Gin Handler
+\def\xC{7.2}  % judge0.Grade goroutine
+\def\xD{10.8} % Judge0 CE
+\def\xE{14.0} % isolate sandbox
+\def\xF{17.2} % PostgreSQL
+
+\def\ytop{0}
+\def\ybot{-11.4}
+
+% --- head boxes ------------------------------------------------------
+\node[head]      (hA) at (\xA,\ytop) {Student\\SPA};
+\node[head]      (hB) at (\xB,\ytop) {Gin\\Handler};
+\node[head]      (hC) at (\xC,\ytop) {\texttt{judge0.Grade}\\goroutine};
+\node[headext]   (hD) at (\xD,\ytop) {Judge0 CE};
+\node[headext]   (hE) at (\xE,\ytop) {\texttt{isolate}\\sandbox};
+\node[headstore] (hF) at (\xF,\ytop) {PostgreSQL};
+
+% --- lifelines -------------------------------------------------------
+\foreach \x in {\xA,\xB,\xC,\xD,\xE,\xF}
+  \draw[life] (\x,-0.5) -- (\x,\ybot);
+
+% --- message rows (decreasing y) -------------------------------------
+\def\ya{-1.3}  % SPA -> Handler
+\def\yb{-2.2}  % Handler -> DB pending
+\def\yc{-3.1}  % Handler -> goroutine (spawn)
+\def\yd{-4.0}  % Handler -> SPA (202)
+% loop body
+\def\ye{-5.5}  % goroutine -> Judge0
+\def\yf{-6.4}  % Judge0 -> isolate
+\def\yg{-7.3}  % isolate -> Judge0 (return)
+\def\yh{-8.2}  % Judge0 -> goroutine (return)
+\def\yi{-9.1}  % goroutine self: normalize + diff
+% post loop
+\def\yj{-10.2} % goroutine -> DB (TestResults + Submission)
+\def\yk{-11.0} % goroutine -> DB (ExamAttempt)
+
+% 1. submit request
+\draw[call] (\xA,\ya) -- (\xB,\ya)
+  node[msg,midway,above]{\texttt{POST /student/exams/:id/submit}};
+
+% 2. persist pending submission
+\draw[call] (\xB,\yb) -- (\xF,\yb)
+  node[msg,midway,above]{INSERT Submission (\texttt{status=pending})};
+
+% 3. spawn grading goroutine (fire-and-forget)
+\draw[callg] (\xB,\yc) -- (\xC,\yc)
+  node[msg,midway,above]{\texttt{go judge0.Grade(...)}\;\emph{(fire-and-forget)}};
+
+% 4. immediate response
+\draw[ret] (\xB,\yd) -- (\xA,\yd)
+  node[msg,midway,above]{\textasciitilde202 Accepted (returns at once)};
+
+% --- loop frame over the test cases ----------------------------------
+\begin{scope}[on background layer]
+  \fill[apexblue!4,rounded corners=2pt] (\xC-1.0,-4.9) rectangle (\xF+0.9,-9.55);
+\end{scope}
+\draw[apexblue!55,rounded corners=2pt] (\xC-1.0,-4.9) rectangle (\xF+0.9,-9.55);
+\node[fill=apexblue!55,text=white,font=\sffamily\scriptsize\bfseries,
+      anchor=north west,inner sep=2pt] at (\xC-1.0,-4.9)
+  {loop\; [for each \texttt{TestCase} by \texttt{order\_index}]};
+
+% 5. send code+stdin to Judge0
+\draw[call] (\xC,\ye) -- (\xD,\ye)
+  node[msg,midway,above]{\texttt{POST /submissions?wait=true}\;(code, lang, stdin)};
+
+% 6. run inside isolate
+\draw[call] (\xD,\yf) -- (\xE,\yf)
+  node[msg,midway,above]{run under \texttt{time\_limit\_ms} / \texttt{memory\_limit\_kb}};
+
+% 7. isolate returns
+\draw[ret] (\xE,\yg) -- (\xD,\yg)
+  node[msg,midway,above]{stdout + exit status};
+
+% 8. Judge0 returns
+\draw[ret] (\xD,\yh) -- (\xC,\yh)
+  node[msg,midway,above]{stdout + status id};
+
+% 9. self message: normalize + diff
+\draw[callg] (\xC,\yi-0.18) -- ++(1.35,0) -- ++(0,0.36) -- (\xC,\yi+0.18);
+\node[msg,anchor=west] at (\xC+0.15,\yi+0.55)
+  {\texttt{normalizeOutput} + diff vs expected \(\rightarrow\) pass/fail, write \texttt{TestResult}};
+
+% 10. aggregate score, update submission
+\draw[call] (\xC,\yj) -- (\xF,\yj)
+  node[msg,midway,above]{UPDATE Submission: \texttt{score = passed/total*100}, status};
+
+% 11. roll into attempt
+\draw[call] (\xC,\yk) -- (\xF,\yk)
+  node[msg,midway,above]{\texttt{maybeFinalizeAttempt}: roll score into ExamAttempt};
+
+\end{tikzpicture}%
+}
+\caption{Sequence of an auto-graded code submission.}
+\label{fig:grading-seq}
+\end{figure}
