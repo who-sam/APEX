@@ -163,6 +163,16 @@ export default function ExamBuilder() {
       toast({ title: "Validation error", description: "Add at least one question.", variant: "destructive" });
       return;
     }
+    const blankPromptIdx = questions.findIndex((q) => !q.text?.trim());
+    if (blankPromptIdx >= 0) {
+      setSelectedIdx(blankPromptIdx);
+      toast({
+        title: "Missing question prompt",
+        description: `Question ${blankPromptIdx + 1} is missing its text. Fill in the question prompt before saving.`,
+        variant: "destructive",
+      });
+      return;
+    }
     const badMcq = questions.findIndex((q) =>
       q.type === "mcq" && (!(q as MCQQuestion).correctOptionIds || (q as MCQQuestion).correctOptionIds.length === 0)
     );
