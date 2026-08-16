@@ -30,7 +30,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/apex_test?sslmode=disable
       JWT_SECRET: ci-secret-thirty-two-chars-min-length-ok
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
@@ -43,7 +43,7 @@ jobs:
     name: Backend — golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
@@ -60,7 +60,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           # Pin Bun so CI builds stay reproducible.
@@ -76,7 +76,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           # Pin Bun so CI builds stay reproducible.
